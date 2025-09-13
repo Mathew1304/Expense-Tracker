@@ -3,10 +3,17 @@ import { Layout } from '../components/Layout/Layout';
 import { supabase } from '../lib/supabase';
 import { User } from '@supabase/supabase-js';
 
+// Define the Profile type based on your table structure
+type Profile = {
+  id: string;
+  full_name?: string;
+  phone?: string; // optional, in case column doesn't exist yet
+};
+
 export function Profile() {
   const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -14,10 +21,8 @@ export function Profile() {
       setLoading(true);
       setError(null);
 
-      const {
-        data: { user },
-        error: userError
-      } = await supabase.auth.getUser();
+      // Get the logged-in user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
 
       if (userError) {
         setError(userError.message);
@@ -27,9 +32,11 @@ export function Profile() {
 
       if (user) {
         setUser(user);
+
+        // Fetch the profile for this user
         const { data, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
+          .from<Profile>('profiles')
+          .select('id, full_name, phone')
           .eq('id', user.id)
           .single();
 
@@ -39,24 +46,30 @@ export function Profile() {
           setProfile(data);
         }
       }
+
       setLoading(false);
     };
 
     fetchProfile();
   }, []);
 
-  const handleUpdateProfile = async (updates: any) => {
+  const handleUpdateProfile = async (updates: Partial<Profile>) => {
+    if (!user) return;
+
     setLoading(true);
+    setError(null);
+
     const { error } = await supabase
-      .from('profiles')
+      .from<Profile>('profiles')
       .update(updates)
-      .eq('id', user?.id);
+      .eq('id', user.id);
 
     if (error) {
       setError(error.message);
     } else {
-      setProfile({ ...profile, ...updates });
+      setProfile((prev) => ({ ...prev, ...updates }));
     }
+
     setLoading(false);
   };
 
@@ -80,14 +93,16 @@ export function Profile() {
     <Layout>
       <div className="max-w-2xl mx-auto p-6 bg-white rounded-lg shadow">
         <h1 className="text-2xl font-semibold text-gray-900 mb-4">Profile</h1>
+
         {profile && (
           <form
             onSubmit={(e) => {
               e.preventDefault();
               const formData = new FormData(e.currentTarget);
+
               handleUpdateProfile({
-                full_name: formData.get('full_name'),
-                phone: formData.get('phone')
+                full_name: formData.get('full_name') as string,
+                phone: formData.get('phone') as string
               });
             }}
             className="space-y-4"
