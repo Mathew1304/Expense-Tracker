@@ -55,7 +55,7 @@ export function Projects() {
     if (profileId) fetchProjects();
   }, [profileId]);
 
-  // ✅ Add or update project
+  // ✅ Add or update project with date validation
   const handleSaveProject = async () => {
     if (!newProject.name) {
       alert("Please enter project name");
@@ -64,6 +64,16 @@ export function Projects() {
     if (!profileId) {
       alert("Admin profile not found");
       return;
+    }
+
+    // ✅ Start date / end date validation
+    if (newProject.start_date && newProject.end_date) {
+      const start = new Date(newProject.start_date);
+      const end = new Date(newProject.end_date);
+      if (start > end) {
+        alert("Start date cannot be after end date");
+        return;
+      }
     }
 
     let error;

@@ -59,10 +59,14 @@ export function Dashboard() {
       const { data: materials } = await materialsQuery;
       const { data: teamMembers } = await teamMembersQuery;
 
+      // ✅ Only count projects that are "not completed" as Active
+      const activeProjectsCount =
+        allProjects?.filter((p: any) => p.status !== "completed").length || 0;
+
       setStats([
         {
           name: "Active Projects",
-          value: allProjects?.length || 0,
+          value: activeProjectsCount,
           icon: FolderOpen,
           color: "text-blue-600",
           bgColor: "bg-blue-100",
