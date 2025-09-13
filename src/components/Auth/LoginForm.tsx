@@ -76,6 +76,7 @@ export function LoginForm() {
     const { error } = await supabase.auth.signOut();
     if (error) {
       console.error('Logout failed:', error.message);
+      setMessage('Logout failed. Please try again.');
     } else {
       navigate('/login', { replace: true });
     }
@@ -103,36 +104,33 @@ export function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100 relative overflow-hidden">
-      {/* Animated gradient wave background */}
-      <div className="absolute inset-0 pointer-events-none bg-gradient-to-r from-sky-blue/20 via-coral/20 to-purple-200/20 animate-gradient-wave" />
-
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-purple-50 p-4">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: 'easeOut' }}
-        className="bg-white/95 backdrop-blur-md p-8 rounded-xl shadow-lg w-full max-w-md border border-sky-blue/20"
+        className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100"
       >
-        <div className="flex justify-center">
-          <Building2 className="h-12 w-12 text-sky-blue" />
+        <div className="flex justify-center mb-6">
+          <Building2 className="h-12 w-12 text-blue-600" />
         </div>
 
-        <h2 className="mt-4 text-center text-3xl font-bold text-gray-800">
+        <h2 className="text-center text-2xl font-bold text-gray-800 mb-6">
           {user
             ? `Welcome, ${user.user_metadata?.full_name || user.email}`
             : isSignUp
-            ? 'Sign Up'
+            ? 'Create Your Account'
             : 'Sign In to ConstructPro'}
         </h2>
 
         <AnimatePresence>
           {message && (
             <motion.div
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.3 }}
-              className="mt-4 text-center text-sm text-coral bg-coral/10 p-2 rounded"
+              className="mb-4 text-center text-sm text-red-600 bg-red-50 p-3 rounded-lg"
             >
               {message}
             </motion.div>
@@ -142,7 +140,7 @@ export function LoginForm() {
         {!user && !showForgotPassword ? (
           <motion.form 
             onSubmit={handleAuth} 
-            className="mt-6 space-y-4"
+            className="space-y-5"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
@@ -155,13 +153,15 @@ export function LoginForm() {
                   exit={{ opacity: 0, height: 0 }}
                   transition={{ duration: 0.3 }}
                 >
-                  <label className="block mb-1 font-medium text-gray-700">Full Name</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Full Name
+                  </label>
                   <input
                     type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
-                    className="w-full border border-sky-blue/50 bg-white text-gray-800 px-3 py-2 rounded focus:ring-2 focus:ring-sky-blue focus:border-sky-blue transition-colors"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-gray-50 text-gray-800 placeholder-gray-400"
                     placeholder="Enter your full name"
                   />
                 </motion.div>
@@ -169,25 +169,29 @@ export function LoginForm() {
             </AnimatePresence>
 
             <div>
-              <label className="block mb-1 font-medium text-gray-700">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full border border-sky-blue/50 bg-white text-gray-800 px-3 py-2 rounded focus:ring-2 focus:ring-sky-blue focus:border-sky-blue transition-colors"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-gray-50 text-gray-800 placeholder-gray-400"
                 placeholder="your@example.com"
               />
             </div>
 
             <div>
-              <label className="block mb-1 font-medium text-gray-700">Password</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Password
+              </label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                className="w-full border border-sky-blue/50 bg-white text-gray-800 px-3 py-2 rounded focus:ring-2 focus:ring-sky-blue focus:border-sky-blue transition-colors"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-gray-50 text-gray-800 placeholder-gray-400"
                 placeholder="••••••••"
               />
             </div>
@@ -195,40 +199,52 @@ export function LoginForm() {
             <motion.button
               type="submit"
               disabled={loading}
-              whileHover={{ scale: 1.05, y: -3, boxShadow: '0 4px 12px rgba(56, 189, 248, 0.3)' }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               transition={{ duration: 0.2 }}
-              className="w-full bg-sky-blue text-white font-bold py-2 rounded-lg hover:bg-sky-blue/90 disabled:opacity-50 transition-colors"
+              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+              {loading ? 'Processing...' : isSignUp ? 'Sign Up' : 'Sign In'}
             </motion.button>
 
             <div className="text-center">
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(true)}
-                className="text-coral hover:underline text-sm"
+                className="text-blue-600 hover:underline text-sm font-medium"
               >
                 Forgot Password?
+              </button>
+            </div>
+
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={() => setIsSignUp((s) => !s)}
+                className="text-blue-600 hover:underline text-sm font-medium"
+              >
+                {isSignUp ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
               </button>
             </div>
           </motion.form>
         ) : !user && showForgotPassword ? (
           <motion.form
             onSubmit={handleForgotPassword}
-            className="mt-6 space-y-4"
+            className="space-y-5"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}
           >
             <div>
-              <label className="block mb-1 font-medium text-gray-700">Email</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
               <input
                 type="email"
                 value={forgotEmail}
                 onChange={(e) => setForgotEmail(e.target.value)}
                 required
-                className="w-full border border-sky-blue/50 bg-white text-gray-800 px-3 py-2 rounded focus:ring-2 focus:ring-sky-blue focus:border-sky-blue transition-colors"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors bg-gray-50 text-gray-800 placeholder-gray-400"
                 placeholder="your@example.com"
               />
             </div>
@@ -236,65 +252,39 @@ export function LoginForm() {
             <motion.button
               type="submit"
               disabled={loading}
-              whileHover={{ scale: 1.05, y: -3, boxShadow: '0 4px 12px rgba(56, 189, 248, 0.3)' }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               transition={{ duration: 0.2 }}
-              className="w-full bg-sky-blue text-white font-bold py-2 rounded-lg hover:bg-sky-blue/90 disabled:opacity-50 transition-colors"
+              className="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 disabled:cursor-not-allowed transition-colors"
             >
-              {loading ? 'Loading...' : 'Send Reset Email'}
+              {loading ? 'Processing...' : 'Send Reset Email'}
             </motion.button>
 
             <div className="text-center">
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(false)}
-                className="text-coral hover:underline text-sm"
+                className="text-blue-600 hover:underline text-sm font-medium"
               >
                 Back to Sign In
               </button>
             </div>
           </motion.form>
         ) : (
-          <div className="mt-6 text-center">
+          <div className="text-center space-y-4">
             <motion.button
               onClick={handleLogout}
-              whileHover={{ scale: 1.05, y: -3, boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)' }}
-              whileTap={{ scale: 0.95 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               transition={{ duration: 0.2 }}
-              className="bg-coral text-white font-bold px-4 py-2 rounded-lg hover:bg-coral/90 flex items-center gap-2 mx-auto transition-colors"
+              className="w-full bg-red-600 text-white font-semibold py-3 rounded-lg hover:bg-red-700 flex items-center justify-center gap-2 transition-colors"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-5 h-5" />
               Logout
             </motion.button>
           </div>
         )}
-
-        {!user && !showForgotPassword && (
-          <div className="mt-6 text-center">
-            <button
-              type="button"
-              onClick={() => setIsSignUp((s) => !s)}
-              className="text-coral hover:underline text-sm"
-            >
-              {isSignUp
-                ? 'Already have an account? Sign In'
-                : 'Need an account? Sign Up'}
-            </button>
-          </div>
-        )}
       </motion.div>
-
-      {/* Inline CSS for animations */}
-      <style>{`
-        .animate-gradient-wave {
-          animation: gradientWave 15s infinite ease-in-out;
-        }
-        @keyframes gradientWave {
-          0% { background-position: 0% 50%; }
-          50% { background-position: 100% 50%; }
-          100% { background-position: 0% 50%; }
-        }
-      `}</style>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Plus, Edit, Trash2, Eye, X } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
+import { useAuth } from "../contexts/AuthContext";
 
 export function RoleManagement() {
   const [roles, setRoles] = useState<any[]>([]);
@@ -13,6 +14,8 @@ export function RoleManagement() {
   const [permissions, setPermissions] = useState<string[]>([]);
   const [selectedRole, setSelectedRole] = useState<any>(null);
   const [roleToDelete, setRoleToDelete] = useState<any>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const { user } = useAuth();
 
   const ALL_PERMISSIONS = [
     "Add Project",
@@ -31,27 +34,55 @@ export function RoleManagement() {
   ];
 
   useEffect(() => {
-    fetchRoles();
-  }, []);
+    if (user) {
+      fetchUserRole();
+    }
+  }, [user]);
+
+  useEffect(() => {
+    if (user && userRole) {
+      fetchRoles();
+    }
+  }, [user, userRole]);
+
+  async function fetchUserRole() {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user?.id)
+      .single();
+
+    if (!error && data) {
+      setUserRole(data.role);
+    }
+  }
 
   async function fetchRoles() {
-    const { data, error } = await supabase
+    let query = supabase
       .from("roles")
       .select("*")
-      .eq("is_active", true) // Only active roles
+      .eq("is_active", true)
       .order("created_at", { ascending: false });
 
+    if (userRole === "Admin") {
+      // Admin sees only their own roles
+      query = query.eq("created_by", user?.id);
+    }
+    // Superadmin sees all roles
+
+    const { data, error } = await query;
     if (error) console.error(error);
-    else setRoles(data);
+    else setRoles(data || []);
   }
 
   async function createRole() {
     if (!roleName.trim()) return;
     const { error } = await supabase.from("roles").insert([
       {
-        role_name: roleName, // Correct column name
+        role_name: roleName,
         permissions: permissions,
         is_active: true,
+        created_by: user?.id, // ✅ link role to creator
         created_at: new Date(),
       },
     ]);

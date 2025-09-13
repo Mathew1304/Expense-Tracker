@@ -13,6 +13,7 @@ type User = {
   roles?: {
     role_name: string;
   } | null;
+  created_by: string | null;
 };
 
 type Role = {
@@ -25,6 +26,7 @@ export function Users() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
+
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
@@ -41,37 +43,66 @@ export function Users() {
 
   const [roleFilter, setRoleFilter] = useState<string>("");
 
+  // Fetch users + roles filtered by current admin
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
 
-      // Fetch users with roles (JOIN)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user) {
+        console.error("No logged-in admin found");
+        setLoading(false);
+        return;
+      }
+
+      // Fetch only users created by this admin
       const { data: usersData, error: usersError } = await supabase
         .from("users")
-        .select("id, name, email, role_id, roles(role_name)");
+        .select("id, name, email, role_id, roles(role_name), created_by")
+        .eq("created_by", user.id)
+        .order("created_at", { ascending: false });
 
-      if (usersError) console.error(usersError);
-      else setUsers(usersData as User[]);
+      if (usersError) {
+        console.error("Error fetching users:", usersError.message);
+      } else if (usersData) {
+        setUsers(usersData as User[]);
+      }
 
-      // Fetch roles from role management
+      // Fetch roles created by this admin only
       const { data: rolesData, error: rolesError } = await supabase
         .from("roles")
-        .select("id, role_name");
-      if (rolesError) console.error(rolesError);
-      else setRoles(rolesData as Role[]);
+        .select("id, role_name")
+        .eq("created_by", user.id);
+
+      if (rolesError) {
+        console.error("Error fetching roles:", rolesError.message);
+      } else if (rolesData) {
+        setRoles(rolesData as Role[]);
+      }
 
       setLoading(false);
     }
+
     fetchData();
   }, []);
 
+  // Add new user
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Generate random password (for emailing later)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("No logged-in admin found");
+      return;
+    }
+
     const password = Math.random().toString(36).slice(-8);
 
-    // Insert user
     const { data: newUser, error: insertError } = await supabase
       .from("users")
       .insert([
@@ -79,23 +110,25 @@ export function Users() {
           name: formData.name,
           email: formData.email,
           role_id: formData.role_id || null,
+          created_by: user.id,
         },
       ])
-      .select("id, name, email, role_id, roles(role_name)")
+      .select("id, name, email, role_id, roles(role_name), created_by")
       .single();
 
     if (insertError) {
-      console.error(insertError);
+      console.error("Insert failed:", insertError.message);
       return;
     }
 
     console.log(`Send email to ${formData.email} with password ${password}`);
 
-    setUsers((prev) => [...prev, newUser]);
+    setUsers((prev) => [newUser, ...prev]);
     setShowForm(false);
     setFormData({ name: "", email: "", role_id: "" });
   }
 
+  // Delete user
   async function handleDelete(userId: string) {
     const { error } = await supabase.from("users").delete().eq("id", userId);
     if (error) {
@@ -105,6 +138,7 @@ export function Users() {
     setUsers(users.filter((u) => u.id !== userId));
   }
 
+  // Start editing
   function startEdit(user: User) {
     setEditingUser(user);
     setEditForm({
@@ -114,6 +148,13 @@ export function Users() {
     });
   }
 
+  // Cancel editing
+  function cancelEdit() {
+    setEditingUser(null);
+    setEditForm({ name: "", email: "", role_id: "" });
+  }
+
+  // Save edits
   async function handleEditSubmit(userId: string) {
     const { data, error } = await supabase
       .from("users")
@@ -123,7 +164,7 @@ export function Users() {
         role_id: editForm.role_id || null,
       })
       .eq("id", userId)
-      .select("id, name, email, role_id, roles(role_name)")
+      .select("id, name, email, role_id, roles(role_name), created_by")
       .single();
 
     if (error) {
@@ -132,9 +173,10 @@ export function Users() {
     }
 
     setUsers(users.map((u) => (u.id === userId ? data : u)));
-    setEditingUser(null);
+    cancelEdit();
   }
 
+  // Filter by role
   const filteredUsers = roleFilter
     ? users.filter((u) => u.roles?.role_name === roleFilter)
     : users;
@@ -146,7 +188,6 @@ export function Users() {
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">Users</h1>
 
-        {/* Add User Button */}
         <button
           onClick={() => setShowForm(true)}
           className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
@@ -154,7 +195,6 @@ export function Users() {
           <Plus /> Add User
         </button>
 
-        {/* Role Filter Dropdown */}
         <div className="mb-4">
           <label className="block font-semibold mb-1">Filter by Role</label>
           <select
@@ -171,7 +211,6 @@ export function Users() {
           </select>
         </div>
 
-        {/* Add User Form */}
         {showForm && (
           <form
             onSubmit={handleSubmit}
@@ -237,7 +276,6 @@ export function Users() {
           </form>
         )}
 
-        {/* Users List */}
         <table className="w-full border-collapse border">
           <thead>
             <tr className="bg-gray-100">
@@ -309,7 +347,7 @@ export function Users() {
                       </button>
                       <button
                         className="p-1 border rounded hover:bg-gray-100"
-                        onClick={() => setEditingUser(null)}
+                        onClick={cancelEdit}
                       >
                         <X />
                       </button>

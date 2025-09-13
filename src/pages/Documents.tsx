@@ -45,7 +45,7 @@ const constructionCategories = [
 ];
 
 export function Documents() {
-  const { user, userRole } = useAuth(); // ✅ get logged in user + role
+  const { user } = useAuth(); // ✅ get logged in user
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -60,20 +60,18 @@ export function Documents() {
     fetchDocuments();
     fetchProjects();
     fetchUsers();
-  }, [userRole, user?.id]);
+  }, [user?.id]);
 
-  // ✅ Fetch docs: admin sees all, others see only their own
+  // ✅ Fetch only the logged-in admin’s documents
   async function fetchDocuments() {
-    let query = supabase
+    if (!user?.id) return;
+
+    const { data, error } = await supabase
       .from("documents")
       .select("*")
+      .eq("uploaded_by", user.id) // <-- filter only current user
       .order("upload_date", { ascending: false });
 
-    if (userRole !== "Admin") {
-      query = query.eq("uploaded_by", user?.id);
-    }
-
-    const { data, error } = await query;
     if (error) {
       console.error("Error fetching documents:", error.message);
     } else {

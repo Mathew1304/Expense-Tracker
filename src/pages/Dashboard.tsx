@@ -4,7 +4,6 @@ import {
   FolderOpen,
   Package,
   Users,
-  TrendingUp,
   CheckCircle,
   IndianRupee,
 } from "lucide-react";
@@ -15,64 +14,50 @@ import { useAuth } from "../contexts/AuthContext";
 export function Dashboard() {
   const [stats, setStats] = useState<any[]>([]);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
-  const [clientProjects, setClientProjects] = useState<any[]>([]);
-  const [clientPhases, setClientPhases] = useState<any[]>([]);
   const [role, setRole] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const { user } = useAuth();
-  const [dateFilter, setDateFilter] = useState<string>("last7days");
 
   useEffect(() => {
     const fetchData = async () => {
       if (!user) return;
 
-      // ✅ Fetch user role + status
+      // ✅ Fetch user role + status + full_name
       const { data: profile } = await supabase
         .from("profiles")
-        .select("role, status")
+        .select("role, status, full_name")
         .eq("id", user.id)
         .single();
 
       setRole(profile?.role || null);
       setStatus(profile?.status || null);
+      setName(profile?.full_name || user.email);
 
-      // ✅ If client, fetch only their projects & phases
-      if (profile?.role === "client") {
-        const { data: projects } = await supabase
-          .from("projects")
-          .select("id, name")
-          .eq("client_id", user.id);
+      // ✅ Stats queries
+      let allProjectsQuery = supabase.from("projects").select("*");
+      let expensesQuery = supabase.from("expenses").select("amount");
+      let materialsQuery = supabase.from("materials").select("qty_required");
+      let teamMembersQuery = supabase.from("profiles").select("*");
 
-        setClientProjects(projects || []);
-
-        if (projects && projects.length > 0) {
-          const projectIds = projects.map((p) => p.id);
-          const { data: phases } = await supabase
-            .from("phases")
-            .select("id, name, status, project_id, start_date, end_date")
-            .in("project_id", projectIds);
-
-          setClientPhases(phases || []);
-        }
+      if (profile?.role === "Admin") {
+        allProjectsQuery = allProjectsQuery.eq("created_by", user.id);
+        expensesQuery = expensesQuery.eq("created_by", user.id);
+        materialsQuery = materialsQuery.eq("created_by", user.id);
+        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
+      } else if (profile?.role === "client") {
+        allProjectsQuery = allProjectsQuery.eq("client_id", user.id);
+        expensesQuery = expensesQuery.eq("created_by", user.id);
+        materialsQuery = materialsQuery.eq("created_by", user.id);
+        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
       }
+      // Superadmin sees all, so no filter applied
 
-      // ✅ Restrict all queries to created_by = current user
-      const { data: allProjects } = await supabase
-        .from("projects")
-        .select("*")
-        .eq("created_by", user.id);
-
-      const { data: expenses } = await supabase
-        .from("expenses")
-        .select("amount")
-        .eq("created_by", user.id);
-
-      const { data: materials } = await supabase
-        .from("materials")
-        .select("qty_required")
-        .eq("created_by", user.id);
-
-      const { data: teamMembers } = await supabase.from("profiles").select("*");
+      const { data: allProjects } = await allProjectsQuery;
+      const { data: expenses } = await expensesQuery;
+      const { data: materials } = await materialsQuery;
+      const { data: teamMembers } = await teamMembersQuery;
 
       setStats([
         {
@@ -112,32 +97,24 @@ export function Dashboard() {
         },
       ]);
 
-      // ✅ Recent activities (filter by created_by as well)
-      const now = new Date();
-      let query = supabase
+      // ✅ Recent activities (phases + expenses)
+      let phasesQuery = supabase
         .from("phases")
-        .select("name, status, end_date, project_id")
-        .order("end_date", { ascending: false })
+        .select("name, status, end_date, project_id, updated_at")
+        .order("updated_at", { ascending: false })
         .limit(5);
 
-      if (dateFilter === "last7days") {
-        query = query.gte(
-          "end_date",
-          new Date(now.setDate(now.getDate() - 7)).toISOString()
-        );
-      } else if (dateFilter === "last30days") {
-        query = query.gte(
-          "end_date",
-          new Date(now.setDate(now.getDate() - 30)).toISOString()
-        );
+      const { data: phases } = await phasesQuery;
+
+      let recentExpensesQuery = supabase
+        .from("expenses")
+        .select("amount, date, phase_id");
+
+      if (profile?.role === "Admin" || profile?.role === "client") {
+        recentExpensesQuery = recentExpensesQuery.eq("created_by", user.id);
       }
 
-      const { data: phases } = await query;
-
-      const { data: recentExpenses } = await supabase
-        .from("expenses")
-        .select("amount, date, phase_id")
-        .eq("created_by", user.id)
+      const { data: recentExpenses } = await recentExpensesQuery
         .order("date", { ascending: false })
         .limit(3);
 
@@ -147,9 +124,12 @@ export function Dashboard() {
         activities.push({
           id: `phase-${p.name}`,
           message: `Phase "${p.name}" status: ${p.status}`,
-          time: p.end_date
+          time: p.updated_at
+            ? new Date(p.updated_at).toLocaleDateString()
+            : p.end_date
             ? new Date(p.end_date).toLocaleDateString()
             : "No date",
+          date: new Date(p.updated_at || p.end_date || 0),
           icon: CheckCircle,
           color: "text-green-500",
         });
@@ -160,18 +140,25 @@ export function Dashboard() {
           id: `expense-${e.phase_id}`,
           message: `Expense of ₹${e.amount} recorded`,
           time: e.date ? new Date(e.date).toLocaleDateString() : "No date",
+          date: new Date(e.date || 0),
           icon: IndianRupee,
           color: "text-blue-500",
         });
       });
 
-      setRecentActivities(activities.slice(0, 5));
+      // Sort activities by date and limit
+      activities = activities
+        .sort((a, b) => b.date.getTime() - a.date.getTime())
+        .slice(0, 5);
+
+      setRecentActivities(activities);
+      setLoading(false);
     };
 
     fetchData();
-  }, [user, dateFilter]);
+  }, [user]);
 
-  // Quick Actions remain unchanged
+  // ✅ Quick Actions
   const quickActions = [
     {
       name: "Add New Project",
@@ -209,7 +196,7 @@ export function Dashboard() {
     {
       name: "Generate Report",
       description: "Create project or financial report",
-      icon: TrendingUp,
+      icon: FolderOpen,
       href: "/reports",
       color: "bg-purple-600 hover:bg-purple-700",
       disabled:
@@ -219,15 +206,21 @@ export function Dashboard() {
     },
   ];
 
-  const getProgress = (phases: any[]) => {
-    const completed = phases.filter((p) => p.status === "completed").length;
-    const total = phases.length;
-    return total > 0 ? (completed / total) * 100 : 0;
-  };
+  if (loading) {
+    return (
+      <Layout title="Dashboard">
+        <div className="flex justify-center items-center h-screen">
+          <p className="text-xl text-gray-600">Loading...</p>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout title="Dashboard">
       <div className="space-y-8 p-6">
+        <h1 className="text-3xl font-bold text-gray-900">Welcome, {name}</h1>
+
         {/* Stats Overview */}
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat) => {
@@ -262,73 +255,7 @@ export function Dashboard() {
           })}
         </div>
 
-        {/* Client Projects + Phases */}
-        {role === "client" && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">My Projects</h2>
-            {clientProjects.map((project) => {
-              const projectPhases = clientPhases.filter(
-                (p) => p.project_id === project.id
-              );
-              const progress = getProgress(projectPhases);
-              return (
-                <div
-                  key={project.id}
-                  className="bg-white p-6 rounded-xl shadow-lg border border-gray-200 hover:shadow-xl transition-shadow"
-                >
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-gray-800">
-                      {project.name}
-                    </h3>
-                    <span
-                      className={`px-3 py-1 rounded-full text-sm font-medium ${
-                        progress === 100
-                          ? "bg-green-100 text-green-800"
-                          : progress > 50
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-red-100 text-red-800"
-                      }`}
-                    >
-                      {progress.toFixed(0)}% Complete
-                    </span>
-                  </div>
-                  <div className="mt-4 space-y-3">
-                    {projectPhases.length > 0 ? (
-                      projectPhases.map((phase) => (
-                        <div
-                          key={phase.id}
-                          className="p-4 border rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
-                        >
-                          <p className="font-medium text-gray-700">{phase.name}</p>
-                          <p className="text-sm text-gray-600">
-                            Status: {phase.status}
-                          </p>
-                          <p className="text-xs text-gray-500">
-                            {phase.start_date} – {phase.end_date || "Ongoing"}
-                          </p>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm text-gray-500">
-                        No phases available yet.
-                      </p>
-                    )}
-                    <div className="mt-4">
-                      <div className="w-full bg-gray-200 rounded-full h-2.5">
-                        <div
-                          className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
-                          style={{ width: `${progress}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Non-client: Quick Actions + Recent Activity */}
+        {/* Quick Actions + Recent Activity */}
         {role !== "client" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Quick Actions */}
@@ -346,9 +273,7 @@ export function Dashboard() {
                       key={action.name}
                       to={action.disabled ? "#" : action.href}
                       className={`${action.color} text-white p-6 rounded-xl text-center shadow-md hover:shadow-lg transition-all duration-300 ${
-                        action.disabled
-                          ? "opacity-50 cursor-not-allowed"
-                          : ""
+                        action.disabled ? "opacity-50 cursor-not-allowed" : ""
                       }`}
                     >
                       <Icon className="h-10 w-10 mx-auto mb-3" />
@@ -368,15 +293,6 @@ export function Dashboard() {
                 <h3 className="text-lg font-medium text-gray-900">
                   Recent Activity
                 </h3>
-                <select
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="border border-gray-300 rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="last7days">Last 7 Days</option>
-                  <option value="last30days">Last 30 Days</option>
-                  <option value="all">All Time</option>
-                </select>
               </div>
               <div className="p-6 space-y-5 max-h-80 overflow-y-auto">
                 {recentActivities.length > 0 ? (
