@@ -101,7 +101,7 @@ export function Sidebar() {
   return (
     <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30">
       <div className="p-6">
-        <h2 className="text-xl font-bold text-gray-800">ConstructPro</h2>
+        <h2 className="text-xl font-bold text-gray-800">Build my Homes</h2>
       </div>
 
       <nav className="px-4">
