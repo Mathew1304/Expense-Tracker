@@ -14,6 +14,7 @@ import { Documents } from "./pages/Documents";
 import { RoleManagement } from "./pages/RoleManagement";
 import { Profile } from "./pages/Profile";
 import { Renovations } from "./pages/Renovations";
+import ResetPassword from "./pages/ResetPassword"; // ✅ added import
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
@@ -48,6 +49,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<LoginForm />} />
+          <Route path="/reset-password" element={<ResetPassword />} /> {/* ✅ added route */}
 
           {/* Dashboard accessible by all roles */}
           <Route
