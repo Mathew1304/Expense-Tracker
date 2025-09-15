@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, X, MessageSquare, Check } from "lucide-react";
+import { Plus, Edit2, Trash2, X } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -15,16 +15,33 @@ type Phase = {
   start_date: string;
   end_date: string;
   status: "Not Started" | "In Progress" | "Completed";
-  photos?: string[];
+  estimated_cost?: number;
+  contractor_name?: string;
 };
 
-type PhotoComment = {
+type Expense = {
+  id: string;
+  phase_id: string;
+  category: string;
+  amount: number;
+  date: string;
+};
+
+type PhasePhoto = {
   id: string;
   photo_url: string;
+  created_at: string;
+  uploaded_by: string;
+};
+
+type PhaseComment = {
+  id: string;
+  phase_id: string;
   user_id: string;
+  user_name: string;
   comment: string;
   created_at: string;
-  full_name?: string | null;
+  updated_at: string;
 };
 
 export function Phases() {
@@ -32,40 +49,46 @@ export function Phases() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
-  const [comments, setComments] = useState<Record<string, PhotoComment[]>>({});
-  const [newComment, setNewComment] = useState<Record<string, string>>({});
-  const [editingComment, setEditingComment] = useState<Record<string, string>>({});
+  const [expenses, setExpenses] = useState<Record<string, Expense[]>>({});
   const [form, setForm] = useState({
     project_id: "",
     name: "",
     start_date: "",
     end_date: "",
     status: "Not Started" as "Not Started" | "In Progress" | "Completed",
+    estimated_cost: "",
+    contractor_name: "",
   });
   const [editingPhase, setEditingPhase] = useState<Phase | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [photos, setPhotos] = useState<FileList | null>(null);
-  const [showPhaseImages, setShowPhaseImages] = useState<Record<string, boolean>>({});
+  const [viewPhase, setViewPhase] = useState<Phase | null>(null);
+  const [phasePhotos, setPhasePhotos] = useState<PhasePhoto[]>([]);
+  const [comments, setComments] = useState<PhaseComment[]>([]);
+  const [newComment, setNewComment] = useState("");
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
 
-  const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(userRole ?? "");
+  const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
+    userRole ?? ""
+  );
 
   // Fetch projects
   useEffect(() => {
     const fetchProjects = async () => {
-      const { data, error } = await supabase.from("projects").select("id, name").order("name");
-      if (error) console.error("Error fetching projects:", error.message);
-      else setProjects(data || []);
+      const { data, error } = await supabase
+        .from("projects")
+        .select("id, name")
+        .order("name");
+      if (!error) setProjects(data || []);
     };
     fetchProjects();
   }, []);
 
-  // Fetch phases + photos + comments
+  // Fetch phases and their expenses
   const fetchPhases = async () => {
     const { data, error } = await supabase
       .from("phases")
       .select(
-        `id, project_id, name, start_date, end_date, status, projects!inner(name)`
+        `id, project_id, name, start_date, end_date, status, estimated_cost, contractor_name, projects!inner(name)`
       )
       .order("start_date");
 
@@ -79,182 +102,66 @@ export function Phases() {
       start_date: p.start_date,
       end_date: p.end_date,
       status: p.status,
-      photos: [],
+      estimated_cost: p.estimated_cost,
+      contractor_name: p.contractor_name,
     }));
 
-    for (const phase of mapped) {
-      const { data: files, error: filesError } = await supabase.storage
-        .from("phase-photos")
-        .list(`${phase.id}/`, { limit: 100 });
-
-      if (!filesError && files?.length) {
-        const urls = await Promise.all(
-          files.map(async (f) => {
-            const { data: publicUrl } = supabase.storage
-              .from("phase-photos")
-              .getPublicUrl(`${phase.id}/${f.name}`);
-            return publicUrl.publicUrl;
-          })
-        );
-        phase.photos = urls;
-
-        for (const url of urls) {
-          await fetchComments(url);
-        }
-      }
-    }
-
     setPhases(mapped);
+
+    // Fetch expenses per phase
+    for (const phase of mapped) {
+      const { data: exp } = await supabase
+        .from("expenses")
+        .select("*")
+        .eq("phase_id", phase.id);
+      setExpenses((prev) => ({ ...prev, [phase.id]: exp || [] }));
+    }
   };
 
   useEffect(() => {
     fetchPhases();
   }, []);
 
-  const fetchComments = async (photoUrl: string) => {
-    const { data, error } = await supabase
-      .from("photo_comments")
-      .select("id, photo_url, user_id, comment, created_at")
-      .eq("photo_url", photoUrl)
-      .order("created_at", { ascending: true });
-
-    if (error) return console.error("Error fetching comments:", error.message);
-
-    const withNames: PhotoComment[] = await Promise.all(
-      (data || []).map(async (c) => {
-        let fullName: string | null = null;
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("full_name")
-          .eq("id", c.user_id)
-          .single();
-        if (profile) fullName = profile.full_name;
-        return { ...c, full_name: fullName };
-      })
-    );
-
-    setComments((prev) => ({ ...prev, [photoUrl]: withNames }));
-  };
-
-  const addComment = async (photoUrl: string) => {
-    const text = newComment[photoUrl];
-    if (!text?.trim() || !user) return;
-
-    const { error } = await supabase.from("photo_comments").insert([
-      { photo_url: photoUrl, user_id: user.id, comment: text.trim() },
-    ]);
-
-    if (error) console.error("Insert comment error:", error.message);
-    else {
-      setNewComment((prev) => ({ ...prev, [photoUrl]: "" }));
-      await fetchComments(photoUrl);
-    }
-  };
-
-  const updateComment = async (commentId: string, photoUrl: string) => {
-    const text = editingComment[commentId];
-    if (!text?.trim()) return;
-
-    const { error } = await supabase
-      .from("photo_comments")
-      .update({ comment: text.trim() })
-      .eq("id", commentId);
-
-    if (error) {
-      console.error("Update comment error:", error.message);
-    } else {
-      setEditingComment((prev) => {
-        const copy = { ...prev };
-        delete copy[commentId];
-        return copy;
-      });
-      await fetchComments(photoUrl);
-    }
-  };
-
-  const deleteComment = async (commentId: string, photoUrl: string) => {
-    if (!window.confirm("Delete this comment?")) return;
-    const { error } = await supabase
-      .from("photo_comments")
-      .delete()
-      .eq("id", commentId);
-
-    if (error) {
-      console.error("Delete comment error:", error.message);
-    } else {
-      await fetchComments(photoUrl);
-    }
-  };
-
+  // Save phase (create or update)
   const savePhase = async () => {
-    if (!form.project_id) return alert("Please select a project.");
-    if (!form.name) return alert("Please enter a phase name.");
+    if (!form.project_id || !form.name) {
+      alert("Please fill in required fields");
+      return;
+    }
+
+    if (form.end_date <= form.start_date) {
+      alert("End date must be after start date");
+      return;
+    }
+
+    const phaseData = {
+      project_id: form.project_id,
+      name: form.name,
+      start_date: form.start_date,
+      end_date: form.end_date,
+      status: form.status,
+      estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : null,
+      contractor_name: form.contractor_name || null,
+    };
 
     if (editingPhase) {
-      const { error } = await supabase
-        .from("phases")
-        .update({ ...form })
-        .eq("id", editingPhase.id);
-
-      if (error) console.error("Update error:", error.message);
-      else {
-        if (photos && photos.length > 0) {
-          for (let i = 0; i < photos.length; i++) {
-            const file = photos[i];
-            const compressedFile = await imageCompression(file, {
-              maxSizeMB: 1,
-              maxWidthOrHeight: 1280,
-              useWebWorker: true,
-            });
-            const filePath = `${editingPhase.id}/${file.name}`;
-
-            const { error: uploadError } = await supabase.storage
-              .from("phase-photos")
-              .upload(filePath, compressedFile, { upsert: true });
-
-            if (uploadError) console.error(uploadError);
-            else {
-              const { data: publicUrl } = supabase.storage
-                .from("phase-photos")
-                .getPublicUrl(filePath);
-
-              await supabase.from("phase_photos").insert([
-                {
-                  phase_id: editingPhase.id,
-                  uploaded_by: user?.id,
-                  photo_url: publicUrl.publicUrl,
-                },
-              ]);
-            }
-          }
-        }
-
-        setEditingPhase(null);
-        setShowModal(false);
-        setPhotos(null);
-        setForm({
-          project_id: "",
-          name: "",
-          start_date: "",
-          end_date: "",
-          status: "Not Started",
-        });
-        fetchPhases();
-      }
+      await supabase.from("phases").update(phaseData).eq("id", editingPhase.id);
     } else {
-      const { error } = await supabase.from("phases").insert([form]);
-      if (error) console.error("Insert error:", error.message);
-      else {
-        setForm({
-          project_id: "",
-          name: "",
-          start_date: "",
-          end_date: "",
-          status: "Not Started",
-        });
-        fetchPhases();
-      }
+      await supabase.from("phases").insert([phaseData]);
     }
+
+    setShowModal(false);
+    setEditingPhase(null);
+    setForm({
+      project_id: "",
+      name: "",
+      start_date: "",
+      end_date: "",
+      status: "Not Started",
+      estimated_cost: "",
+      contractor_name: "",
+    });
+    fetchPhases();
   };
 
   const editPhase = (phase: Phase) => {
@@ -265,22 +172,70 @@ export function Phases() {
       start_date: phase.start_date,
       end_date: phase.end_date,
       status: phase.status,
+      estimated_cost: phase.estimated_cost?.toString() || "",
+      contractor_name: phase.contractor_name || "",
     });
     setShowModal(true);
   };
 
-  const deletePhase = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this phase?")) return;
-    const { error } = await supabase.from("phases").delete().eq("id", id);
-    if (error) console.error("Delete error:", error.message);
-    else fetchPhases();
+  
+
+  const getBudgetUsage = (phase: Phase) => {
+    const totalSpent = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+    if (!phase.estimated_cost) return 0;
+    return Math.round((totalSpent / phase.estimated_cost) * 100);
   };
 
-  const togglePhaseImages = (phaseId: string) => {
-    setShowPhaseImages((prev) => ({
-      ...prev,
-      [phaseId]: !prev[phaseId],
-    }));
+  // Fetch phase photos
+  const fetchPhasePhotos = async (phaseId: string) => {
+    const { data, error } = await supabase
+      .from("phase_photos")
+      .select("id, photo_url, created_at, uploaded_by")
+      .eq("phase_id", phaseId)
+      .order("created_at", { ascending: false });
+    if (!error) setPhasePhotos(data || []);
+  };
+
+  // Fetch comments
+  const fetchComments = async (phaseId: string) => {
+    const { data, error } = await supabase
+      .from("phase_comments")
+      .select(`id, comment, created_at, updated_at, user_id, profiles!user_id(id, full_name)`)
+      .eq("phase_id", phaseId)
+      .order("created_at", { ascending: true });
+
+    if (!error && data) {
+      setComments(
+        data.map((c: any) => ({
+          id: c.id,
+          phase_id: phaseId,
+          user_id: c.user_id,
+          user_name: c.profiles?.full_name || "Unknown",
+          comment: c.comment,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+        }))
+      );
+    }
+  };
+
+  const addComment = async () => {
+    if (!newComment.trim() || !user || !viewPhase) return;
+    await supabase.from("phase_comments").insert([
+      { phase_id: viewPhase.id, user_id: user.id, comment: newComment.trim() },
+    ]);
+    setNewComment("");
+    fetchComments(viewPhase.id);
+  };
+
+  const updateComment = async (id: string, text: string) => {
+    await supabase.from("phase_comments").update({ comment: text }).eq("id", id);
+    if (viewPhase) fetchComments(viewPhase.id);
+  };
+
+  const removeComment = async (id: string) => {
+    await supabase.from("phase_comments").delete().eq("id", id);
+    if (viewPhase) fetchComments(viewPhase.id);
   };
 
   return (
@@ -300,249 +255,289 @@ export function Phases() {
         )}
 
         {/* Phase List */}
-        <div className="space-y-8">
+        <div className="space-y-4">
           {phases.map((phase) => (
-            <div key={phase.id} className="border rounded-lg p-4 shadow-sm">
-              <div className="flex items-center mb-2">
-                <button
-                  onClick={() => togglePhaseImages(phase.id)}
-                  className="bg-green-600 text-white p-2 rounded mr-4"
-                >
-                  {showPhaseImages[phase.id] ? "Hide Images" : "View Phase Images"}
-                </button>
-                <div className="flex-1">
-                  <h2 className="text-lg font-semibold">
-                    {phase.name} <span className="text-gray-500 text-sm">({phase.project_name})</span>
-                  </h2>
-                  <p className="text-sm text-gray-700">
-                    {phase.start_date} → {phase.end_date} |{" "}
-                    <span className="font-medium">{phase.status}</span>
-                  </p>
-                </div>
-                {canManage && (
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => editPhase(phase)}
-                      className="text-blue-600"
-                    >
-                      <Edit2 className="w-5 h-5" />
-                    </button>
-                    <button
-                      onClick={() => deletePhase(phase.id)}
-                      className="text-red-600"
-                    >
-                      <Trash2 className="w-5 h-5" />
-                    </button>
-                  </div>
-                )}
+            <div
+              key={phase.id}
+              className="border rounded-lg p-4 shadow-sm flex justify-between items-center"
+            >
+              <div>
+                <h2 className="text-lg font-semibold">{phase.name}</h2>
+                <p className="text-sm text-gray-600">
+                  {phase.start_date} → {phase.end_date} | {phase.status}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {getBudgetUsage(phase)}% budget used
+                </p>
               </div>
-
-              {/* Photos + Comments */}
-              {showPhaseImages[phase.id] && phase.photos && phase.photos.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                  {phase.photos.map((url, i) => (
-                    <div key={i} className="border rounded-lg p-2">
-                      <img
-                        src={url}
-                        alt="phase"
-                        className="w-full h-48 object-cover rounded-lg cursor-pointer"
-                        onClick={() => setFullScreenImage(url)}
-                      />
-
-                      <div className="mt-2">
-                        <h3 className="font-semibold flex items-center gap-1">
-                          <MessageSquare className="w-4 h-4" /> Comments
-                        </h3>
-                        <div className="space-y-1 max-h-32 overflow-y-auto text-sm text-gray-700">
-                          {(comments[url] || []).map((c) => (
-                            <div
-                              key={c.id}
-                              className="border-b pb-1 flex justify-between items-center"
-                            >
-                              <div className="flex-1">
-                                <span className="font-semibold">
-                                  {c.full_name || "Unknown"}:
-                                </span>{" "}
-                                {editingComment[c.id] !== undefined ? (
-                                  <input
-                                    type="text"
-                                    value={editingComment[c.id]}
-                                    onChange={(e) =>
-                                      setEditingComment((prev) => ({
-                                        ...prev,
-                                        [c.id]: e.target.value,
-                                      }))
-                                    }
-                                    className="border rounded p-1 w-full text-sm"
-                                  />
-                                ) : (
-                                  c.comment
-                                )}
-                              </div>
-                              {user?.id === c.user_id && (
-                                <div className="flex gap-1 ml-2">
-                                  {editingComment[c.id] !== undefined ? (
-                                    <button
-                                      onClick={() => updateComment(c.id, url)}
-                                      className="text-green-600"
-                                    >
-                                      <Check className="w-4 h-4" />
-                                    </button>
-                                  ) : (
-                                    <button
-                                      onClick={() =>
-                                        setEditingComment((prev) => ({
-                                          ...prev,
-                                          [c.id]: c.comment,
-                                        }))
-                                      }
-                                      className="text-blue-600"
-                                    >
-                                      <Edit2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                  <button
-                                    onClick={() => deleteComment(c.id, url)}
-                                    className="text-red-600"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        {user && (
-                          <div className="flex mt-2 gap-2">
-                            <input
-                              type="text"
-                              placeholder="Add a comment..."
-                              value={newComment[url] || ""}
-                              onChange={(e) =>
-                                setNewComment((prev) => ({
-                                  ...prev,
-                                  [url]: e.target.value,
-                                }))
-                              }
-                              className="border rounded p-1 flex-1"
-                            />
-                            <button
-                              onClick={() => addComment(url)}
-                              className="px-2 bg-blue-600 text-white rounded"
-                            >
-                              Post
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setViewPhase(phase);
+                    fetchPhasePhotos(phase.id);
+                    fetchComments(phase.id);
+                  }}
+                  className="bg-green-600 text-white px-3 py-1 rounded"
+                >
+                  View Phase Details
+                </button>
+              </div>
             </div>
           ))}
         </div>
 
-        {/* Create Phase Modal */}
-        {canManage && showModal && (
+        {/* Create/Edit Modal */}
+        {showModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg w-full max-w-md">
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Select Project</label>
-                <select
-                  className="border p-2 rounded w-full"
-                  value={form.project_id}
-                  onChange={(e) => setForm({ ...form, project_id: e.target.value })}
-                >
-                  <option value="">Select Project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Phase Name</label>
-                <input
-                  type="text"
-                  className="border p-2 rounded w-full"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Phase Name"
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Start Date</label>
-                <input
-                  type="date"
-                  className="border p-2 rounded w-full"
-                  value={form.start_date}
-                  onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">End Date</label>
-                <input
-                  type="date"
-                  className="border p-2 rounded w-full"
-                  value={form.end_date}
-                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Status</label>
-                <select
-                  className="border p-2 rounded w-full"
-                  value={form.status}
-                  onChange={(e) =>
-                    setForm({ ...form, status: e.target.value as Phase["status"] })
-                  }
-                >
-                  <option>Not Started</option>
-                  <option>In Progress</option>
-                  <option>Completed</option>
-                </select>
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-1">Choose Files</label>
-                <input
-                  type="file"
-                  multiple
-                  onChange={(e) => setPhotos(e.target.files)}
-                  className="border p-2 rounded w-full"
-                />
-                <span className="text-sm text-gray-500">No file chosen</span>
-              </div>
+            <div className="bg-white p-6 rounded-lg w-full max-w-md z-50">
+              <h2 className="text-xl font-semibold mb-4">
+                {editingPhase ? "Edit Phase" : "Create New Phase"}
+              </h2>
+
+              <label className="block text-sm mb-1">Project</label>
+              <select
+                className="border p-2 rounded w-full mb-3"
+                value={form.project_id}
+                onChange={(e) => setForm({ ...form, project_id: e.target.value })}
+              >
+                <option value="">Select Project</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+
+              <input
+                type="text"
+                placeholder="Phase Name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                className="border p-2 rounded w-full mb-3"
+              />
+
+              <input
+                type="date"
+                value={form.start_date}
+                onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                className="border p-2 rounded w-full mb-3"
+              />
+
+              <input
+                type="date"
+                value={form.end_date}
+                onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                className="border p-2 rounded w-full mb-3"
+              />
+
+              <select
+                value={form.status}
+                onChange={(e) =>
+                  setForm({ ...form, status: e.target.value as Phase["status"] })
+                }
+                className="border p-2 rounded w-full mb-3"
+              >
+                <option>Not Started</option>
+                <option>In Progress</option>
+                <option>Completed</option>
+              </select>
+
+              <input
+                type="number"
+                placeholder="Estimated Cost (₹)"
+                value={form.estimated_cost}
+                onChange={(e) => setForm({ ...form, estimated_cost: e.target.value })}
+                className="border p-2 rounded w-full mb-3"
+              />
+
+              <input
+                type="text"
+                placeholder="Contractor Name"
+                value={form.contractor_name}
+                onChange={(e) => setForm({ ...form, contractor_name: e.target.value })}
+                className="border p-2 rounded w-full mb-3"
+              />
+
               <div className="flex justify-end gap-2">
                 <button
-                  onClick={() => {
-                    setShowModal(false);
-                    setForm({
-                      project_id: "",
-                      name: "",
-                      start_date: "",
-                      end_date: "",
-                      status: "Not Started",
-                    });
-                    setPhotos(null);
-                  }}
-                  className="bg-gray-500 text-white p-2 rounded"
+                  onClick={() => setShowModal(false)}
+                  className="bg-gray-500 text-white px-3 py-1 rounded"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={savePhase}
-                  className="bg-blue-600 text-white p-2 rounded"
+                  className="bg-blue-600 text-white px-3 py-1 rounded"
                 >
-                  {editingPhase ? "Update Phase" : "Add Phase"}
+                  Save Phase
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Fullscreen Image Modal */}
+        {/* View Phase Details Modal */}
+        {viewPhase && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+            <div className="bg-white p-6 rounded-lg w-full max-w-2xl overflow-y-auto max-h-[90vh] z-40">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold">{viewPhase.name}</h2>
+                <button onClick={() => setViewPhase(null)}>
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <p>
+                <strong>Project:</strong> {viewPhase.project_name}
+              </p>
+              <p>
+                <strong>Start Date:</strong> {viewPhase.start_date}
+              </p>
+              <p>
+                <strong>End Date:</strong> {viewPhase.end_date}
+              </p>
+              <p>
+                <strong>Status:</strong> {viewPhase.status}
+              </p>
+              <p>
+                <strong>Estimated Cost:</strong> ₹
+                {viewPhase.estimated_cost?.toLocaleString()}
+              </p>
+              <p>
+                <strong>Contractor:</strong> {viewPhase.contractor_name}
+              </p>
+
+              <div className="my-3">
+                <div className="w-full bg-gray-200 rounded h-2">
+                  <div
+                    className="bg-green-600 h-2 rounded"
+                    style={{ width: `${getBudgetUsage(viewPhase)}%` }}
+                  />
+                </div>
+                <p>{getBudgetUsage(viewPhase)}% of budget used</p>
+              </div>
+
+              {/* Expenses */}
+              <h3 className="font-semibold mt-4">Expenses</h3>
+              <table className="w-full border mt-2">
+                <thead>
+                  <tr className="bg-gray-100">
+                    <th className="p-2 border">Category</th>
+                    <th className="p-2 border">Amount</th>
+                    <th className="p-2 border">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenses[viewPhase.id]?.map((e) => (
+                    <tr key={e.id}>
+                      <td className="p-2 border">{e.category}</td>
+                      <td className="p-2 border">₹{e.amount.toLocaleString()}</td>
+                      <td className="p-2 border">{e.date}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Photos */}
+              <h3 className="font-semibold mt-6">Phase Photos</h3>
+              {canManage && (
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="file"
+                    onChange={async (e) => {
+                      if (!e.target.files || !user) return;
+                      const file = e.target.files[0];
+                      const compressed = await imageCompression(file, { maxSizeMB: 1 });
+                      const filePath = `phase-photos/${viewPhase.id}/${Date.now()}-${file.name}`;
+                      const { error } = await supabase.storage
+                        .from("phase-photos")
+                        .upload(filePath, compressed);
+                      if (error) return alert(error.message);
+                      const { data } = supabase.storage.from("phase-photos").getPublicUrl(filePath);
+                      await supabase.from("phase_photos").insert([
+                        { phase_id: viewPhase.id, project_id: viewPhase.project_id, uploaded_by: user.id, photo_url: data.publicUrl }
+                      ]);
+                      fetchPhasePhotos(viewPhase.id);
+                    }}
+                  />
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4 mt-4">
+                {phasePhotos.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded shadow p-2 bg-white cursor-pointer"
+                    onClick={() => setFullScreenImage(p.photo_url)}
+                  >
+                    <img
+                      src={p.photo_url}
+                      alt="Phase"
+                      className="w-full h-40 object-cover rounded"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Comments */}
+              <h3 className="font-semibold mt-6">Comments</h3>
+              <div className="space-y-2 mt-2">
+                {comments.map((c) => (
+                  <div key={c.id} className="border p-2 rounded flex justify-between items-center">
+                    <div>
+                      <strong>{c.user_name}:</strong>{" "}
+                      <input
+                        type="text"
+                        value={c.comment}
+                        onChange={(e) => updateComment(c.id, e.target.value)}
+                        className="border p-1 rounded w-full"
+                      />
+                    </div>
+                    {user?.id === c.user_id && (
+                      <button
+                        onClick={() => removeComment(c.id)}
+                        className="text-red-600 ml-2"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {canManage && (
+                  <div className="flex gap-2 mt-2">
+                    <input
+                      type="text"
+                      placeholder="Add comment"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      className="border p-2 rounded w-full"
+                    />
+                    <button
+                      onClick={addComment}
+                      className="bg-blue-600 text-white px-3 py-1 rounded"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Edit & Delete Phase buttons */}
+              {canManage && (
+                <div className="flex gap-2 mt-6">
+                  <button
+                    onClick={() => editPhase(viewPhase)}
+                    className="bg-blue-600 text-white px-3 py-1 rounded"
+                  >
+                    Edit Phase
+                  </button>
+                  
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Fullscreen Image */}
         {fullScreenImage && (
           <div
             className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50"

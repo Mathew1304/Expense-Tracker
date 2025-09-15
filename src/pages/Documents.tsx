@@ -1,6 +1,6 @@
 // src/pages/Documents.tsx
 import React, { useEffect, useState } from "react";
-import { Search, Download, Eye, Upload } from "lucide-react";
+import { Search, Download, Eye, Upload, X } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext"; // ✅ for user + role
@@ -227,48 +227,63 @@ export function Documents() {
           </button>
         </div>
 
-        {/* Upload Form */}
+        {/* Upload Modal */}
         {showUploadForm && (
-          <div className="mb-6 flex flex-col gap-2 border p-4 rounded bg-gray-50">
-            <input
-              type="file"
-              onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-            />
-            <select
-              className="border px-2 py-1 rounded"
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-            >
-              <option value="">Select Category</option>
-              {constructionCategories.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-            <select
-              className="border px-2 py-1 rounded"
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
-            >
-              <option value="">Select Project</option>
-              {projects.map((proj) => (
-                <option key={proj.id} value={proj.name}>
-                  {proj.name}
-                </option>
-              ))}
-            </select>
-            <button
-              className="bg-green-600 text-white px-4 py-2 rounded"
-              onClick={handleUpload}
-            >
-              Confirm Upload
-            </button>
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
+            <div className="bg-white rounded shadow-lg w-full max-w-md p-6 relative">
+              {/* Header */}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold">Upload Document</h2>
+                <X
+                  className="cursor-pointer"
+                  onClick={() => setShowUploadForm(false)}
+                />
+              </div>
+
+              {/* Form */}
+              <div className="flex flex-col gap-3">
+                <input
+                  type="file"
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  className="border px-2 py-2 rounded"
+                />
+                <select
+                  className="border px-2 py-2 rounded"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="">Select Category</option>
+                  {constructionCategories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="border px-2 py-2 rounded"
+                  value={project}
+                  onChange={(e) => setProject(e.target.value)}
+                >
+                  <option value="">Select Project</option>
+                  {projects.map((proj) => (
+                    <option key={proj.id} value={proj.name}>
+                      {proj.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  className="bg-green-600 text-white px-4 py-2 rounded mt-2"
+                  onClick={handleUpload}
+                >
+                  Confirm Upload
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
         {/* Documents Table */}
-        <table className="w-full border">
+        <table className="w-full border mt-6">
           <thead>
             <tr className="bg-gray-100 text-left">
               <th className="p-2 border">Name</th>

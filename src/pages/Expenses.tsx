@@ -13,6 +13,8 @@ interface Expense {
   date: string;
   phase_name: string;
   project_name: string;
+  payment_method: string;
+  bill_path: string | null;
 }
 
 interface Phase {
@@ -27,8 +29,27 @@ interface Project {
   name: string;
 }
 
+const CATEGORY_OPTIONS = [
+  "Labour",
+  "Materials",
+  "Machinery",
+  "Vendor Payment",
+  "Consultancy Fees",
+  "Government Fees",
+  "Electrical",
+  "Plumbing",
+  "Painting",
+  "Tiles & Flooring",
+  "Carpentry & Woodwork",
+  "Site Expenses",
+  "Transport",
+  "Miscellaneous",
+];
+
+const PAYMENT_OPTIONS = ["Cash", "UPI", "Card", "Bank Transfer", "Cheque"];
+
 export function Expenses() {
-  const { user } = useAuth(); // ✅ current logged-in admin
+  const { user } = useAuth();
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -39,13 +60,14 @@ export function Expenses() {
   const [formData, setFormData] = useState({
     projectId: "",
     phaseId: "",
-    category: "Labour",
+    category: "",
     amount: "",
+    paymentMethod: "",
     date: "",
+    billFile: null as File | null,
   });
-  const [sortConfig, setSortConfig] = useState<{ key: keyof Expense; direction: "asc" | "desc" } | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -63,11 +85,9 @@ export function Expenses() {
     const { data, error } = await supabase
       .from("projects")
       .select("id, name")
-      .eq("created_by", user?.id); // ✅ only this admin's projects
+      .eq("created_by", user?.id);
 
-    if (!error && data) {
-      setProjects(data);
-    }
+    if (!error && data) setProjects(data);
   }
 
   async function fetchPhases() {
@@ -100,13 +120,13 @@ export function Expenses() {
     const { data, error } = await supabase
       .from("expenses")
       .select(
-        `id, phase_id, category, amount, date,
+        `id, phase_id, category, amount, date, payment_method, bill_path,
         phases (id, name, project_id, projects (id, name))`
       )
       .in(
         "project_id",
         projects.map((p) => p.id)
-      ) // ✅ only admin's projects
+      )
       .order("date", { ascending: false });
 
     if (!error && data) {
@@ -117,6 +137,8 @@ export function Expenses() {
           category: e.category,
           amount: e.amount,
           date: e.date,
+          payment_method: e.payment_method,
+          bill_path: e.bill_path,
           phase_name: e.phases?.name || "No Phase",
           project_name: e.phases?.projects?.name || "No Project",
         }))
@@ -125,27 +147,47 @@ export function Expenses() {
     setLoading(false);
   }
 
-  const filteredPhases = phases.filter((p) => !formData.projectId || p.project_id === formData.projectId);
+  const filteredPhases = phases.filter(
+    (p) => !formData.projectId || p.project_id === formData.projectId
+  );
 
-  const handleChange = (field: keyof typeof formData, value: string) => {
+  const handleChange = (field: keyof typeof formData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { projectId, phaseId, category, amount, date } = formData;
+    const { projectId, phaseId, category, amount, paymentMethod, date, billFile } = formData;
 
-    if (!phaseId || !projectId) {
-      alert("Please select a project and phase.");
+    if (!phaseId || !projectId || !category || !paymentMethod) {
+      alert("Please fill all required fields.");
       return;
     }
 
+    let bill_path = null;
+
+    if (billFile) {
+      const fileName = `${Date.now()}-${billFile.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("bills")
+        .upload(fileName, billFile);
+
+      if (uploadError) {
+        console.error("Error uploading file:", uploadError);
+        alert("Failed to upload bill.");
+        return;
+      }
+      bill_path = fileName;
+    }
+
     const payload = {
-      project_id: projectId, // ✅ link expense to project
+      project_id: projectId,
       phase_id: phaseId,
       category,
       amount: parseFloat(amount),
       date,
+      payment_method: paymentMethod,
+      bill_path,
     };
 
     const { error } = editingId
@@ -159,18 +201,29 @@ export function Expenses() {
       fetchExpenses();
       setShowForm(false);
       setEditingId(null);
-      setFormData({ projectId: "", phaseId: "", category: "Labour", amount: "", date: "" });
+      setFormData({
+        projectId: "",
+        phaseId: "",
+        category: "",
+        amount: "",
+        paymentMethod: "",
+        date: "",
+        billFile: null,
+      });
     }
   };
 
   const handleEdit = (expense: Expense) => {
-    const project = phases.find((p) => p.id === expense.phase_id)?.project_id || "";
+    const project =
+      phases.find((p) => p.id === expense.phase_id)?.project_id || "";
     setFormData({
       projectId: project,
       phaseId: expense.phase_id,
       category: expense.category,
       amount: expense.amount.toString(),
+      paymentMethod: expense.payment_method,
       date: expense.date,
+      billFile: null,
     });
     setEditingId(expense.id);
     setShowForm(true);
@@ -184,25 +237,18 @@ export function Expenses() {
   };
 
   const filteredExpenses = expenses.filter((e) => {
-    const matchesProject = !selectedProject || e.project_name === selectedProject;
+    const matchesProject =
+      !selectedProject || e.project_name === selectedProject;
     const matchesSearch =
       !search ||
       e.project_name.toLowerCase().includes(search.toLowerCase()) ||
       e.phase_name.toLowerCase().includes(search.toLowerCase()) ||
-      e.category.toLowerCase().includes(search.toLowerCase());
+      e.category.toLowerCase().includes(search.toLowerCase()) ||
+      e.payment_method.toLowerCase().includes(search.toLowerCase());
     return matchesProject && matchesSearch;
   });
 
-  const sortedExpenses = [...filteredExpenses].sort((a, b) => {
-    if (!sortConfig) return 0;
-    const aValue = a[sortConfig.key];
-    const bValue = b[sortConfig.key];
-    if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
-    if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
-    return 0;
-  });
-
-  const currentExpenses = sortedExpenses.slice(
+  const currentExpenses = filteredExpenses.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
@@ -250,7 +296,9 @@ export function Expenses() {
               </option>
             ))}
           </select>
-          <div className="text-lg font-semibold">Total: ₹{totalExpenses.toFixed(2)}</div>
+          <div className="text-lg font-semibold">
+            Total: ₹{totalExpenses.toFixed(2)}
+          </div>
         </div>
 
         {/* Expenses Table */}
@@ -264,6 +312,8 @@ export function Expenses() {
                 <th className="p-2 border">Phase</th>
                 <th className="p-2 border">Category</th>
                 <th className="p-2 border">Amount</th>
+                <th className="p-2 border">Payment Method</th>
+                <th className="p-2 border">Bill</th>
                 <th className="p-2 border">Date</th>
                 <th className="p-2 border">Actions</th>
               </tr>
@@ -275,7 +325,24 @@ export function Expenses() {
                   <td className="p-2 border">{e.phase_name}</td>
                   <td className="p-2 border">{e.category}</td>
                   <td className="p-2 border">₹{e.amount.toFixed(2)}</td>
-                  <td className="p-2 border">{format(new Date(e.date), "yyyy-MM-dd")}</td>
+                  <td className="p-2 border">{e.payment_method}</td>
+                  <td className="p-2 border">
+                    {e.bill_path ? (
+                      <a
+                        href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${e.bill_path}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 underline"
+                      >
+                        View Bill
+                      </a>
+                    ) : (
+                      "No Bill"
+                    )}
+                  </td>
+                  <td className="p-2 border">
+                    {format(new Date(e.date), "yyyy-MM-dd")}
+                  </td>
                   <td className="p-2 border flex gap-2">
                     <button onClick={() => handleEdit(e)}>
                       <Edit2 size={18} />
@@ -288,7 +355,7 @@ export function Expenses() {
               ))}
               {currentExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="p-2 border text-center">
+                  <td colSpan={8} className="p-2 border text-center">
                     No expenses found.
                   </td>
                 </tr>
@@ -299,10 +366,15 @@ export function Expenses() {
 
         {/* Pagination */}
         <div className="mt-4 flex justify-center gap-4">
-          <button onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))} disabled={currentPage === 1}>
+          <button
+            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+            disabled={currentPage === 1}
+          >
             Previous
           </button>
-          <span>Page {currentPage} of {totalPages}</span>
+          <span>
+            Page {currentPage} of {totalPages}
+          </span>
           <button
             onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
             disabled={currentPage === totalPages}
@@ -316,14 +388,16 @@ export function Expenses() {
           <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
             <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">{editingId ? "Edit Expense" : "Add Expense"}</h2>
+                <h2 className="text-xl font-bold">
+                  {editingId ? "Edit Expense" : "Add Expense"}
+                </h2>
                 <button onClick={() => setShowForm(false)}>
                   <X size={20} />
                 </button>
               </div>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                  <label className="block font-medium">Project</label>
+                  <label className="block font-medium">Select Project</label>
                   <select
                     className="border p-2 rounded w-full"
                     value={formData.projectId}
@@ -339,7 +413,7 @@ export function Expenses() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-medium">Phase</label>
+                  <label className="block font-medium">Select Phase</label>
                   <select
                     className="border p-2 rounded w-full"
                     value={formData.phaseId}
@@ -360,12 +434,14 @@ export function Expenses() {
                     className="border p-2 rounded w-full"
                     value={formData.category}
                     onChange={(e) => handleChange("category", e.target.value)}
+                    required
                   >
-                    <option>Labour</option>
-                    <option>Materials</option>
-                    <option>Equipment</option>
-                    <option>Transport</option>
-                    <option>Misc</option>
+                    <option value="">Select Category</option>
+                    {CATEGORY_OPTIONS.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div>
@@ -380,6 +456,24 @@ export function Expenses() {
                   />
                 </div>
                 <div>
+                  <label className="block font-medium">Payment Method</label>
+                  <select
+                    className="border p-2 rounded w-full"
+                    value={formData.paymentMethod}
+                    onChange={(e) =>
+                      handleChange("paymentMethod", e.target.value)
+                    }
+                    required
+                  >
+                    <option value="">Select Payment Method</option>
+                    {PAYMENT_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
                   <label className="block font-medium">Date</label>
                   <input
                     type="date"
@@ -388,9 +482,25 @@ export function Expenses() {
                     onChange={(e) => handleChange("date", e.target.value)}
                   />
                 </div>
+                <div>
+                  <label className="block font-medium">Attach Bill</label>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    onChange={(e) =>
+                      handleChange(
+                        "billFile",
+                        e.target.files ? e.target.files[0] : null
+                      )
+                    }
+                  />
+                </div>
                 <div className="flex justify-end">
-                  <button type="submit" className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
-                    {editingId ? "Update" : "Save"}
+                  <button
+                    type="submit"
+                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                  >
+                    {editingId ? "Update" : "Save Expense"}
                   </button>
                 </div>
               </form>
