@@ -14,19 +14,22 @@ import {
   IndianRupee,
   Layers,
   ShieldCheck,
-  Hammer, // ✅ new icon for Renovations
+  Hammer,
 } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
-export function Sidebar() {
+interface SidebarProps {
+  theme: string;
+}
+
+export function Sidebar({ theme }: SidebarProps) {
   const location = useLocation();
   const { userRole } = useAuth();
 
-  // Define menu items with allowedRoles
   const navigationItems = [
     {
       name: "Dashboard",
-      href: "/",
+      href: "/dashboard",
       icon: Home,
       allowedRoles: ["Admin", "Accounts", "Project Manager", "Site Engineer", "Client"],
     },
@@ -66,7 +69,6 @@ export function Sidebar() {
       icon: Archive,
       allowedRoles: ["Admin", "Accounts", "Project Manager", "Site Engineer"],
     },
-
     {
       name: "Profile",
       href: "/profile",
@@ -86,22 +88,27 @@ export function Sidebar() {
       allowedRoles: ["Admin"],
     },
     {
-      name: "Super Admin", // ✅ Super Admin menu item
+      name: "Super Admin",
       href: "/super-admin",
       icon: ShieldCheck,
       allowedRoles: ["super_admin"],
     },
   ];
 
-  // Filter items based on userRole
   const filteredItems = navigationItems.filter((item) =>
     item.allowedRoles.includes(userRole ?? "")
   );
 
   return (
-    <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30">
+    <aside
+      className={`w-64 fixed left-0 top-0 h-full z-30 shadow-lg border-r transition-colors ${
+        theme === "dark" ? "bg-gray-900 border-gray-700" : "bg-white border-gray-200"
+      }`}
+    >
       <div className="p-6">
-        <h2 className="text-xl font-bold text-gray-800">Build my Homes</h2>
+        <h2 className={`text-xl font-bold mb-4 ${theme === "dark" ? "text-white" : "text-gray-800"}`}>
+          Build my Homes
+        </h2>
       </div>
 
       <nav className="px-4">
@@ -116,7 +123,11 @@ export function Sidebar() {
                   to={item.href}
                   className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
+                      ? theme === "dark"
+                        ? "bg-gray-800 text-white border-r-2 border-purple-500"
+                        : "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
+                      : theme === "dark"
+                      ? "text-gray-300 hover:bg-gray-800 hover:text-white"
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   }`}
                 >

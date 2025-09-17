@@ -117,7 +117,7 @@ export function LoginForm() {
             ? `Welcome, ${user.user_metadata?.full_name || user.email}`
             : isSignUp
             ? 'Create Your Account'
-            : 'Sign In to ConstructPro'}
+            : 'Sign In to Build my Homes'}
         </h2>
 
         <AnimatePresence>
