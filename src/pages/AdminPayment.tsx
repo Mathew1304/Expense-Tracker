@@ -59,12 +59,9 @@ export const AdminPayment = () => {
 
   const initiatePayment = async (paymentMethod: string, params: any = {}) => {
     try {
-      // Assume backend endpoint to create Razorpay order
       const response = await fetch("/api/create-order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           amount,
           currency: "INR",
@@ -85,34 +82,19 @@ export const AdminPayment = () => {
         name: "Your Company Name",
         description: `Payment for ${planName} Plan`,
         order_id: order.id,
-        handler: async (response: any) => {
-          handlePaymentSuccess();
-        },
+        handler: async () => handlePaymentSuccess(),
         prefill: {
           name: user?.user_metadata?.full_name || "Test User",
           email: user?.email || "test@example.com",
           contact: user?.phone || "9999999999",
         },
-        theme: {
-          color: "#F37254",
-        },
+        theme: { color: "#F37254" },
         method: paymentMethod,
       };
 
-      if (paymentMethod === "upi" && params.vpa) {
-        // @ts-ignore
-        options.vpa = params.vpa;
-      }
-
-      if (paymentMethod === "wallet" && params.wallet) {
-        // @ts-ignore
-        options.wallet = params.wallet;
-      }
-
-      if (paymentMethod === "netbanking" && params.bank) {
-        // @ts-ignore
-        options.bank = params.bank;
-      }
+      if (paymentMethod === "upi" && params.vpa) options.vpa = params.vpa;
+      if (paymentMethod === "wallet" && params.wallet) options.wallet = params.wallet;
+      if (paymentMethod === "netbanking" && params.bank) options.bank = params.bank;
 
       // @ts-ignore
       const rzp = new window.Razorpay(options);
@@ -153,18 +135,10 @@ export const AdminPayment = () => {
 
           {/* Right Panel */}
           <div className="w-2/3 p-6">
-            {selected === "upi" && (
-              <UPIPayment initiatePayment={initiatePayment} />
-            )}
-            {selected === "card" && (
-              <CardPayment initiatePayment={initiatePayment} />
-            )}
-            {selected === "wallet" && (
-              <WalletPayment initiatePayment={initiatePayment} />
-            )}
-            {selected === "netbanking" && (
-              <NetBankingPayment initiatePayment={initiatePayment} />
-            )}
+            {selected === "upi" && <UPIPayment initiatePayment={initiatePayment} />}
+            {selected === "card" && <CardPayment initiatePayment={initiatePayment} />}
+            {selected === "wallet" && <WalletPayment initiatePayment={initiatePayment} />}
+            {selected === "netbanking" && <NetBankingPayment initiatePayment={initiatePayment} />}
           </div>
         </div>
       </div>
@@ -186,10 +160,7 @@ const UPIPayment = ({ initiatePayment }: { initiatePayment: (method: string, par
         {["Google Pay", "PhonePe", "Paytm"].map((app) => (
           <button
             key={app}
-            onClick={() => {
-              setUpiApp(app);
-              setStep("enterUpi");
-            }}
+            onClick={() => { setUpiApp(app); setStep("enterUpi"); }}
             className="w-full mb-3 p-3 border rounded bg-gray-50 hover:bg-gray-100"
           >
             {app}
@@ -201,9 +172,7 @@ const UPIPayment = ({ initiatePayment }: { initiatePayment: (method: string, par
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-4">
-        Enter UPI ID ({upiApp})
-      </h2>
+      <h2 className="text-lg font-semibold mb-4">Enter UPI ID ({upiApp})</h2>
       <input
         type="text"
         placeholder="example@upi"
@@ -278,30 +247,17 @@ const WalletPayment = ({ initiatePayment }: { initiatePayment: (method: string, 
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
 
   const wallets = [
-    {
-      name: "Paytm Wallet",
-      logo: "../assets/img/Paytm Logo png.jpg", // Placeholder for Paytm logo
-    },
-    {
-      name: "PhonePe Wallet",
-      logo: "../assets/img/Phonepe.jpg", // Placeholder for PhonePe logo
-    },
-    {
-      name: "Amazon Pay",
-      logo: "../assets/img/Amazon.jpg", // Placeholder for Amazon logo
-    },
+    { name: "Paytm Wallet" },
+    { name: "PhonePe Wallet" },
+    { name: "Amazon Pay" },
   ];
 
   const mapWalletToCode = (name: string) => {
     switch (name) {
-      case "Paytm Wallet":
-        return "paytm";
-      case "PhonePe Wallet":
-        return "phonepewallet";
-      case "Amazon Pay":
-        return "amazonpay";
-      default:
-        return "";
+      case "Paytm Wallet": return "paytm";
+      case "PhonePe Wallet": return "phonepewallet";
+      case "Amazon Pay": return "amazonpay";
+      default: return "";
     }
   };
 
@@ -336,7 +292,6 @@ const WalletPayment = ({ initiatePayment }: { initiatePayment: (method: string, 
             onClick={() => setSelectedWallet(w.name)}
             className="cursor-pointer border rounded p-4 flex flex-col items-center hover:shadow-lg transition"
           >
-            <img src={w.logo} alt={w.name} className="h-12 mb-2 object-contain" />
             <span>{w.name}</span>
           </div>
         ))}
@@ -349,36 +304,19 @@ const NetBankingPayment = ({ initiatePayment }: { initiatePayment: (method: stri
   const [selectedBank, setSelectedBank] = useState<string | null>(null);
 
   const banks = [
-    {
-      name: "HDFC Bank",
-      logo: "../assets/img/HDFC BANK LOGO.jpg", // Placeholder for HDFC Bank logo
-    },
-    {
-      name: "ICICI Bank",
-      logo: "../assets/img/Icici Bank Logo.jpg", // Placeholder for ICICI Bank logo
-    },
-    {
-      name: "State Bank of India",
-      logo: "../assets/img/SBI.jpg", // Placeholder for State Bank of India logo
-    },
-    {
-      name: "Axis Bank",
-      logo: "../assets/img/download.jpg", // Placeholder for Axis Bank logo
-    },
+    { name: "HDFC Bank" },
+    { name: "ICICI Bank" },
+    { name: "State Bank of India" },
+    { name: "Axis Bank" },
   ];
 
   const mapBankToCode = (name: string) => {
     switch (name) {
-      case "HDFC Bank":
-        return "HDFC";
-      case "ICICI Bank":
-        return "ICIC";
-      case "State Bank of India":
-        return "SBIN";
-      case "Axis Bank":
-        return "UTIB";
-      default:
-        return "";
+      case "HDFC Bank": return "HDFC";
+      case "ICICI Bank": return "ICIC";
+      case "State Bank of India": return "SBIN";
+      case "Axis Bank": return "UTIB";
+      default: return "";
     }
   };
 
@@ -413,7 +351,6 @@ const NetBankingPayment = ({ initiatePayment }: { initiatePayment: (method: stri
             onClick={() => setSelectedBank(b.name)}
             className="cursor-pointer border rounded p-4 flex flex-col items-center hover:shadow-lg transition"
           >
-            <img src={b.logo} alt={b.name} className="h-12 mb-2 object-contain" />
             <span>{b.name}</span>
           </div>
         ))}
