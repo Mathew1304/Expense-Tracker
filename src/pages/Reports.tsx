@@ -1,3 +1,4 @@
+// src/pages/Reports.tsx
 import React, { useEffect, useState } from "react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
@@ -5,6 +6,7 @@ import { FileText, Download } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
+import * as XLSX from "xlsx";
 import { useAuth } from "../contexts/AuthContext";
 
 const COLORS = ["#4CAF50", "#FF9800", "#F44336", "#2196F3", "#9C27B0"];
@@ -15,6 +17,7 @@ interface Expense {
   amount: number;
   date: string;
   phase_id?: string;
+  phase_name?: string;
   project_id?: string;
 }
 
@@ -25,10 +28,12 @@ interface Material {
   unit_cost: number;
   total_cost: number;
   project_id?: string;
+  phase_id?: string;
+  phase_name?: string;
 }
 
 interface Phase {
-  id: number;
+  id: string;
   name: string;
   start_date: string;
   end_date: string;
@@ -39,6 +44,8 @@ interface Phase {
 interface Project {
   id: string;
   name: string;
+  start_date?: string;
+  end_date?: string;
 }
 
 export function Reports() {
@@ -68,56 +75,40 @@ export function Reports() {
   async function fetchProjects() {
     const { data, error } = await supabase
       .from("projects")
-      .select("id, name")
-      .eq("created_by", user?.id) // Filter for admin-created projects
+      .select("id, name, start_date, end_date, created_by")
+      .eq("created_by", user?.id)
       .order("name");
-    if (error) {
-      console.error("Error fetching projects:", error.message);
-    } else {
-      setProjects(data || []);
-      console.log("Fetched Projects:", data);
-    }
+    if (error) console.error("Error fetching projects:", error.message);
+    setProjects(data || []);
   }
 
   async function fetchProjectData(projectId: string) {
     setLoading(true);
 
-    // Fetch Expenses with left join through phases to include all expenses
-    const { data: expensesData, error } = await supabase
+    const { data: expensesData } = await supabase
       .from("expenses")
-      .select(`
-        id,
-        category,
-        amount,
-        date,
-        phase_id,
-        phases (
-          id,
-          project_id
-        )
-      `)
+      .select(
+        `id, category, amount, date, phase_id, phases (id, name, project_id)`
+      )
       .eq("phases.project_id", projectId)
       .order("date", { ascending: false });
-    if (error) {
-      console.error("Expenses Fetch Error:", error.message);
-    }
-    console.log("Raw Expenses Data:", expensesData);
+
     const formattedExpenses = (expensesData || []).map((e: any) => ({
       id: e.id,
       category: e.category || "Uncategorized",
       amount: e.amount || 0,
       date: e.date || new Date().toISOString().split("T")[0],
       phase_id: e.phase_id,
+      phase_name: e.phases?.name || "Uncategorized",
       project_id: e.phases?.project_id,
     }));
     setExpenses(formattedExpenses);
-    console.log("Formatted Expenses:", formattedExpenses);
 
-    // Fetch Materials
     const { data: materialsData } = await supabase
       .from("materials")
-      .select("id, name, qty_required, unit_cost, project_id")
+      .select("id, name, qty_required, unit_cost, project_id, phase_id, phases (id, name)")
       .eq("project_id", projectId);
+
     const formattedMaterials = (materialsData || []).map((m: any) => ({
       id: m.id,
       name: m.name,
@@ -125,16 +116,16 @@ export function Reports() {
       unit_cost: m.unit_cost || 0,
       total_cost: (m.qty_required || 0) * (m.unit_cost || 0),
       project_id: m.project_id,
+      phase_id: m.phase_id,
+      phase_name: m.phases?.name || "Unassigned",
     }));
     setMaterials(formattedMaterials);
 
-    // Fetch Phases
     const { data: phasesData } = await supabase
       .from("phases")
       .select("id, name, start_date, end_date, status, project_id")
       .eq("project_id", projectId);
     setPhases(phasesData || []);
-    console.log("Fetched Phases:", phasesData);
 
     setLoading(false);
   }
@@ -146,12 +137,7 @@ export function Reports() {
         grouped[e.category] = (grouped[e.category] || 0) + e.amount;
       }
     });
-    const data = Object.entries(grouped).map(([name, value]) => ({
-      name,
-      value,
-    }));
-    console.log("Expense Chart Data:", data);
-    return data;
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
   }
 
   function getMaterialChartData() {
@@ -161,10 +147,7 @@ export function Reports() {
         grouped[m.name] = (grouped[m.name] || 0) + m.total_cost;
       }
     });
-    return Object.entries(grouped).map(([name, value]) => ({
-      name,
-      value,
-    }));
+    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
   }
 
   function generateSummary() {
@@ -177,85 +160,170 @@ export function Reports() {
     const completedPhases = phases.filter((p) => p.status === "Completed").length;
     const totalPhases = phases.length;
 
-    return `Summary as of ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}:
-- Total Expenses: ₹${totalExpenses.toFixed(2)}
-- Total Materials Cost: ₹${totalMaterials.toFixed(2)}
-- Phases: ${completedPhases} completed out of ${totalPhases} (${((completedPhases / totalPhases) * 100 || 0).toFixed(0)}%)
-- Note: Ensure budget aligns with current expense and material trends.`;
+    return {
+      totalExpenses,
+      totalMaterials,
+      completedPhases,
+      totalPhases,
+      percentage:
+        totalPhases > 0 ? ((completedPhases / totalPhases) * 100).toFixed(0) : "0",
+    };
   }
 
-  function downloadPDF() {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width - 28;
-    let y = 20;
+  // -------------------- PDF EXPORT --------------------
+  async function downloadPDF() {
+    const doc = new jsPDF("p", "pt", "a4");
+    const pageWidth = doc.internal.pageSize.getWidth();
 
-    doc.setFontSize(18);
-    doc.text(
-      `Report for ${projects.find((p) => p.id === viewingProjectId)?.name || "Selected Project"}`,
-      14,
-      y
-    );
-    y += 10;
+    const project = projects.find((p) => p.id === viewingProjectId);
+    const projectName = project?.name || "Project";
 
+    // ✅ Page 1: Project Summary
+    doc.setFontSize(20);
+    doc.text("Construction Project Report", pageWidth / 2, 40, { align: "center" });
     doc.setFontSize(12);
-    doc.text("Generated on: September 10, 2025, 08:33 PM IST", 14, y);
-    y += 15;
+    doc.text(`Project Name: ${projectName}`, 40, 80);
+    doc.text(`Start Date: ${project?.start_date || "-"}`, 40, 100);
+    doc.text(`End Date: ${project?.end_date || "-"}`, 40, 120);
+    doc.text(`Report Date: ${new Date().toLocaleDateString("en-IN")}`, 40, 140);
+    doc.text(`Prepared By: ${user?.email || "System"}`, 40, 160);
 
-    // Summary
+    const summary = generateSummary();
     doc.setFontSize(14);
-    doc.text("Summary", 14, y);
-    y += 10;
-    const summaryLines = doc.splitTextToSize(generateSummary(), pageWidth);
+    doc.text("Summary", 40, 200);
     doc.setFontSize(11);
-    doc.text(summaryLines, 14, y);
-    y += summaryLines.length * 7 + 10;
-
-    // Expenses Pie Chart (Text Representation)
-    doc.setFontSize(14);
-    doc.text("Expenses Breakdown", 14, y);
-    y += 10;
-    doc.autoTable({
-      startY: y,
-      head: [["Category", "Amount"]],
-      body: getExpenseChartData().map((e) => [e.name, `₹${e.value.toFixed(2)}`]),
-      theme: "grid",
-      styles: { fontSize: 10 },
-      margin: { left: 14, right: 14 },
-    });
-    y = doc.autoTable.previous.finalY + 15;
-
-    // Materials Pie Chart (Text Representation)
-    doc.setFontSize(14);
-    doc.text("Materials Breakdown", 14, y);
-    y += 10;
-    doc.autoTable({
-      startY: y,
-      head: [["Material", "Total Cost"]],
-      body: getMaterialChartData().map((m) => [m.name, `₹${m.value.toFixed(2)}`]),
-      theme: "grid",
-      styles: { fontSize: 10 },
-      margin: { left: 14, right: 14 },
-    });
-    y = doc.autoTable.previous.finalY + 15;
-
-    // Expenses Table
-    doc.setFontSize(14);
-    doc.text("Expenses Details", 14, y);
-    y += 10;
-    doc.autoTable({
-      startY: y,
-      head: [["Category", "Amount", "Date"]],
-      body: expenses
-        .filter((e) => e.project_id === viewingProjectId)
-        .map((e) => [e.category, e.amount.toFixed(2), e.date]),
-      theme: "grid",
-      styles: { fontSize: 10 },
-      margin: { left: 14, right: 14 },
-    });
-
-    doc.save(
-      `report_${projects.find((p) => p.id === viewingProjectId)?.name || "project"}.pdf`
+    doc.text(
+      [
+        `Total Expenses: ₹${summary.totalExpenses.toFixed(2)}`,
+        `Total Materials: ₹${summary.totalMaterials.toFixed(2)}`,
+        `Phases Completed: ${summary.completedPhases}/${summary.totalPhases} (${summary.percentage}%)`,
+      ],
+      40,
+      220
     );
+
+    // ✅ Page 2: Phases
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text("Phases Overview", 40, 40);
+    (doc as any).autoTable({
+      startY: 60,
+      head: [["Phase", "Start Date", "End Date", "Status", "Progress %"]],
+      body: phases.map((p) => [
+        p.name,
+        p.start_date,
+        p.end_date,
+        p.status,
+        p.status === "Completed" ? "100%" : "0%",
+      ]),
+    });
+
+    // ✅ Page 3: Expenses
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text("Expenses (Phase-wise)", 40, 40);
+    phases.forEach((phase) => {
+      const phaseExpenses = expenses.filter((e) => e.phase_id === phase.id);
+      if (phaseExpenses.length > 0) {
+        (doc as any).autoTable({
+          startY: (doc as any).lastAutoTable?.finalY + 20 || 60,
+          head: [[`Phase: ${phase.name}`, "", ""]],
+          body: [],
+        });
+        (doc as any).autoTable({
+          startY: (doc as any).lastAutoTable.finalY + 10,
+          head: [["Category", "Amount (₹)", "Date"]],
+          body: phaseExpenses.map((e) => [e.category, e.amount.toFixed(2), e.date]),
+        });
+      }
+    });
+
+    // ✅ Page 4: Materials
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text("Materials (Phase-wise)", 40, 40);
+    phases.forEach((phase) => {
+      const phaseMaterials = materials.filter((m) => m.phase_id === phase.id);
+      if (phaseMaterials.length > 0) {
+        (doc as any).autoTable({
+          startY: (doc as any).lastAutoTable?.finalY + 20 || 60,
+          head: [[`Phase: ${phase.name}`, "", "", ""]],
+          body: [],
+        });
+        (doc as any).autoTable({
+          startY: (doc as any).lastAutoTable.finalY + 10,
+          head: [["Material", "Qty", "Unit Cost (₹)", "Total (₹)"]],
+          body: phaseMaterials.map((m) => [
+            m.name,
+            m.qty_required,
+            m.unit_cost.toFixed(2),
+            m.total_cost.toFixed(2),
+          ]),
+        });
+      }
+    });
+
+    doc.save(`report_${projectName}.pdf`);
+  }
+
+  // -------------------- EXCEL EXPORT --------------------
+  function downloadExcel() {
+    const project = projects.find((p) => p.id === viewingProjectId);
+    const projectName = project?.name || "Project";
+    const summary = generateSummary();
+    const wb = XLSX.utils.book_new();
+
+    // ✅ Summary
+    const summarySheet = XLSX.utils.aoa_to_sheet([
+      ["Project Summary"],
+      ["Project Name", projectName],
+      ["Start Date", project?.start_date || "-"],
+      ["End Date", project?.end_date || "-"],
+      ["Total Expenses", summary.totalExpenses],
+      ["Total Materials", summary.totalMaterials],
+      [
+        "Phases Progress",
+        `${summary.completedPhases}/${summary.totalPhases} (${summary.percentage}%)`,
+      ],
+    ]);
+    XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+
+    // ✅ Phases
+    const phaseSheet = XLSX.utils.json_to_sheet(
+      phases.map((p) => ({
+        Phase: p.name,
+        Status: p.status,
+        Start_Date: p.start_date,
+        End_Date: p.end_date,
+        Progress: p.status === "Completed" ? "100%" : "0%",
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, phaseSheet, "Phases");
+
+    // ✅ Expenses
+    const expenseSheet = XLSX.utils.json_to_sheet(
+      expenses.map((e) => ({
+        Phase: e.phase_name,
+        Category: e.category,
+        Amount: e.amount,
+        Date: e.date,
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, expenseSheet, "Expenses");
+
+    // ✅ Materials
+    const materialSheet = XLSX.utils.json_to_sheet(
+      materials.map((m) => ({
+        Phase: m.phase_name,
+        Material: m.name,
+        Quantity: m.qty_required,
+        Unit_Cost: m.unit_cost,
+        Total_Cost: m.total_cost,
+      }))
+    );
+    XLSX.utils.book_append_sheet(wb, materialSheet, "Materials");
+
+    XLSX.writeFile(wb, `report_${projectName}.xlsx`);
   }
 
   const expenseChartData = getExpenseChartData();
@@ -264,11 +332,9 @@ export function Reports() {
   return (
     <Layout>
       <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText className="w-6 h-6" /> Reports
-          </h1>
-        </div>
+        <h1 className="text-2xl font-bold flex items-center gap-2 mb-6">
+          <FileText className="w-6 h-6" /> Reports
+        </h1>
 
         {projects.length === 0 ? (
           <p>No projects found.</p>
@@ -285,7 +351,7 @@ export function Reports() {
                     <span>{project.name}</span>
                     <button
                       onClick={() => setViewingProjectId(project.id)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
+                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
                     >
                       View Report
                     </button>
@@ -300,103 +366,71 @@ export function Reports() {
                   <h2 className="text-xl font-semibold">
                     Report for {projects.find((p) => p.id === viewingProjectId)?.name}
                   </h2>
-                  <button
-                    onClick={downloadPDF}
-                    className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
-                  >
-                    <Download className="w-4 h-4" /> Download PDF
-                  </button>
+                  <div className="flex gap-3">
+                    <button
+                      onClick={downloadPDF}
+                      className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
+                    >
+                      <Download className="w-4 h-4" /> Download PDF
+                    </button>
+                    <button
+                      onClick={downloadExcel}
+                      className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700"
+                    >
+                      <Download className="w-4 h-4" /> Download Excel
+                    </button>
+                  </div>
                 </div>
 
                 {loading ? (
                   <p>Loading...</p>
-                ) : expenses.length === 0 && materials.length === 0 && phases.length === 0 ? (
-                  <p>No data found for the selected project.</p>
                 ) : (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                      <div className="bg-white p-4 rounded shadow flex justify-center">
-                        <PieChart width={400} height={350}>
-                          <Pie
-                            data={expenseChartData}
-                            cx={200}
-                            cy={150}
-                            labelLine={false}
-                            outerRadius={120}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {expenseChartData.map((_, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={COLORS[index % COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend
-                            layout="horizontal"
-                            verticalAlign="bottom"
-                            align="center"
-                          />
-                        </PieChart>
-                      </div>
-                      <div className="bg-white p-4 rounded shadow flex justify-center">
-                        <PieChart width={400} height={350}>
-                          <Pie
-                            data={materialChartData}
-                            cx={200}
-                            cy={150}
-                            labelLine={false}
-                            outerRadius={120}
-                            fill="#8884d8"
-                            dataKey="value"
-                          >
-                            {materialChartData.map((_, index) => (
-                              <Cell
-                                key={`cell-${index}`}
-                                fill={COLORS[index % COLORS.length]}
-                              />
-                            ))}
-                          </Pie>
-                          <Tooltip />
-                          <Legend
-                            layout="horizontal"
-                            verticalAlign="bottom"
-                            align="center"
-                          />
-                        </PieChart>
-                      </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <div className="bg-white p-4 rounded shadow flex justify-center">
+                      <PieChart width={400} height={350}>
+                        <Pie
+                          data={expenseChartData}
+                          cx={200}
+                          cy={150}
+                          labelLine={false}
+                          outerRadius={120}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {expenseChartData.map((_, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend layout="horizontal" align="center" />
+                      </PieChart>
                     </div>
-
-                    <div className="bg-white p-4 rounded shadow mb-6">
-                      <h2 className="text-xl font-semibold mb-4">Summary</h2>
-                      <p className="whitespace-pre-wrap">{generateSummary()}</p>
+                    <div className="bg-white p-4 rounded shadow flex justify-center">
+                      <PieChart width={400} height={350}>
+                        <Pie
+                          data={materialChartData}
+                          cx={200}
+                          cy={150}
+                          labelLine={false}
+                          outerRadius={120}
+                          fill="#8884d8"
+                          dataKey="value"
+                        >
+                          {materialChartData.map((_, index) => (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill={COLORS[index % COLORS.length]}
+                            />
+                          ))}
+                        </Pie>
+                        <Tooltip />
+                        <Legend layout="horizontal" align="center" />
+                      </PieChart>
                     </div>
-
-                    <div className="bg-white p-4 rounded shadow">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-gray-100">
-                            <th className="p-2 border">Category</th>
-                            <th className="p-2 border">Amount</th>
-                            <th className="p-2 border">Date</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {expenses
-                            .filter((e) => e.project_id === viewingProjectId)
-                            .map((e) => (
-                              <tr key={e.id}>
-                                <td className="p-2 border">{e.category}</td>
-                                <td className="p-2 border">{e.amount.toFixed(2)}</td>
-                                <td className="p-2 border">{e.date}</td>
-                              </tr>
-                            ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </>
+                  </div>
                 )}
               </>
             )}
