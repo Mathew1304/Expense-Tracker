@@ -9,8 +9,12 @@ type User = {
   name: string;
   email: string;
   role_id: string | null;
+  project_id?: string | null;
   roles?: {
     role_name: string;
+  } | null;
+  projects?: {
+    name: string;
   } | null;
   created_by: string | null;
 };
@@ -20,10 +24,16 @@ type Role = {
   role_name: string;
 };
 
+type Project = {
+  id: string;
+  name: string;
+};
+
 export function Users() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [showForm, setShowForm] = useState(false);
@@ -31,6 +41,7 @@ export function Users() {
     name: "",
     email: "",
     role_id: "",
+    project_id: "",
   });
 
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -42,7 +53,7 @@ export function Users() {
 
   const [roleFilter, setRoleFilter] = useState<string>("");
 
-  // Fetch users + roles filtered by current admin
+  // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
     async function fetchData() {
       setLoading(true);
@@ -60,7 +71,7 @@ export function Users() {
       // Fetch only users created by this admin
       const { data: usersData, error: usersError } = await supabase
         .from("users")
-        .select("id, name, email, role_id, roles(role_name), created_by")
+        .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
         .eq("created_by", user.id)
         .order("created_at", { ascending: false });
 
@@ -80,6 +91,18 @@ export function Users() {
         console.error("Error fetching roles:", rolesError.message);
       } else if (rolesData) {
         setRoles(rolesData as Role[]);
+      }
+
+      // ✅ Fetch projects created by this admin
+      const { data: projectsData, error: projectsError } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("created_by", user.id);
+
+      if (projectsError) {
+        console.error("Error fetching projects:", projectsError.message);
+      } else if (projectsData) {
+        setProjects(projectsData as Project[]);
       }
 
       setLoading(false);
@@ -109,10 +132,11 @@ export function Users() {
           name: formData.name,
           email: formData.email,
           role_id: formData.role_id || null,
+          project_id: formData.project_id || null,
           created_by: user.id,
         },
       ])
-      .select("id, name, email, role_id, roles(role_name), created_by")
+      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
       .single();
 
     if (insertError) {
@@ -124,7 +148,7 @@ export function Users() {
 
     setUsers((prev) => [newUser, ...prev]);
     setShowForm(false);
-    setFormData({ name: "", email: "", role_id: "" });
+    setFormData({ name: "", email: "", role_id: "", project_id: "" });
   }
 
   // Delete user
@@ -163,7 +187,7 @@ export function Users() {
         role_id: editForm.role_id || null,
       })
       .eq("id", userId)
-      .select("id, name, email, role_id, roles(role_name), created_by")
+      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
       .single();
 
     if (error) {
@@ -187,12 +211,15 @@ export function Users() {
       <div className="p-6">
         <h1 className="text-2xl font-bold mb-4">Users</h1>
 
-        <button
-          onClick={() => setShowForm(true)}
-          className="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-        >
-          <Plus /> Add User
-        </button>
+        {/* Add User button aligned right */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
+          >
+            <Plus /> Add User
+          </button>
+        </div>
 
         <div className="mb-4">
           <label className="block font-semibold mb-1">Filter by Role</label>
@@ -261,6 +288,24 @@ export function Users() {
                     {roles.map((r) => (
                       <option key={r.id} value={r.id}>
                         {r.role_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Assign Project</label>
+                  <select
+                    value={formData.project_id}
+                    onChange={(e) =>
+                      setFormData({ ...formData, project_id: e.target.value })
+                    }
+                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                    required
+                  >
+                    <option value="">Select project</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
                       </option>
                     ))}
                   </select>

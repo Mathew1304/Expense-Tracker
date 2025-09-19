@@ -101,62 +101,201 @@ export function Dashboard() {
         },
       ]);
 
-      // ✅ Recent activities (phases + expenses)
-      let phasesQuery = supabase
-        .from("phases")
-        .select("name, status, end_date, project_id, updated_at")
-        .order("updated_at", { ascending: false })
-        .limit(5);
-
-      const { data: phases } = await phasesQuery;
-
+      // ✅ Recent activities - simplified approach
       let recentExpensesQuery = supabase
         .from("expenses")
-        .select("amount, date, phase_id");
+        .select("id, amount, date, created_at, project_id, created_by");
 
-      if (profile?.role === "Admin" || profile?.role === "client") {
+      if (profile?.role === "Admin") {
+        recentExpensesQuery = recentExpensesQuery.eq("created_by", user.id);
+      } else if (profile?.role === "client") {
         recentExpensesQuery = recentExpensesQuery.eq("created_by", user.id);
       }
 
-      const { data: recentExpenses } = await recentExpensesQuery
-        .order("date", { ascending: false })
-        .limit(3);
+      const { data: recentExpenses, error: expensesError } = await recentExpensesQuery
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      console.log("Recent expenses:", recentExpenses, "Error:", expensesError);
+
+      // ✅ Fetch recent materials
+      let recentMaterialsQuery = supabase
+        .from("materials")
+        .select("id, name, project_id, created_by, updated_at, qty_required");
+
+      if (profile?.role === "Admin") {
+        recentMaterialsQuery = recentMaterialsQuery.eq("created_by", user.id);
+      } else if (profile?.role === "client") {
+        recentMaterialsQuery = recentMaterialsQuery.eq("created_by", user.id);
+      }
+
+      const { data: recentMaterials, error: materialsError } = await recentMaterialsQuery
+        .order("updated_at", { ascending: false })
+        .limit(5);
+
+      console.log("Recent materials:", recentMaterials, "Error:", materialsError);
+
+      // ✅ Fetch recent documents
+      let documentsQuery = supabase
+        .from("documents")
+        .select("id, name, project_id, uploaded_by, upload_date, status");
+
+      if (profile?.role === "Admin") {
+        documentsQuery = documentsQuery.eq("uploaded_by", user.id);
+      } else if (profile?.role === "client") {
+        documentsQuery = documentsQuery.eq("uploaded_by", user.id);
+      }
+
+      const { data: recentDocuments, error: documentsError } = await documentsQuery
+        .order("upload_date", { ascending: false })
+        .limit(5);
+
+      console.log("Recent documents:", recentDocuments, "Error:", documentsError);
+
+      // ✅ Fetch recent users (only for Superadmin and Admin)
+      let recentUsers: any[] = [];
+      if (profile?.role === "Superadmin" || profile?.role === "Admin") {
+        let usersQuery = supabase
+          .from("profiles")
+          .select("id, full_name, role, created_at, status");
+
+        if (profile?.role === "Admin") {
+          // Admin can only see users they created (if there's a created_by field)
+          // For now, we'll show all users for Admin as well
+        }
+
+        const { data: users, error: usersError } = await usersQuery
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        recentUsers = users || [];
+        console.log("Recent users:", recentUsers, "Error:", usersError);
+      }
+
+      // Get all projects for lookup
+      const { data: allProjectsForLookup } = await supabase
+        .from("projects")
+        .select("id, name");
+
+      // Get all profiles for lookup
+      const { data: allProfilesForLookup } = await supabase
+        .from("profiles")
+        .select("id, full_name");
 
       let activities: any[] = [];
 
-      phases?.forEach((p) => {
+      // Add expense activities with manual lookups
+      recentExpenses?.forEach((expense: any, index: number) => {
+        const project = allProjectsForLookup?.find(p => p.id === expense.project_id);
+        const profile = allProfilesForLookup?.find(p => p.id === expense.created_by);
+        
+        const colors = [
+          "border-blue-500", 
+          "border-orange-500", 
+          "border-green-500", 
+          "border-purple-500", 
+          "border-red-500"
+        ];
+        const colorIndex = index % colors.length;
+
         activities.push({
-          id: `phase-${p.name}`,
-          message: `Phase "${p.name}" status: ${p.status}`,
-          time: p.updated_at
-            ? new Date(p.updated_at).toLocaleDateString()
-            : p.end_date
-            ? new Date(p.end_date).toLocaleDateString()
-            : "No date",
-          date: new Date(p.updated_at || p.end_date || 0),
-          icon: CheckCircle,
-          color: "text-green-500",
+          id: `expense-${expense.id}`,
+          type: "expense",
+          amount: expense.amount,
+          project: project?.name || "Unknown Project",
+          addedBy: profile?.full_name || "Unknown User",
+          date: expense.date || expense.created_at,
+          borderColor: colors[colorIndex],
+          sortDate: new Date(expense.created_at || expense.date || 0),
         });
       });
 
-      recentExpenses?.forEach((e) => {
+      // Add material activities
+      recentMaterials?.forEach((material: any, index: number) => {
+        const project = allProjectsForLookup?.find(p => p.id === material.project_id);
+        const profile = allProfilesForLookup?.find(p => p.id === material.created_by);
+        
+        const colors = [
+          "border-yellow-500", 
+          "border-indigo-500", 
+          "border-pink-500", 
+          "border-teal-500", 
+          "border-cyan-500"
+        ];
+        const colorIndex = index % colors.length;
+
         activities.push({
-          id: `expense-${e.phase_id}`,
-          message: `Expense of ₹${e.amount} recorded`,
-          time: e.date ? new Date(e.date).toLocaleDateString() : "No date",
-          date: new Date(e.date || 0),
-          icon: IndianRupee,
-          color: "text-blue-500",
+          id: `material-${material.id}`,
+          type: "material",
+          materialName: material.name,
+          quantity: material.qty_required,
+          project: project?.name || "Unknown Project",
+          addedBy: profile?.full_name || "Unknown User",
+          date: material.updated_at,
+          borderColor: colors[colorIndex],
+          sortDate: new Date(material.updated_at || 0),
+        });
+      });
+
+      // Add document activities
+      recentDocuments?.forEach((document: any, index: number) => {
+        const project = allProjectsForLookup?.find(p => p.id === document.project_id);
+        const profile = allProfilesForLookup?.find(p => p.id === document.uploaded_by);
+        
+        const colors = [
+          "border-emerald-500", 
+          "border-rose-500", 
+          "border-violet-500", 
+          "border-amber-500", 
+          "border-lime-500"
+        ];
+        const colorIndex = index % colors.length;
+
+        activities.push({
+          id: `document-${document.id}`,
+          type: "document",
+          documentName: document.name,
+          status: document.status,
+          project: project?.name || "Unknown Project",
+          addedBy: profile?.full_name || "Unknown User",
+          date: document.upload_date,
+          borderColor: colors[colorIndex],
+          sortDate: new Date(document.upload_date || 0),
+        });
+      });
+
+      // Add user activities (only for Superadmin and Admin)
+      recentUsers?.forEach((userProfile: any, index: number) => {
+        const colors = [
+          "border-slate-500", 
+          "border-gray-500", 
+          "border-zinc-500", 
+          "border-neutral-500", 
+          "border-stone-500"
+        ];
+        const colorIndex = index % colors.length;
+
+        activities.push({
+          id: `user-${userProfile.id}`,
+          type: "user",
+          userName: userProfile.full_name,
+          userRole: userProfile.role,
+          userStatus: userProfile.status,
+          date: userProfile.created_at,
+          borderColor: colors[colorIndex],
+          sortDate: new Date(userProfile.created_at || 0),
         });
       });
 
       // Sort activities by date and limit
       activities = activities
-        .sort((a, b) => b.date.getTime() - a.date.getTime())
-        .slice(0, 5);
+        .sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime())
+        .slice(0, 8);
 
       setRecentActivities(activities);
       setLoading(false);
+      
+      console.log("Final activities:", activities);
     };
 
     fetchData();
@@ -209,6 +348,15 @@ export function Dashboard() {
         (role === "Admin" && status !== "active"),
     },
   ];
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-GB', { 
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
 
   if (loading) {
     return (
@@ -298,32 +446,73 @@ export function Dashboard() {
                   Recent Activity
                 </h3>
               </div>
-              <div className="p-6 space-y-5 max-h-80 overflow-y-auto">
+              <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
                 {recentActivities.length > 0 ? (
-                  recentActivities.map((activity) => {
-                    const Icon = activity.icon;
-                    return (
-                      <div
-                        key={activity.id}
-                        className="flex items-start space-x-4 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
-                      >
-                        <div className={`flex-shrink-0 ${activity.color}`}>
-                          <Icon className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-gray-900">
-                            {activity.message}
+                  recentActivities.map((activity) => (
+                    <div
+                      key={activity.id}
+                      className={`border-l-4 ${activity.borderColor} pl-4 py-3`}
+                    >
+                      {activity.type === "expense" ? (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            Expense of ₹{Number(activity.amount).toLocaleString()} recorded
+                          </h4>
+                          <p className="text-sm text-gray-600 mb-2">
+                            Project: {activity.project} • Added by {activity.addedBy}
                           </p>
-                          <p className="text-xs text-gray-500">
-                            {activity.time}
+                          <p className="text-sm text-gray-500">
+                            {formatDate(activity.date)}
                           </p>
                         </div>
-                      </div>
-                    );
-                  })
+                      ) : activity.type === "material" ? (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            Material "{activity.materialName}" added (Qty: {activity.quantity})
+                          </h4>
+                          <p className="text-sm text-gray-600 mb-2">
+                            Project: {activity.project} • Added by {activity.addedBy}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatDate(activity.date)}
+                          </p>
+                        </div>
+                      ) : activity.type === "document" ? (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            Document "{activity.documentName}" uploaded
+                          </h4>
+                          <p className="text-sm text-gray-600 mb-2">
+                            Project: {activity.project} • Status: {activity.status} • Uploaded by {activity.addedBy}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatDate(activity.date)}
+                          </p>
+                        </div>
+                      ) : activity.type === "user" ? (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            New user "{activity.userName}" registered
+                          </h4>
+                          <p className="text-sm text-gray-600 mb-2">
+                            Role: {activity.userRole} • Status: {activity.userStatus}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {formatDate(activity.date)}
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
+                            Unknown activity type
+                          </h4>
+                        </div>
+                      )}
+                    </div>
+                  ))
                 ) : (
-                  <p className="text-sm text-gray-500 text-center">
-                    No recent activities.
+                  <p className="text-sm text-gray-500 text-center py-8">
+                    No recent activities found.
                   </p>
                 )}
               </div>

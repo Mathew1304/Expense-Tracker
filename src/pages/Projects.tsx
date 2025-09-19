@@ -1,6 +1,5 @@
-// src/pages/Projects.tsx
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Edit, X, Eye, Download } from "lucide-react";
+import { Plus, Search, Edit, X, Eye, Download, File, User } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -21,6 +20,7 @@ export function Projects() {
   const [phases, setPhases] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -61,7 +61,7 @@ export function Projects() {
     if (profileId) fetchProjects();
   }, [profileId]);
 
-  // ✅ Fetch Phases, Expenses, Materials for a project
+  // ✅ Fetch Phases, Expenses, Materials, Team Members for a project
   const fetchProjectDetails = async (projectId: string) => {
     const { data: phaseData } = await supabase
       .from("phases")
@@ -70,17 +70,28 @@ export function Projects() {
 
     const { data: expenseData } = await supabase
       .from("expenses")
-      .select("*")
+      .select("*, phase:phase_id(name)")
       .eq("project_id", projectId);
 
     const { data: materialData } = await supabase
       .from("materials")
-      .select("id, name, qty_required, unit_cost, status")
+      .select("id, name, unit_cost, qty_required, status, updated_at")
       .eq("project_id", projectId);
+
+    const { data: teamData, error: teamError } = await supabase
+      .from("users")
+      .select("id, name, email, role_id")
+      .eq("project_id", projectId)
+      .eq("created_by", profileId);
+
+    if (teamError) {
+      console.error("Fetch team members error:", teamError.message);
+    }
 
     setPhases(phaseData || []);
     setExpenses(expenseData || []);
     setMaterials(materialData || []);
+    setTeamMembers(teamData || []);
   };
 
   const handleViewProject = async (project: any) => {
@@ -105,10 +116,8 @@ export function Projects() {
     doc.text(`End Date: ${project.end_date || "-"}`, 14, 75);
     doc.text(`Description: ${project.description || "-"}`, 14, 85);
 
-    // Add new page for details
-    doc.addPage();
-
     // --- PAGE 2: Phases ---
+    doc.addPage();
     doc.setFontSize(16);
     doc.text("Phases", 14, 20);
     const phaseRows = phases.map((p) => [
@@ -123,95 +132,54 @@ export function Projects() {
       startY: 30,
     });
 
-    // --- Expenses ---
+    // --- PAGE 3: Expenses ---
     doc.addPage();
     doc.setFontSize(16);
     doc.text("Expenses", 14, 20);
     const expenseRows = expenses.map((e) => [
+      e.phase?.name || "-",
       e.category,
-      e.amount,
+      `₹${e.amount.toLocaleString()}`,
       e.date || "-",
     ]);
     (doc as any).autoTable({
-      head: [["Category", "Amount", "Date"]],
+      head: [["Phase", "Category", "Amount", "Date"]],
       body: expenseRows,
       startY: 30,
     });
 
-    // --- Materials ---
+    // --- PAGE 4: Materials ---
     doc.addPage();
     doc.setFontSize(16);
     doc.text("Materials", 14, 20);
     const materialRows = materials.map((m) => [
       m.name,
-      m.qty_required,
-      m.unit_cost,
+      m.unit_cost ? `₹${m.unit_cost.toLocaleString()}` : "-",
+      m.qty_required || "-",
       m.status || "-",
+      m.updated_at ? new Date(m.updated_at).toLocaleString() : "-",
     ]);
     (doc as any).autoTable({
-      head: [["Name", "Qty", "Unit Cost", "Status"]],
+      head: [["Name", "Unit Cost", "Quantity", "Status", "Last Updated"]],
       body: materialRows,
       startY: 30,
     });
 
+    // --- PAGE 5: Team Members ---
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text("Team Members", 14, 20);
+    const teamRows = teamMembers.map((t) => [
+      t.name || "Unknown",
+      t.role_id ? "Role Assigned" : "No Role",
+    ]);
+    (doc as any).autoTable({
+      head: [["Name", "Role"]],
+      body: teamRows,
+      startY: 30,
+    });
+
     doc.save(`${project.name}_report.pdf`);
-  };
-
-  // ✅ Add or update project
-  const handleSaveProject = async () => {
-    if (!newProject.name) {
-      alert("Please enter project name");
-      return;
-    }
-    if (!profileId) {
-      alert("Admin profile not found");
-      return;
-    }
-
-    // date validation
-    if (newProject.start_date && newProject.end_date) {
-      const start = new Date(newProject.start_date);
-      const end = new Date(newProject.end_date);
-      if (start > end) {
-        alert("Start date cannot be after end date");
-        return;
-      }
-    }
-
-    let error;
-    if (editingProject) {
-      ({ error } = await supabase
-        .from("projects")
-        .update({
-          ...newProject,
-        })
-        .eq("id", editingProject.id)
-        .eq("created_by", profileId));
-    } else {
-      ({ error } = await supabase.from("projects").insert([
-        {
-          ...newProject,
-          created_by: profileId,
-        },
-      ]));
-    }
-
-    if (error) {
-      console.error("Save project error:", error.message);
-      alert("Failed to save project");
-    } else {
-      setIsModalOpen(false);
-      setEditingProject(null);
-      setNewProject({
-        name: "",
-        description: "",
-        status: "pending",
-        location: "",
-        start_date: "",
-        end_date: "",
-      });
-      fetchProjects();
-    }
   };
 
   // ✅ Apply search + filter
@@ -428,159 +396,105 @@ export function Projects() {
                 <X className="h-5 w-5 text-gray-500" />
               </button>
             </div>
-            <h3 className="text-xl font-semibold mb-2">{viewingProject.name}</h3>
-            <p className="text-gray-600 mb-4">{viewingProject.description}</p>
+            <div className="space-y-6">
+              <h2 className="text-xl font-bold">Overview</h2>
+              <p>Status: {viewingProject.status}</p>
+              <p>Location: {viewingProject.location || "-"}</p>
+              <p>
+                Start: {viewingProject.start_date || "-"} | End:{" "}
+                {viewingProject.end_date || "-"}
+              </p>
+              <p>Description: {viewingProject.description || "-"}</p>
 
-            <h4 className="font-semibold mt-4">Phases</h4>
-            {phases.length > 0 ? (
-              <ul className="space-y-2 mt-2">
-                {phases.map((p) => (
-                  <li
-                    key={p.id}
-                    className="border p-2 rounded-md flex justify-between"
-                  >
-                    <span>
-                      {p.name} ({p.status})
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No phases</p>
-            )}
+              <h2 className="text-xl font-bold">Phases</h2>
+              {phases.length > 0 ? (
+                phases.map((p) => (
+                  <div key={p.id}>
+                    <h3 className="font-semibold">{p.name}</h3>
+                    <p>
+                      {p.start_date} → {p.end_date} | {p.status}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-gray-500">No phases</p>
+              )}
 
-            <h4 className="font-semibold mt-4">Expenses</h4>
-            {expenses.length > 0 ? (
-              <ul className="space-y-2 mt-2">
-                {expenses.map((e) => (
-                  <li key={e.id} className="border p-2 rounded-md">
-                    {e.category} - ₹{e.amount} ({e.date || "-"})
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No expenses</p>
-            )}
+              <h2 className="text-xl font-bold">Expenses</h2>
+              {expenses.length > 0 ? (
+                <>
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <th className="border p-2 text-left">Phase</th>
+                        <th className="border p-2 text-left">Category</th>
+                        <th className="border p-2 text-left">Amount</th>
+                        <th className="border p-2 text-left">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {expenses.map((e) => (
+                        <tr key={e.id}>
+                          <td className="border p-2">
+                            {e.phase?.name || "-"}
+                          </td>
+                          <td className="border p-2">{e.category}</td>
+                          <td className="border p-2">
+                            ₹{e.amount.toLocaleString()}
+                          </td>
+                          <td className="border p-2">{e.date || "-"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p className="font-semibold mt-2">
+                    Total: ₹
+                    {expenses
+                      .reduce((sum, e) => sum + e.amount, 0)
+                      .toLocaleString()}
+                  </p>
+                </>
+              ) : (
+                <p className="text-gray-500">No expenses</p>
+              )}
 
-            <h4 className="font-semibold mt-4">Materials</h4>
-            {materials.length > 0 ? (
-              <ul className="space-y-2 mt-2">
-                {materials.map((m) => (
-                  <li key={m.id} className="border p-2 rounded-md">
-                    {m.name} | Qty: {m.qty_required} | Cost: ₹{m.unit_cost} |{" "}
-                    Status: {m.status || "-"}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No materials</p>
-            )}
+              <h2 className="text-xl font-bold">Materials</h2>
+              {materials.length > 0 ? (
+                <ul className="space-y-2">
+                  {materials.map((m) => (
+                    <li key={m.id} className="flex items-center">
+                      <File className="h-4 w-4 mr-2 text-gray-500" />
+                      <span>
+                        {m.name} - {m.qty_required || 0} units @{" "}
+                        {m.unit_cost ? `₹${m.unit_cost}` : "N/A"} (
+                        {m.status || "Unknown"})
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500">No materials</p>
+              )}
+
+              <h2 className="text-xl font-bold">Team Members</h2>
+              {teamMembers.length > 0 ? (
+                <ul className="space-y-2">
+                  {teamMembers.map((t) => (
+                    <li key={t.id} className="flex items-center">
+                      <User className="h-4 w-4 mr-2 text-gray-500" />
+                      {t.name || "Unknown"} -{" "}
+                      {t.role_id ? "Role Assigned" : "No Role"}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500">No team members</p>
+              )}
+
+            </div>
           </div>
         </div>
       )}
     </Layout>
   );
 }
-      {/* ✅ View Project Modal */}
-      {viewingProject && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-3xl shadow-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Project Details</h2>
-              <button onClick={() => setViewingProject(null)}>
-                <X className="h-5 w-5 text-gray-500" />
-              </button>
-            </div>
-
-            {/* ---------------- Overview ---------------- */}
-            <h3 className="text-xl font-bold mb-2">Overview</h3>
-            <p><span className="font-semibold">Status:</span> {viewingProject.status}</p>
-            <p><span className="font-semibold">Location:</span> {viewingProject.location || "-"}</p>
-            <p>
-              <span className="font-semibold">Start:</span> {viewingProject.start_date || "-"} |{" "}
-              <span className="font-semibold">End:</span> {viewingProject.end_date || "-"}
-            </p>
-            <p><span className="font-semibold">Description:</span> {viewingProject.description || "-"}</p>
-
-            {/* ---------------- Phases ---------------- */}
-            <h3 className="text-xl font-bold mt-6">Phases</h3>
-            {phases.length > 0 ? (
-              <div className="space-y-4 mt-2">
-                {phases.map((p) => (
-                  <div key={p.id} className="border rounded-md p-3">
-                    <p className="font-semibold">{p.name}</p>
-                    <p>
-                      {p.start_date} → {p.end_date} | <span className="text-blue-600">{p.status}</span>
-                    </p>
-                    <p>{p.completion || 0}% completed | {p.budget_used || 0}% budget used</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-gray-500">No phases available</p>
-            )}
-
-            {/* ---------------- Expenses ---------------- */}
-            <h3 className="text-xl font-bold mt-6">Expenses</h3>
-            {expenses.length > 0 ? (
-              <div className="overflow-x-auto mt-2">
-                <table className="w-full border text-sm">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="border px-3 py-2 text-left">Phase</th>
-                      <th className="border px-3 py-2 text-left">Category</th>
-                      <th className="border px-3 py-2 text-left">Amount</th>
-                      <th className="border px-3 py-2 text-left">Date</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expenses.map((e) => (
-                      <tr key={e.id}>
-                        <td className="border px-3 py-2">{e.phase_name || "-"}</td>
-                        <td className="border px-3 py-2">{e.category}</td>
-                        <td className="border px-3 py-2">₹{e.amount}</td>
-                        <td className="border px-3 py-2">{e.date || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p className="font-semibold mt-2">
-                  Total: ₹{expenses.reduce((sum, e) => sum + (e.amount || 0), 0)}
-                </p>
-              </div>
-            ) : (
-              <p className="text-gray-500">No expenses available</p>
-            )}
-
-            {/* ---------------- Documents ---------------- */}
-            <h3 className="text-xl font-bold mt-6">Documents</h3>
-            {viewingProject.documents && viewingProject.documents.length > 0 ? (
-              <ul className="list-disc pl-6 mt-2">
-                {viewingProject.documents.map((doc: string, idx: number) => (
-                  <li key={idx} className="text-blue-600 underline cursor-pointer">
-                    {doc}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No documents uploaded</p>
-            )}
-            <button className="mt-2 px-4 py-2 bg-gray-200 rounded">Upload Document</button>
-
-            {/* ---------------- Team Members ---------------- */}
-            <h3 className="text-xl font-bold mt-6">Team Members</h3>
-            {viewingProject.team_members && viewingProject.team_members.length > 0 ? (
-              <ul className="list-disc pl-6 mt-2">
-                {viewingProject.team_members.map((member: any, idx: number) => (
-                  <li key={idx}>
-                    <span className="font-semibold">{member.name}</span> – {member.role}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-gray-500">No team members assigned</p>
-            )}
-            <button className="mt-2 px-4 py-2 bg-gray-200 rounded">+ Add Member</button>
-          </div>
-        </div>
-      )}
