@@ -1,441 +1,691 @@
-// src/pages/Reports.tsx
-import React, { useEffect, useState } from "react";
+import React, { useState, useEffect } from "react";
+import { Search, Download, FileText, Calendar, Filter } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
-import { FileText, Download } from "lucide-react";
-import { PieChart, Pie, Cell, Tooltip, Legend } from "recharts";
+import { useAuth } from "../contexts/AuthContext";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
-import * as XLSX from "xlsx";
-import { useAuth } from "../contexts/AuthContext";
-
-const COLORS = ["#4CAF50", "#FF9800", "#F44336", "#2196F3", "#9C27B0"];
-
-interface Expense {
-  id: number;
-  category: string;
-  amount: number;
-  date: string;
-  phase_id?: string;
-  phase_name?: string;
-  project_id?: string;
-}
-
-interface Material {
-  id: number;
-  name: string;
-  qty_required: number;
-  unit_cost: number;
-  total_cost: number;
-  project_id?: string;
-  phase_id?: string;
-  phase_name?: string;
-}
-
-interface Phase {
-  id: string;
-  name: string;
-  start_date: string;
-  end_date: string;
-  status: string;
-  project_id?: string;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  start_date?: string;
-  end_date?: string;
-}
 
 export function Reports() {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [materials, setMaterials] = useState<Material[]>([]);
-  const [phases, setPhases] = useState<Phase[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [viewingProjectId, setViewingProjectId] = useState<string>("");
+  const [profileId, setProfileId] = useState<string | null>(null);
+  const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("All");
+  const [dateRange, setDateRange] = useState({
+    startDate: "",
+    endDate: ""
+  });
 
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    if (user) setProfileId(user.id);
+  }, [user]);
 
-  useEffect(() => {
-    if (viewingProjectId) {
-      fetchProjectData(viewingProjectId);
-    } else {
-      setExpenses([]);
-      setMaterials([]);
-      setPhases([]);
-      setLoading(false);
-    }
-  }, [viewingProjectId]);
-
-  async function fetchProjects() {
-    const { data, error } = await supabase
-      .from("projects")
-      .select("id, name, start_date, end_date, created_by")
-      .eq("created_by", user?.id)
-      .order("name");
-    if (error) console.error("Error fetching projects:", error.message);
-    setProjects(data || []);
-  }
-
-  async function fetchProjectData(projectId: string) {
+  const fetchProjects = async () => {
+    if (!profileId) return;
     setLoading(true);
 
-    const { data: expensesData } = await supabase
-      .from("expenses")
-      .select(
-        `id, category, amount, date, phase_id, phases (id, name, project_id)`
-      )
-      .eq("phases.project_id", projectId)
-      .order("date", { ascending: false });
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("created_by", profileId)
+      .order("created_at", { ascending: false });
 
-    const formattedExpenses = (expensesData || []).map((e: any) => ({
-      id: e.id,
-      category: e.category || "Uncategorized",
-      amount: e.amount || 0,
-      date: e.date || new Date().toISOString().split("T")[0],
-      phase_id: e.phase_id,
-      phase_name: e.phases?.name || "Uncategorized",
-      project_id: e.phases?.project_id,
-    }));
-    setExpenses(formattedExpenses);
-
-    const { data: materialsData } = await supabase
-      .from("materials")
-      .select("id, name, qty_required, unit_cost, project_id, phase_id, phases (id, name)")
-      .eq("project_id", projectId);
-
-    const formattedMaterials = (materialsData || []).map((m: any) => ({
-      id: m.id,
-      name: m.name,
-      qty_required: m.qty_required || 0,
-      unit_cost: m.unit_cost || 0,
-      total_cost: (m.qty_required || 0) * (m.unit_cost || 0),
-      project_id: m.project_id,
-      phase_id: m.phase_id,
-      phase_name: m.phases?.name || "Unassigned",
-    }));
-    setMaterials(formattedMaterials);
-
-    const { data: phasesData } = await supabase
-      .from("phases")
-      .select("id, name, start_date, end_date, status, project_id")
-      .eq("project_id", projectId);
-    setPhases(phasesData || []);
-
+    if (error) {
+      console.error("Fetch projects error:", error.message);
+    } else {
+      setProjects(data || []);
+    }
     setLoading(false);
-  }
+  };
 
-  function getExpenseChartData() {
-    const grouped: { [key: string]: number } = {};
-    expenses.forEach((e) => {
-      if (e.category && e.project_id === viewingProjectId) {
-        grouped[e.category] = (grouped[e.category] || 0) + e.amount;
-      }
-    });
-    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
-  }
+  useEffect(() => {
+    if (profileId) fetchProjects();
+  }, [profileId]);
 
-  function getMaterialChartData() {
-    const grouped: { [key: string]: number } = {};
-    materials.forEach((m) => {
-      if (m.project_id === viewingProjectId) {
-        grouped[m.name] = (grouped[m.name] || 0) + m.total_cost;
-      }
-    });
-    return Object.entries(grouped).map(([name, value]) => ({ name, value }));
-  }
+  const fetchProjectDetails = async (projectId: string) => {
+    const { data: phaseData } = await supabase
+      .from("phases")
+      .select("*")
+      .eq("project_id", projectId);
 
-  function generateSummary() {
-    const totalExpenses = expenses
-      .filter((e) => e.project_id === viewingProjectId)
-      .reduce((sum, e) => sum + (e.amount || 0), 0);
-    const totalMaterials = materials
-      .filter((m) => m.project_id === viewingProjectId)
-      .reduce((sum, m) => sum + (m.total_cost || 0), 0);
-    const completedPhases = phases.filter((p) => p.status === "Completed").length;
-    const totalPhases = phases.length;
+    const { data: expenseData } = await supabase
+      .from("expenses")
+      .select("*, phase:phase_id(name)")
+      .eq("project_id", projectId);
+
+    const { data: materialData } = await supabase
+      .from("materials")
+      .select("id, name, unit_cost, qty_required, status, updated_at")
+      .eq("project_id", projectId);
+
+    const { data: teamData } = await supabase
+      .from("users")
+      .select("id, name, email, role_id")
+      .eq("project_id", projectId)
+      .eq("created_by", profileId);
 
     return {
-      totalExpenses,
-      totalMaterials,
-      completedPhases,
-      totalPhases,
-      percentage:
-        totalPhases > 0 ? ((completedPhases / totalPhases) * 100).toFixed(0) : "0",
+      phases: phaseData || [],
+      expenses: expenseData || [],
+      materials: materialData || [],
+      teamMembers: teamData || []
     };
-  }
+  };
 
-  // -------------------- PDF EXPORT --------------------
-  async function downloadPDF() {
-    const doc = new jsPDF("p", "pt", "a4");
-    const pageWidth = doc.internal.pageSize.getWidth();
+  const generateProjectReport = async (project: any) => {
+    const { phases, expenses, materials, teamMembers } = await fetchProjectDetails(project.id);
 
-    const project = projects.find((p) => p.id === viewingProjectId);
-    const projectName = project?.name || "Project";
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 20;
+    const contentWidth = pageWidth - 2 * margin;
 
-    // ✅ Page 1: Project Summary
-    doc.setFontSize(20);
-    doc.text("Construction Project Report", pageWidth / 2, 40, { align: "center" });
+    const addHeader = (title: string) => {
+      doc.setFillColor(41, 128, 185);
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PROJECT REPORT', margin, 20);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
+      
+      doc.setTextColor(41, 128, 185);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, margin, 45);
+      
+      doc.setTextColor(0, 0, 0);
+    };
+
+    const addFooter = (pageNum: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 15, pageHeight - 10);
+      doc.text(`${project.name} - Project Report`, margin, pageHeight - 10);
+    };
+
+    // PAGE 1: PROJECT OVERVIEW (CENTERED)
+    addHeader('PROJECT OVERVIEW');
+    
+    let yPos = 80;
+    
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(52, 73, 94);
+    const projectNameWidth = doc.getTextWidth(project.name);
+    doc.text(project.name, (pageWidth - projectNameWidth) / 2, yPos);
+    yPos += 25;
+    
+    const infoBoxes = [
+      { label: 'Status', value: project.status, color: project.status === 'completed' ? [46, 204, 113] : project.status === 'active' ? [241, 196, 15] : [231, 76, 60] },
+      { label: 'Location', value: project.location || 'Not specified' },
+      { label: 'Start Date', value: project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not set' },
+      { label: 'End Date', value: project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set' },
+    ];
+    
     doc.setFontSize(12);
-    doc.text(`Project Name: ${projectName}`, 40, 80);
-    doc.text(`Start Date: ${project?.start_date || "-"}`, 40, 100);
-    doc.text(`End Date: ${project?.end_date || "-"}`, 40, 120);
-    doc.text(`Report Date: ${new Date().toLocaleDateString("en-IN")}`, 40, 140);
-    doc.text(`Prepared By: ${user?.email || "System"}`, 40, 160);
+    doc.setFont('helvetica', 'normal');
+    
+    const boxWidth = contentWidth * 0.8;
+    const boxStartX = (pageWidth - boxWidth) / 2;
+    
+    infoBoxes.forEach((box, index) => {
+      const boxY = yPos + (index * 25);
+      
+      if (box.color) {
+        doc.setFillColor(box.color[0], box.color[1], box.color[2]);
+        doc.rect(boxStartX, boxY - 5, boxWidth, 20, 'F');
+        doc.setTextColor(255, 255, 255);
+      } else {
+        doc.setFillColor(236, 240, 241);
+        doc.rect(boxStartX, boxY - 5, boxWidth, 20, 'F');
+        doc.setTextColor(52, 73, 94);
+      }
+      
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${box.label}:`, boxStartX + 10, boxY + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(box.value, boxStartX + 60, boxY + 5);
+    });
+    
+    yPos += 120;
+    
+    doc.setTextColor(52, 73, 94);
+    doc.setFont('helvetica', 'bold');
+    const descLabelWidth = doc.getTextWidth('DESCRIPTION:');
+    doc.text('DESCRIPTION:', (pageWidth - descLabelWidth) / 2, yPos);
+    yPos += 15;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    const description = project.description || 'No description provided';
+    const splitDescription = doc.splitTextToSize(description, boxWidth);
+    
+    splitDescription.forEach((line: string, index: number) => {
+      const lineWidth = doc.getTextWidth(line);
+      doc.text(line, (pageWidth - lineWidth) / 2, yPos + (index * 6));
+    });
+    
+    addFooter(1);
 
-    const summary = generateSummary();
+    // PAGE 2: PHASES
+    doc.addPage();
+    addHeader('PROJECT PHASES');
+    
+    if (phases.length > 0) {
+      const phaseRows = phases.map((p) => {
+        const estimatedCost = Number(p.estimated_cost || 0);
+        return [
+          p.name || 'Unnamed Phase',
+          p.status || 'Not Set',
+          p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Not Set',
+          p.end_date ? new Date(p.end_date).toLocaleDateString() : 'Not Set',
+          estimatedCost > 0 ? `Rs ${estimatedCost.toLocaleString()}` : 'Not Set',
+          p.contractor_name || 'Not Assigned'
+        ];
+      });
+      
+      (doc as any).autoTable({
+        head: [['Phase Name', 'Status', 'Start Date', 'End Date', 'Estimated Cost', 'Contractor']],
+        body: phaseRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 25, halign: 'center' },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 30, halign: 'right' },
+          5: { cellWidth: 35 }
+        }
+      });
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No phases found for this project.', margin, 70);
+    }
+    
+    addFooter(2);
+
+    // PAGE 3: EXPENSES
+    doc.addPage();
+    addHeader('PROJECT EXPENSES');
+    
+    if (expenses.length > 0) {
+      const expenseRows = expenses.map((e) => {
+        const amount = Number(e.amount || 0);
+        return [
+          e.phase?.name || 'No Phase',
+          e.category || 'Uncategorized',
+          `Rs ${amount.toLocaleString()}`,
+          e.date ? new Date(e.date).toLocaleDateString() : 'No Date',
+          e.payment_method || 'Not Specified'
+        ];
+      });
+      
+      const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      
+      (doc as any).autoTable({
+        head: [['Phase', 'Category', 'Amount', 'Date', 'Payment Method']],
+        body: expenseRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [46, 204, 113],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 30, halign: 'right' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 35, halign: 'center' }
+        }
+      });
+      
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFillColor(46, 204, 113);
+      doc.rect(pageWidth - margin - 80, finalY, 80, 15, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`Total: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 75, finalY + 10);
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No expenses recorded for this project.', margin, 70);
+    }
+    
+    addFooter(3);
+
+    // PAGE 4: MATERIALS
+    doc.addPage();
+    addHeader('MATERIALS INVENTORY');
+    
+    if (materials.length > 0) {
+      const materialRows = materials.map((m) => {
+        const unitCost = Number(m.unit_cost || 0);
+        const quantity = Number(m.qty_required || 0);
+        return [
+          m.name || 'Unnamed Material',
+          unitCost > 0 ? `Rs ${unitCost.toLocaleString()}` : 'Rs 0',
+          quantity.toString(),
+          m.status || 'Unknown',
+          m.updated_at ? new Date(m.updated_at).toLocaleDateString() : 'No Date'
+        ];
+      });
+      
+      const totalMaterialCost = materials.reduce((sum, m) => {
+        const cost = Number(m.unit_cost || 0);
+        const qty = Number(m.qty_required || 0);
+        return sum + (cost * qty);
+      }, 0);
+      
+      (doc as any).autoTable({
+        head: [['Material Name', 'Unit Cost', 'Quantity', 'Status', 'Last Updated']],
+        body: materialRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [241, 196, 15],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 30, halign: 'right' },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 30, halign: 'center' }
+        }
+      });
+      
+      if (totalMaterialCost > 0) {
+        const finalY = (doc as any).lastAutoTable.finalY + 10;
+        doc.setFillColor(241, 196, 15);
+        doc.rect(pageWidth - margin - 100, finalY, 100, 15, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(`Total Value: Rs ${totalMaterialCost.toLocaleString()}`, pageWidth - margin - 95, finalY + 10);
+      }
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No materials recorded for this project.', margin, 70);
+    }
+    
+    addFooter(4);
+
+    // PAGE 5: TEAM MEMBERS
+    doc.addPage();
+    addHeader('TEAM MEMBERS');
+    
+    if (teamMembers.length > 0) {
+      const teamRows = teamMembers.map((t) => [
+        t.name || 'Unknown Member',
+        t.email || 'No Email',
+        t.role_id ? 'Role Assigned' : 'No Role',
+        t.active ? 'Active' : 'Inactive'
+      ]);
+      
+      (doc as any).autoTable({
+        head: [['Name', 'Email', 'Role Status', 'Status']],
+        body: teamRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [155, 89, 182],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 35, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' }
+        }
+      });
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No team members assigned to this project.', margin, 70);
+    }
+    
+    addFooter(5);
+
+    // PAGE 6: SUMMARY
+    doc.addPage();
+    addHeader('PROJECT SUMMARY');
+    
+    yPos = 60;
+    
+    const summaryData = [
+      { label: 'Total Phases', value: phases.length.toString() },
+      { label: 'Total Expenses', value: `Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}` },
+      { label: 'Total Materials', value: materials.length.toString() },
+      { label: 'Team Size', value: teamMembers.length.toString() },
+    ];
+    
+    summaryData.forEach((item, index) => {
+      const boxX = margin + (index % 2) * (contentWidth / 2);
+      const boxY = yPos + Math.floor(index / 2) * 40;
+      
+      doc.setFillColor(52, 152, 219);
+      doc.rect(boxX, boxY, contentWidth / 2 - 10, 30, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(item.label, boxX + 10, boxY + 12);
+      
+      doc.setFontSize(18);
+      doc.text(item.value, boxX + 10, boxY + 25);
+    });
+    
+    yPos += 100;
+    
+    doc.setTextColor(52, 73, 94);
     doc.setFontSize(14);
-    doc.text("Summary", 40, 200);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PROJECT STATUS OVERVIEW:', margin, yPos);
+    
+    yPos += 15;
     doc.setFontSize(11);
-    doc.text(
-      [
-        `Total Expenses: ₹${summary.totalExpenses.toFixed(2)}`,
-        `Total Materials: ₹${summary.totalMaterials.toFixed(2)}`,
-        `Phases Completed: ${summary.completedPhases}/${summary.totalPhases} (${summary.percentage}%)`,
-      ],
-      40,
-      220
-    );
+    doc.setFont('helvetica', 'normal');
+    
+    const statusText = [
+      `• Project "${project.name}" is currently ${project.status.toUpperCase()}`,
+      `• Started: ${project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not specified'}`,
+      `• Expected completion: ${project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not specified'}`,
+      `• Total budget spent: Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}`,
+      `• Active team members: ${teamMembers.filter(t => t.active).length}`,
+      `• Phases in progress: ${phases.filter(p => p.status === 'In Progress').length}`,
+    ];
+    
+    statusText.forEach((text, index) => {
+      doc.text(text, margin, yPos + (index * 8));
+    });
+    
+    addFooter(6);
 
-    // ✅ Page 2: Phases
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Phases Overview", 40, 40);
-    (doc as any).autoTable({
-      startY: 60,
-      head: [["Phase", "Start Date", "End Date", "Status", "Progress %"]],
-      body: phases.map((p) => [
-        p.name,
-        p.start_date,
-        p.end_date,
-        p.status,
-        p.status === "Completed" ? "100%" : "0%",
-      ]),
+    const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+  };
+
+  const generateConsolidatedReport = async () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 20;
+    const contentWidth = pageWidth - 2 * margin;
+
+    const addHeader = (title: string) => {
+      doc.setFillColor(41, 128, 185);
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('CONSOLIDATED REPORT', margin, 20);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
+      
+      doc.setTextColor(41, 128, 185);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, margin, 45);
+      
+      doc.setTextColor(0, 0, 0);
+    };
+
+    const addFooter = (pageNum: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 15, pageHeight - 10);
+      doc.text('Consolidated Report - All Projects', margin, pageHeight - 10);
+    };
+
+    // PAGE 1: OVERVIEW
+    addHeader('ALL PROJECTS OVERVIEW');
+    
+    let yPos = 60;
+    
+    const filteredProjects = projects.filter(p => {
+      const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           p.location?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesFilter = filterStatus === "All" ? true : p.status === filterStatus;
+      const matchesDate = (!dateRange.startDate || new Date(p.start_date) >= new Date(dateRange.startDate)) &&
+                         (!dateRange.endDate || new Date(p.end_date) <= new Date(dateRange.endDate));
+      return matchesSearch && matchesFilter && matchesDate;
     });
 
-    // ✅ Page 3: Expenses
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Expenses (Phase-wise)", 40, 40);
-    phases.forEach((phase) => {
-      const phaseExpenses = expenses.filter((e) => e.phase_id === phase.id);
-      if (phaseExpenses.length > 0) {
-        (doc as any).autoTable({
-          startY: (doc as any).lastAutoTable?.finalY + 20 || 60,
-          head: [[`Phase: ${phase.name}`, "", ""]],
-          body: [],
-        });
-        (doc as any).autoTable({
-          startY: (doc as any).lastAutoTable.finalY + 10,
-          head: [["Category", "Amount (₹)", "Date"]],
-          body: phaseExpenses.map((e) => [e.category, e.amount.toFixed(2), e.date]),
-        });
-      }
-    });
+    if (filteredProjects.length > 0) {
+      const projectRows = filteredProjects.map((p) => [
+        p.name || 'Unnamed Project',
+        p.status || 'Unknown',
+        p.location || 'Not specified',
+        p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Not set',
+        p.end_date ? new Date(p.end_date).toLocaleDateString() : 'Not set'
+      ]);
+      
+      (doc as any).autoTable({
+        head: [['Project Name', 'Status', 'Location', 'Start Date', 'End Date']],
+        body: projectRows,
+        startY: yPos,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 25, halign: 'center' },
+          2: { cellWidth: 40 },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 25, halign: 'center' }
+        }
+      });
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No projects found matching the criteria.', margin, yPos);
+    }
+    
+    addFooter(1);
 
-    // ✅ Page 4: Materials
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Materials (Phase-wise)", 40, 40);
-    phases.forEach((phase) => {
-      const phaseMaterials = materials.filter((m) => m.phase_id === phase.id);
-      if (phaseMaterials.length > 0) {
-        (doc as any).autoTable({
-          startY: (doc as any).lastAutoTable?.finalY + 20 || 60,
-          head: [[`Phase: ${phase.name}`, "", "", ""]],
-          body: [],
-        });
-        (doc as any).autoTable({
-          startY: (doc as any).lastAutoTable.finalY + 10,
-          head: [["Material", "Qty", "Unit Cost (₹)", "Total (₹)"]],
-          body: phaseMaterials.map((m) => [
-            m.name,
-            m.qty_required,
-            m.unit_cost.toFixed(2),
-            m.total_cost.toFixed(2),
-          ]),
-        });
-      }
-    });
+    const fileName = `Consolidated_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
+  };
 
-    doc.save(`report_${projectName}.pdf`);
-  }
-
-  // -------------------- EXCEL EXPORT --------------------
-  function downloadExcel() {
-    const project = projects.find((p) => p.id === viewingProjectId);
-    const projectName = project?.name || "Project";
-    const summary = generateSummary();
-    const wb = XLSX.utils.book_new();
-
-    // ✅ Summary
-    const summarySheet = XLSX.utils.aoa_to_sheet([
-      ["Project Summary"],
-      ["Project Name", projectName],
-      ["Start Date", project?.start_date || "-"],
-      ["End Date", project?.end_date || "-"],
-      ["Total Expenses", summary.totalExpenses],
-      ["Total Materials", summary.totalMaterials],
-      [
-        "Phases Progress",
-        `${summary.completedPhases}/${summary.totalPhases} (${summary.percentage}%)`,
-      ],
-    ]);
-    XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
-
-    // ✅ Phases
-    const phaseSheet = XLSX.utils.json_to_sheet(
-      phases.map((p) => ({
-        Phase: p.name,
-        Status: p.status,
-        Start_Date: p.start_date,
-        End_Date: p.end_date,
-        Progress: p.status === "Completed" ? "100%" : "0%",
-      }))
-    );
-    XLSX.utils.book_append_sheet(wb, phaseSheet, "Phases");
-
-    // ✅ Expenses
-    const expenseSheet = XLSX.utils.json_to_sheet(
-      expenses.map((e) => ({
-        Phase: e.phase_name,
-        Category: e.category,
-        Amount: e.amount,
-        Date: e.date,
-      }))
-    );
-    XLSX.utils.book_append_sheet(wb, expenseSheet, "Expenses");
-
-    // ✅ Materials
-    const materialSheet = XLSX.utils.json_to_sheet(
-      materials.map((m) => ({
-        Phase: m.phase_name,
-        Material: m.name,
-        Quantity: m.qty_required,
-        Unit_Cost: m.unit_cost,
-        Total_Cost: m.total_cost,
-      }))
-    );
-    XLSX.utils.book_append_sheet(wb, materialSheet, "Materials");
-
-    XLSX.writeFile(wb, `report_${projectName}.xlsx`);
-  }
-
-  const expenseChartData = getExpenseChartData();
-  const materialChartData = getMaterialChartData();
+  const filteredProjects = projects.filter((p) => {
+    const matchesSearch = p.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         p.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesFilter = filterStatus === "All" ? true : p.status === filterStatus;
+    const matchesDate = (!dateRange.startDate || new Date(p.start_date) >= new Date(dateRange.startDate)) &&
+                       (!dateRange.endDate || new Date(p.end_date) <= new Date(dateRange.endDate));
+    return matchesSearch && matchesFilter && matchesDate;
+  });
 
   return (
-    <Layout>
-      <div className="p-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2 mb-6">
-          <FileText className="w-6 h-6" /> Reports
-        </h1>
+    <Layout title="Reports">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Project Reports</h1>
+          <p className="text-gray-600"></p>
+        </div>
 
-        {projects.length === 0 ? (
-          <p>No projects found.</p>
-        ) : (
-          <>
-            <div className="mb-6">
-              <h2 className="text-xl font-semibold mb-2">Projects</h2>
-              <ul className="space-y-2">
-                {projects.map((project) => (
-                  <li
-                    key={project.id}
-                    className="flex justify-between items-center border p-3 rounded"
-                  >
-                    <span>{project.name}</span>
-                    <button
-                      onClick={() => setViewingProjectId(project.id)}
-                      className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                    >
-                      View Report
-                    </button>
-                  </li>
-                ))}
-              </ul>
+        {/* Filters */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Filter Options</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+              <input
+                type="text"
+                placeholder="Search projects..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
             </div>
 
-            {viewingProjectId && (
-              <>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-xl font-semibold">
-                    Report for {projects.find((p) => p.id === viewingProjectId)?.name}
-                  </h2>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={downloadPDF}
-                      className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
-                    >
-                      <Download className="w-4 h-4" /> Download PDF
-                    </button>
-                    <button
-                      onClick={downloadExcel}
-                      className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-green-700"
-                    >
-                      <Download className="w-4 h-4" /> Download Excel
-                    </button>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="All">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="active">Active</option>
+              <option value="completed">Completed</option>
+            </select>
+
+            <input
+              type="date"
+              placeholder="Start Date"
+              value={dateRange.startDate}
+              onChange={(e) => setDateRange({...dateRange, startDate: e.target.value})}
+              className="border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+
+            <input
+              type="date"
+              placeholder="End Date"
+              value={dateRange.endDate}
+              onChange={(e) => setDateRange({...dateRange, endDate: e.target.value})}
+              className="border rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+        </div>
+
+        {/* Quick Actions */}
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
+          <div className="flex flex-wrap gap-4">
+            <button
+              onClick={generateConsolidatedReport}
+              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download Consolidated Report
+            </button>
+          </div>
+        </div>
+
+        {/* Projects List */}
+        <div className="bg-white rounded-lg shadow">
+          <div className="p-6 border-b">
+            <h2 className="text-lg font-semibold text-gray-900">Individual Project Reports</h2>
+            <p className="text-gray-600 mt-1">Generate detailed reports for specific projects</p>
+          </div>
+
+          {loading && (
+            <div className="p-6 text-center text-gray-500">Loading projects...</div>
+          )}
+
+          {!loading && filteredProjects.length > 0 && (
+            <div className="divide-y">
+              {filteredProjects.map((project) => (
+                <div key={project.id} className="p-6 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <h3 className="text-lg font-medium text-gray-900">{project.name}</h3>
+                      <div className="mt-1 flex items-center space-x-4 text-sm text-gray-600">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          project.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          project.status === 'active' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {project.status}
+                        </span>
+                        <span className="flex items-center">
+                          <Calendar className="h-4 w-4 mr-1" />
+                          {project.start_date ? new Date(project.start_date).toLocaleDateString() : 'No start date'}
+                        </span>
+                        <span>{project.location || 'No location'}</span>
+                      </div>
+                      <p className="mt-2 text-sm text-gray-600">{project.description || 'No description'}</p>
+                    </div>
+                    <div className="ml-4">
+                      <button
+                        onClick={() => generateProjectReport(project)}
+                        className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                      >
+                        <FileText className="h-4 w-4 mr-2" />
+                        Generate Report
+                      </button>
+                    </div>
                   </div>
                 </div>
+              ))}
+            </div>
+          )}
 
-                {loading ? (
-                  <p>Loading...</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <div className="bg-white p-4 rounded shadow flex justify-center">
-                      <PieChart width={400} height={350}>
-                        <Pie
-                          data={expenseChartData}
-                          cx={200}
-                          cy={150}
-                          labelLine={false}
-                          outerRadius={120}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {expenseChartData.map((_, index) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={COLORS[index % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend layout="horizontal" align="center" />
-                      </PieChart>
-                    </div>
-                    <div className="bg-white p-4 rounded shadow flex justify-center">
-                      <PieChart width={400} height={350}>
-                        <Pie
-                          data={materialChartData}
-                          cx={200}
-                          cy={150}
-                          labelLine={false}
-                          outerRadius={120}
-                          fill="#8884d8"
-                          dataKey="value"
-                        >
-                          {materialChartData.map((_, index) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={COLORS[index % COLORS.length]}
-                            />
-                          ))}
-                        </Pie>
-                        <Tooltip />
-                        <Legend layout="horizontal" align="center" />
-                      </PieChart>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
+          {!loading && filteredProjects.length === 0 && (
+            <div className="p-6 text-center text-gray-500">
+              No projects found matching your criteria
+            </div>
+          )}
+        </div>
       </div>
     </Layout>
   );

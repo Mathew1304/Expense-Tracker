@@ -61,6 +61,45 @@ export function Projects() {
     if (profileId) fetchProjects();
   }, [profileId]);
 
+  // ✅ Handle Save Project
+  const handleSaveProject = async () => {
+    if (!profileId) return;
+
+    try {
+      if (editingProject) {
+        // Update existing project
+        const { error } = await supabase
+          .from("projects")
+          .update(newProject)
+          .eq("id", editingProject.id);
+
+        if (error) throw error;
+      } else {
+        // Create new project
+        const { error } = await supabase
+          .from("projects")
+          .insert([{ ...newProject, created_by: profileId }]);
+
+        if (error) throw error;
+      }
+
+      setIsModalOpen(false);
+      setEditingProject(null);
+      setNewProject({
+        name: "",
+        description: "",
+        status: "pending",
+        location: "",
+        start_date: "",
+        end_date: "",
+      });
+      fetchProjects();
+    } catch (error: any) {
+      console.error("Save project error:", error.message);
+      alert("Error saving project: " + error.message);
+    }
+  };
+
   // ✅ Fetch Phases, Expenses, Materials, Team Members for a project
   const fetchProjectDetails = async (projectId: string) => {
     const { data: phaseData } = await supabase
@@ -99,87 +138,405 @@ export function Projects() {
     await fetchProjectDetails(project.id);
   };
 
-  // ✅ PDF Download
+  // ✅ PDF Download with Fixed Number Formatting
   const handleDownloadReport = async (project: any) => {
     await fetchProjectDetails(project.id);
 
     const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 20;
+    const contentWidth = pageWidth - 2 * margin;
 
-    // --- PAGE 1: Project Info ---
-    doc.setFontSize(18);
-    doc.text("Project Report", 14, 20);
+    // --- HEADER FUNCTION ---
+    const addHeader = (title: string) => {
+      doc.setFillColor(41, 128, 185); // Blue background
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('PROJECT REPORT', margin, 20);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
+      
+      // Section title
+      doc.setTextColor(41, 128, 185);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, margin, 45);
+      
+      // Reset text color
+      doc.setTextColor(0, 0, 0);
+    };
+
+    // --- FOOTER FUNCTION ---
+    const addFooter = (pageNum: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 15, pageHeight - 10);
+      doc.text(`${project.name} - Project Report`, margin, pageHeight - 10);
+    };
+
+    // --- PAGE 1: PROJECT OVERVIEW (CENTERED) ---
+    addHeader('PROJECT OVERVIEW');
+    
+    let yPos = 80; // Start lower for centering
+    const lineHeight = 8;
+    
+    // Project name centered
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(52, 73, 94);
+    const projectNameWidth = doc.getTextWidth(project.name);
+    doc.text(project.name, (pageWidth - projectNameWidth) / 2, yPos);
+    yPos += 25;
+    
+    // Create centered info boxes
+    const infoBoxes = [
+      { label: 'Status', value: project.status, color: project.status === 'completed' ? [46, 204, 113] : project.status === 'active' ? [241, 196, 15] : [231, 76, 60] },
+      { label: 'Location', value: project.location || 'Not specified' },
+      { label: 'Start Date', value: project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not set' },
+      { label: 'End Date', value: project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set' },
+    ];
+    
     doc.setFontSize(12);
-    doc.text(`Project Name: ${project.name}`, 14, 35);
-    doc.text(`Location: ${project.location || "-"}`, 14, 45);
-    doc.text(`Status: ${project.status}`, 14, 55);
-    doc.text(`Start Date: ${project.start_date || "-"}`, 14, 65);
-    doc.text(`End Date: ${project.end_date || "-"}`, 14, 75);
-    doc.text(`Description: ${project.description || "-"}`, 14, 85);
-
-    // --- PAGE 2: Phases ---
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Phases", 14, 20);
-    const phaseRows = phases.map((p) => [
-      p.name,
-      p.status,
-      p.start_date || "-",
-      p.end_date || "-",
-    ]);
-    (doc as any).autoTable({
-      head: [["Name", "Status", "Start Date", "End Date"]],
-      body: phaseRows,
-      startY: 30,
+    doc.setFont('helvetica', 'normal');
+    
+    const boxWidth = contentWidth * 0.8;
+    const boxStartX = (pageWidth - boxWidth) / 2;
+    
+    infoBoxes.forEach((box, index) => {
+      const boxY = yPos + (index * 25);
+      
+      // Box background
+      if (box.color) {
+        doc.setFillColor(box.color[0], box.color[1], box.color[2]);
+        doc.rect(boxStartX, boxY - 5, boxWidth, 20, 'F');
+        doc.setTextColor(255, 255, 255);
+      } else {
+        doc.setFillColor(236, 240, 241);
+        doc.rect(boxStartX, boxY - 5, boxWidth, 20, 'F');
+        doc.setTextColor(52, 73, 94);
+      }
+      
+      doc.setFont('helvetica', 'bold');
+      doc.text(`${box.label}:`, boxStartX + 10, boxY + 5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(box.value, boxStartX + 60, boxY + 5);
     });
-
-    // --- PAGE 3: Expenses ---
-    doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Expenses", 14, 20);
-    const expenseRows = expenses.map((e) => [
-      e.phase?.name || "-",
-      e.category,
-      `₹${e.amount.toLocaleString()}`,
-      e.date || "-",
-    ]);
-    (doc as any).autoTable({
-      head: [["Phase", "Category", "Amount", "Date"]],
-      body: expenseRows,
-      startY: 30,
+    
+    yPos += 120;
+    
+    // Description section centered
+    doc.setTextColor(52, 73, 94);
+    doc.setFont('helvetica', 'bold');
+    const descLabelWidth = doc.getTextWidth('DESCRIPTION:');
+    doc.text('DESCRIPTION:', (pageWidth - descLabelWidth) / 2, yPos);
+    yPos += 15;
+    
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(0, 0, 0);
+    const description = project.description || 'No description provided';
+    const splitDescription = doc.splitTextToSize(description, boxWidth);
+    
+    // Center each line of description
+    splitDescription.forEach((line: string, index: number) => {
+      const lineWidth = doc.getTextWidth(line);
+      doc.text(line, (pageWidth - lineWidth) / 2, yPos + (index * 6));
     });
+    
+    addFooter(1);
 
-    // --- PAGE 4: Materials ---
+    // --- PAGE 2: PHASES ---
     doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Materials", 14, 20);
-    const materialRows = materials.map((m) => [
-      m.name,
-      m.unit_cost ? `₹${m.unit_cost.toLocaleString()}` : "-",
-      m.qty_required || "-",
-      m.status || "-",
-      m.updated_at ? new Date(m.updated_at).toLocaleString() : "-",
-    ]);
-    (doc as any).autoTable({
-      head: [["Name", "Unit Cost", "Quantity", "Status", "Last Updated"]],
-      body: materialRows,
-      startY: 30,
-    });
+    addHeader('PROJECT PHASES');
+    
+    if (phases.length > 0) {
+      const phaseRows = phases.map((p) => [
+        p.name || 'Unnamed Phase',
+        p.status || 'Not Set',
+        p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Not Set',
+        p.end_date ? new Date(p.end_date).toLocaleDateString() : 'Not Set',
+        p.estimated_cost ? `Rs ${Number(p.estimated_cost).toLocaleString()}` : 'Not Set',
+        p.contractor_name || 'Not Assigned'
+      ]);
+      
+      (doc as any).autoTable({
+        head: [['Phase Name', 'Status', 'Start Date', 'End Date', 'Estimated Cost', 'Contractor']],
+        body: phaseRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 35 },
+          1: { cellWidth: 25, halign: 'center' },
+          2: { cellWidth: 25, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 30, halign: 'right' },
+          5: { cellWidth: 35 }
+        }
+      });
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No phases found for this project.', margin, 70);
+    }
+    
+    addFooter(2);
 
-    // --- PAGE 5: Team Members ---
+    // --- PAGE 3: EXPENSES ---
     doc.addPage();
-    doc.setFontSize(16);
-    doc.text("Team Members", 14, 20);
-    const teamRows = teamMembers.map((t) => [
-      t.name || "Unknown",
-      t.role_id ? "Role Assigned" : "No Role",
-    ]);
-    (doc as any).autoTable({
-      head: [["Name", "Role"]],
-      body: teamRows,
-      startY: 30,
-    });
+    addHeader('PROJECT EXPENSES');
+    
+    if (expenses.length > 0) {
+      // Format expense data properly to avoid prefix issues
+      const expenseRows = expenses.map((e) => {
+        const amount = Number(e.amount || 0);
+        return [
+          e.phase?.name || 'No Phase',
+          e.category || 'Uncategorized',
+          `Rs ${amount.toLocaleString()}`,
+          e.date ? new Date(e.date).toLocaleDateString() : 'No Date',
+          e.payment_method || 'Not Specified'
+        ];
+      });
+      
+      const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      
+      (doc as any).autoTable({
+        head: [['Phase', 'Category', 'Amount', 'Date', 'Payment Method']],
+        body: expenseRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [46, 204, 113],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 40 },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 30, halign: 'right' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 35, halign: 'center' }
+        }
+      });
+      
+      // Add total expenses box
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFillColor(46, 204, 113);
+      doc.rect(pageWidth - margin - 80, finalY, 80, 15, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`Total: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 75, finalY + 10);
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No expenses recorded for this project.', margin, 70);
+    }
+    
+    addFooter(3);
 
-    doc.save(`${project.name}_report.pdf`);
+    // --- PAGE 4: MATERIALS ---
+    doc.addPage();
+    addHeader('MATERIALS INVENTORY');
+    
+    if (materials.length > 0) {
+      // Format material data properly to avoid prefix issues
+      const materialRows = materials.map((m) => {
+        const unitCost = Number(m.unit_cost || 0);
+        const quantity = Number(m.qty_required || 0);
+        return [
+          m.name || 'Unnamed Material',
+          `Rs ${unitCost.toLocaleString()}`,
+          quantity.toString(),
+          m.status || 'Unknown',
+          m.updated_at ? new Date(m.updated_at).toLocaleDateString() : 'No Date'
+        ];
+      });
+      
+      const totalMaterialCost = materials.reduce((sum, m) => {
+        const cost = Number(m.unit_cost || 0);
+        const qty = Number(m.qty_required || 0);
+        return sum + (cost * qty);
+      }, 0);
+      
+      (doc as any).autoTable({
+        head: [['Material Name', 'Unit Cost', 'Quantity', 'Status', 'Last Updated']],
+        body: materialRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [241, 196, 15],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 30, halign: 'right' },
+          2: { cellWidth: 20, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' },
+          4: { cellWidth: 30, halign: 'center' }
+        }
+      });
+      
+      // Add total material cost
+      if (totalMaterialCost > 0) {
+        const finalY = (doc as any).lastAutoTable.finalY + 10;
+        doc.setFillColor(241, 196, 15);
+        doc.rect(pageWidth - margin - 100, finalY, 100, 15, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(`Total Value: Rs ${totalMaterialCost.toLocaleString()}`, pageWidth - margin - 95, finalY + 10);
+      }
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No materials recorded for this project.', margin, 70);
+    }
+    
+    addFooter(4);
+
+    // --- PAGE 5: TEAM MEMBERS ---
+    doc.addPage();
+    addHeader('TEAM MEMBERS');
+    
+    if (teamMembers.length > 0) {
+      const teamRows = teamMembers.map((t) => [
+        t.name || 'Unknown Member',
+        t.email || 'No Email',
+        t.role_id ? 'Role Assigned' : 'No Role',
+        t.active ? 'Active' : 'Inactive'
+      ]);
+      
+      (doc as any).autoTable({
+        head: [['Name', 'Email', 'Role Status', 'Status']],
+        body: teamRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [155, 89, 182],
+          textColor: [255, 255, 255],
+          fontSize: 10,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 9,
+          cellPadding: 4
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 50 },
+          1: { cellWidth: 60 },
+          2: { cellWidth: 35, halign: 'center' },
+          3: { cellWidth: 25, halign: 'center' }
+        }
+      });
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No team members assigned to this project.', margin, 70);
+    }
+    
+    addFooter(5);
+
+    // --- PAGE 6: SUMMARY ---
+    doc.addPage();
+    addHeader('PROJECT SUMMARY');
+    
+    yPos = 60;
+    
+    // Summary statistics without symbols
+    const summaryData = [
+      { label: 'Total Phases', value: phases.length.toString() },
+      { label: 'Total Expenses', value: `Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}` },
+      { label: 'Total Materials', value: materials.length.toString() },
+      { label: 'Team Size', value: teamMembers.length.toString() },
+    ];
+    
+    summaryData.forEach((item, index) => {
+      const boxX = margin + (index % 2) * (contentWidth / 2);
+      const boxY = yPos + Math.floor(index / 2) * 40;
+      
+      // Summary box
+      doc.setFillColor(52, 152, 219);
+      doc.rect(boxX, boxY, contentWidth / 2 - 10, 30, 'F');
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(item.label, boxX + 10, boxY + 12);
+      
+      doc.setFontSize(18);
+      doc.text(item.value, boxX + 10, boxY + 25);
+    });
+    
+    // Project status summary
+    yPos += 100;
+    doc.setTextColor(52, 73, 94);
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('PROJECT STATUS OVERVIEW:', margin, yPos);
+    
+    yPos += 15;
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    
+    const statusText = [
+      `• Project "${project.name}" is currently ${project.status.toUpperCase()}`,
+      `• Started: ${project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not specified'}`,
+      `• Expected completion: ${project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not specified'}`,
+      `• Total budget spent: Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}`,
+      `• Active team members: ${teamMembers.filter(t => t.active).length}`,
+      `• Phases in progress: ${phases.filter(p => p.status === 'In Progress').length}`,
+    ];
+    
+    statusText.forEach((text, index) => {
+      doc.text(text, margin, yPos + (index * 8));
+    });
+    
+    addFooter(6);
+
+    // Save with formatted filename
+    const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_Project_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+    doc.save(fileName);
   };
 
   // ✅ Apply search + filter
@@ -280,9 +637,18 @@ export function Projects() {
                     Download
                   </button>
                   <button
-                    onClick={() =>
-                      setEditingProject(project) || setIsModalOpen(true)
-                    }
+                    onClick={() => {
+                      setEditingProject(project);
+                      setNewProject({
+                        name: project.name,
+                        description: project.description,
+                        status: project.status,
+                        location: project.location,
+                        start_date: project.start_date,
+                        end_date: project.end_date,
+                      });
+                      setIsModalOpen(true);
+                    }}
                     className="flex items-center px-3 py-1 bg-yellow-500 text-white text-sm rounded-lg"
                   >
                     <Edit className="h-4 w-4 mr-1" />
