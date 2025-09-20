@@ -34,9 +34,9 @@ export const AdminPayment = () => {
   const getPlanAmount = (plan: string) => {
     switch (plan.toLowerCase()) {
       case "basic":
-        return 2999 * 100; // paise
+        return 1499 * 100; // paise
       case "pro":
-        return 7999 * 100; // paise
+        return 3499 * 100; // paise
       default:
         return 0;
     }

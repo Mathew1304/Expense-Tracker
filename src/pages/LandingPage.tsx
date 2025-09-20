@@ -396,14 +396,14 @@ export const LandingPage: React.FC = () => {
               },
               {
                 title: "Basic",
-                price: "₹2,999 / month",
+                price: "₹1,499 / month",
                 features: ["5 Projects", "Full expense tracking", "Vendor management", "Advanced reports", "Priority support", "PDF/Excel export"],
                 button: "Choose Basic",
                 popular: false
               },
               {
                 title: "Pro",
-                price: "₹7,999 / month",
+                price: "₹3,499 / month",
                 features: ["Unlimited Projects", "Multi-phase tracking", "Role-based access", "Custom reports", "24/7 support", "API integrations", "Data backup"],
                 button: "Choose Pro",
                 popular: true

@@ -21,6 +21,7 @@ export function Projects() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [phasePhotos, setPhasePhotos] = useState<any[]>([]);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -100,37 +101,87 @@ export function Projects() {
     }
   };
 
-  // ✅ Fetch Phases, Expenses, Materials, Team Members for a project
+  // ✅ Fetch Phases, Expenses, Materials, Team Members, and Phase Photos for a project
   const fetchProjectDetails = async (projectId: string) => {
-    const { data: phaseData } = await supabase
+    console.log("Fetching details for project:", projectId);
+
+    // Fetch phases
+    const { data: phaseData, error: phaseError } = await supabase
       .from("phases")
       .select("*")
       .eq("project_id", projectId);
 
-    const { data: expenseData } = await supabase
+    if (phaseError) {
+      console.error("Fetch phases error:", phaseError.message);
+    } else {
+      console.log("Phases data:", phaseData);
+      setPhases(phaseData || []);
+    }
+
+    // Fetch expenses with phase names
+    const { data: expenseData, error: expenseError } = await supabase
       .from("expenses")
-      .select("*, phase:phase_id(name)")
+      .select(`
+        *,
+        phases!inner(name)
+      `)
       .eq("project_id", projectId);
 
-    const { data: materialData } = await supabase
+    if (expenseError) {
+      console.error("Fetch expenses error:", expenseError.message);
+    } else {
+      console.log("Expenses data:", expenseData);
+      setExpenses(expenseData || []);
+    }
+
+    // Fetch materials
+    const { data: materialData, error: materialError } = await supabase
       .from("materials")
       .select("id, name, unit_cost, qty_required, status, updated_at")
       .eq("project_id", projectId);
 
+    if (materialError) {
+      console.error("Fetch materials error:", materialError.message);
+    } else {
+      console.log("Materials data:", materialData);
+      setMaterials(materialData || []);
+    }
+
+    // Fetch team members - simplified approach
     const { data: teamData, error: teamError } = await supabase
       .from("users")
-      .select("id, name, email, role_id")
+      .select("id, name, email, role_id, status, active")
       .eq("project_id", projectId)
       .eq("created_by", profileId);
 
     if (teamError) {
       console.error("Fetch team members error:", teamError.message);
+    } else {
+      console.log("Team data:", teamData);
+      setTeamMembers(teamData || []);
+    }
+
+    // Fetch phase photos
+    const { data: photoData, error: photoError } = await supabase
+      .from("phase_photos")
+      .select(`
+        *,
+        phases!inner(name)
+      `)
+      .eq("project_id", projectId);
+
+    if (photoError) {
+      console.error("Fetch phase photos error:", photoError.message);
+    } else {
+      console.log("Phase photos data:", photoData);
+      setPhasePhotos(photoData || []);
     }
 
     setPhases(phaseData || []);
     setExpenses(expenseData || []);
     setMaterials(materialData || []);
     setTeamMembers(teamData || []);
+    setPhasePhotos(photoData || []);
   };
 
   const handleViewProject = async (project: any) => {
@@ -138,9 +189,30 @@ export function Projects() {
     await fetchProjectDetails(project.id);
   };
 
-  // ✅ PDF Download with Fixed Number Formatting
+  // ✅ Helper function to convert image URL to base64
+  const getImageAsBase64 = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.error("Error converting image to base64:", error);
+      return null;
+    }
+  };
+
+  // ✅ PDF Download with Phase Photos
   const handleDownloadReport = async (project: any) => {
+    console.log("Starting PDF generation for project:", project.name);
+    console.log("Starting PDF generation for project:", project.name);
     await fetchProjectDetails(project.id);
+    
+    // Wait a moment for state to update
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
@@ -182,7 +254,6 @@ export function Projects() {
     addHeader('PROJECT OVERVIEW');
     
     let yPos = 80; // Start lower for centering
-    const lineHeight = 8;
     
     // Project name centered
     doc.setFontSize(22);
@@ -252,15 +323,20 @@ export function Projects() {
     doc.addPage();
     addHeader('PROJECT PHASES');
     
+    console.log("Phases for PDF:", phases);
+    
     if (phases.length > 0) {
-      const phaseRows = phases.map((p) => [
-        p.name || 'Unnamed Phase',
-        p.status || 'Not Set',
-        p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Not Set',
-        p.end_date ? new Date(p.end_date).toLocaleDateString() : 'Not Set',
-        p.estimated_cost ? `Rs ${Number(p.estimated_cost).toLocaleString()}` : 'Not Set',
-        p.contractor_name || 'Not Assigned'
-      ]);
+      const phaseRows = phases.map((p) => {
+        const estimatedCost = Number(p.estimated_cost || 0);
+        return [
+          p.name || 'Unnamed Phase',
+          p.status || 'Not Set',
+          p.start_date ? new Date(p.start_date).toLocaleDateString() : 'Not Set',
+          p.end_date ? new Date(p.end_date).toLocaleDateString() : 'Not Set',
+          estimatedCost > 0 ? `Rs ${estimatedCost.toLocaleString()}` : 'Not Set',
+          p.contractor_name || 'Not Assigned'
+        ];
+      });
       
       (doc as any).autoTable({
         head: [['Phase Name', 'Status', 'Start Date', 'End Date', 'Estimated Cost', 'Contractor']],
@@ -298,16 +374,120 @@ export function Projects() {
     
     addFooter(2);
 
-    // --- PAGE 3: EXPENSES ---
+    // --- PAGE 3: PHASE PHOTOS ---
+    if (phasePhotos.length > 0) {
+      doc.addPage();
+      addHeader('PHASE PHOTOS');
+      
+      let currentY = 60;
+      let photosPerPage = 0;
+      const maxPhotosPerPage = 4; // 2x2 grid
+      const photoWidth = 70;
+      const photoHeight = 50;
+      const photoSpacing = 10;
+      
+      // Group photos by phase
+      const photosByPhase = phasePhotos.reduce((acc, photo) => {
+        const phaseName = photo.phases?.name || 'Unknown Phase';
+        if (!acc[phaseName]) acc[phaseName] = [];
+        acc[phaseName].push(photo);
+        return acc;
+      }, {} as { [key: string]: any[] });
+
+      for (const [phaseName, photos] of Object.entries(photosByPhase)) {
+        // Check if we need a new page
+        if (currentY > pageHeight - 100) {
+          doc.addPage();
+          addHeader('PHASE PHOTOS (CONTINUED)');
+          currentY = 60;
+          photosPerPage = 0;
+        }
+
+        // Phase name header
+        doc.setFontSize(14);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(52, 73, 94);
+        doc.text(`Phase: ${phaseName}`, margin, currentY);
+        currentY += 15;
+
+        // Display photos in a grid
+        for (let i = 0; i < photos.length; i++) {
+          const photo = photos[i];
+          
+          // Check if we need a new page
+          if (photosPerPage >= maxPhotosPerPage) {
+            doc.addPage();
+            addHeader('PHASE PHOTOS (CONTINUED)');
+            currentY = 60;
+            photosPerPage = 0;
+            
+            // Repeat phase name on new page
+            doc.setFontSize(14);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(52, 73, 94);
+            doc.text(`Phase: ${phaseName} (continued)`, margin, currentY);
+            currentY += 15;
+          }
+
+          const col = photosPerPage % 2;
+          const row = Math.floor(photosPerPage / 2);
+          
+          const x = margin + col * (photoWidth + photoSpacing);
+          const y = currentY + row * (photoHeight + photoSpacing + 15);
+
+          try {
+            // Convert image to base64 and add to PDF
+            const base64Image = await getImageAsBase64(photo.photo_url);
+            if (base64Image) {
+              doc.addImage(base64Image, 'JPEG', x, y, photoWidth, photoHeight);
+              
+              // Add photo caption
+              doc.setFontSize(8);
+              doc.setFont('helvetica', 'normal');
+              doc.setTextColor(128, 128, 128);
+              const caption = `Uploaded: ${photo.created_at ? new Date(photo.created_at).toLocaleDateString() : 'Unknown'}`;
+              doc.text(caption, x, y + photoHeight + 8);
+            } else {
+              // If image fails to load, show placeholder
+              doc.setFillColor(240, 240, 240);
+              doc.rect(x, y, photoWidth, photoHeight, 'F');
+              doc.setTextColor(128, 128, 128);
+              doc.setFontSize(10);
+              doc.text('Image not available', x + 10, y + photoHeight/2);
+            }
+          } catch (error) {
+            console.error('Error adding image to PDF:', error);
+            // Show placeholder for failed images
+            doc.setFillColor(240, 240, 240);
+            doc.rect(x, y, photoWidth, photoHeight, 'F');
+            doc.setTextColor(128, 128, 128);
+            doc.setFontSize(10);
+            doc.text('Image not available', x + 10, y + photoHeight/2);
+          }
+
+          photosPerPage++;
+        }
+
+        // Update currentY for next phase
+        const rows = Math.ceil(photos.length / 2);
+        currentY += rows * (photoHeight + photoSpacing + 15) + 20;
+      }
+      
+      addFooter(3);
+    }
+
+    // --- PAGE 4: EXPENSES ---
     doc.addPage();
     addHeader('PROJECT EXPENSES');
+    
+    console.log("Expenses for PDF:", expenses);
     
     if (expenses.length > 0) {
       // Format expense data properly to avoid prefix issues
       const expenseRows = expenses.map((e) => {
         const amount = Number(e.amount || 0);
         return [
-          e.phase?.name || 'No Phase',
+          e.phases?.name || 'No Phase',
           e.category || 'Uncategorized',
           `Rs ${amount.toLocaleString()}`,
           e.date ? new Date(e.date).toLocaleDateString() : 'No Date',
@@ -359,11 +539,13 @@ export function Projects() {
       doc.text('No expenses recorded for this project.', margin, 70);
     }
     
-    addFooter(3);
+    addFooter(phasePhotos.length > 0 ? 4 : 3);
 
-    // --- PAGE 4: MATERIALS ---
+    // --- PAGE 5: MATERIALS ---
     doc.addPage();
     addHeader('MATERIALS INVENTORY');
+    
+    console.log("Materials for PDF:", materials);
     
     if (materials.length > 0) {
       // Format material data properly to avoid prefix issues
@@ -372,7 +554,7 @@ export function Projects() {
         const quantity = Number(m.qty_required || 0);
         return [
           m.name || 'Unnamed Material',
-          `Rs ${unitCost.toLocaleString()}`,
+          unitCost > 0 ? `Rs ${unitCost.toLocaleString()}` : 'Rs 0',
           quantity.toString(),
           m.status || 'Unknown',
           m.updated_at ? new Date(m.updated_at).toLocaleDateString() : 'No Date'
@@ -429,22 +611,24 @@ export function Projects() {
       doc.text('No materials recorded for this project.', margin, 70);
     }
     
-    addFooter(4);
+    addFooter(phasePhotos.length > 0 ? 5 : 4);
 
-    // --- PAGE 5: TEAM MEMBERS ---
+    // --- PAGE 6: TEAM MEMBERS ---
     doc.addPage();
     addHeader('TEAM MEMBERS');
     
+    console.log("Team members for PDF:", teamMembers);
+    
     if (teamMembers.length > 0) {
       const teamRows = teamMembers.map((t) => [
-        t.name || 'Unknown Member',
+        t.name || t.full_name || 'Unknown Member',
         t.email || 'No Email',
-        t.role_id ? 'Role Assigned' : 'No Role',
+        t.status || 'pending',
         t.active ? 'Active' : 'Inactive'
       ]);
       
       (doc as any).autoTable({
-        head: [['Name', 'Email', 'Role Status', 'Status']],
+        head: [['Name', 'Email', 'Status', 'Active']],
         body: teamRows,
         startY: 55,
         theme: 'striped',
@@ -475,13 +659,13 @@ export function Projects() {
       doc.text('No team members assigned to this project.', margin, 70);
     }
     
-    addFooter(5);
+    addFooter(phasePhotos.length > 0 ? 6 : 5);
 
-    // --- PAGE 6: SUMMARY ---
+    // --- PAGE 7: SUMMARY ---
     doc.addPage();
     addHeader('PROJECT SUMMARY');
     
-    yPos = 60;
+    let summaryYPos = 60;
     
     // Summary statistics without symbols
     const summaryData = [
@@ -489,11 +673,12 @@ export function Projects() {
       { label: 'Total Expenses', value: `Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}` },
       { label: 'Total Materials', value: materials.length.toString() },
       { label: 'Team Size', value: teamMembers.length.toString() },
+      { label: 'Phase Photos', value: phasePhotos.length.toString() },
     ];
     
     summaryData.forEach((item, index) => {
       const boxX = margin + (index % 2) * (contentWidth / 2);
-      const boxY = yPos + Math.floor(index / 2) * 40;
+      const boxY = summaryYPos + Math.floor(index / 2) * 40;
       
       // Summary box
       doc.setFillColor(52, 152, 219);
@@ -509,13 +694,13 @@ export function Projects() {
     });
     
     // Project status summary
-    yPos += 100;
+    summaryYPos += 100;
     doc.setTextColor(52, 73, 94);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('PROJECT STATUS OVERVIEW:', margin, yPos);
+    doc.text('', margin, summaryYPos);
     
-    yPos += 15;
+    summaryYPos += 15;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
     
@@ -524,15 +709,16 @@ export function Projects() {
       `• Started: ${project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not specified'}`,
       `• Expected completion: ${project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not specified'}`,
       `• Total budget spent: Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}`,
-      `• Active team members: ${teamMembers.filter(t => t.active).length}`,
+      `• Active team members: ${teamMembers.filter(t => t.active !== false).length}`,
       `• Phases in progress: ${phases.filter(p => p.status === 'In Progress').length}`,
+      `• Total phase photos: ${phasePhotos.length}`,
     ];
     
     statusText.forEach((text, index) => {
-      doc.text(text, margin, yPos + (index * 8));
+      doc.text(text, margin, summaryYPos + (index * 8));
     });
     
-    addFooter(6);
+    addFooter(phasePhotos.length > 0 ? 7 : 6);
 
     // Save with formatted filename
     const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_Project_Report_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -786,6 +972,29 @@ export function Projects() {
                 <p className="text-gray-500">No phases</p>
               )}
 
+              <h2 className="text-xl font-bold">Phase Photos</h2>
+              {phasePhotos.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {phasePhotos.map((photo) => (
+                    <div key={photo.id} className="space-y-2">
+                      <img
+                        src={photo.photo_url}
+                        alt="Phase photo"
+                        className="w-full h-32 object-cover rounded-lg"
+                      />
+                      <p className="text-sm text-gray-600">
+                        Phase: {photo.phases?.name || 'Unknown'}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {photo.created_at ? new Date(photo.created_at).toLocaleDateString() : 'Unknown date'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500">No phase photos</p>
+              )}
+
               <h2 className="text-xl font-bold">Expenses</h2>
               {expenses.length > 0 ? (
                 <>
@@ -802,11 +1011,11 @@ export function Projects() {
                       {expenses.map((e) => (
                         <tr key={e.id}>
                           <td className="border p-2">
-                            {e.phase?.name || "-"}
+                            {e.phases?.name || "-"}
                           </td>
                           <td className="border p-2">{e.category}</td>
                           <td className="border p-2">
-                            ₹{e.amount.toLocaleString()}
+                            ₹{Number(e.amount).toLocaleString()}
                           </td>
                           <td className="border p-2">{e.date || "-"}</td>
                         </tr>
@@ -816,7 +1025,7 @@ export function Projects() {
                   <p className="font-semibold mt-2">
                     Total: ₹
                     {expenses
-                      .reduce((sum, e) => sum + e.amount, 0)
+                      .reduce((sum, e) => sum + Number(e.amount), 0)
                       .toLocaleString()}
                   </p>
                 </>
@@ -848,8 +1057,8 @@ export function Projects() {
                   {teamMembers.map((t) => (
                     <li key={t.id} className="flex items-center">
                       <User className="h-4 w-4 mr-2 text-gray-500" />
-                      {t.name || "Unknown"} -{" "}
-                      {t.role_id ? "Role Assigned" : "No Role"}
+                      {t.name || t.full_name || "Unknown"} -{" "}
+                      {t.role_id || t.role ? "Role Assigned" : "No Role"}
                     </li>
                   ))}
                 </ul>
