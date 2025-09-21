@@ -18,6 +18,9 @@ import { Renovations } from "./pages/Renovations";
 import ResetPassword from "./pages/ResetPassword";
 import LandingPage from "./pages/LandingPage";
 import { AdminPayment } from "./pages/AdminPayment";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
+import Support from "./pages/Support";
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
@@ -56,6 +59,9 @@ function App() {
             <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginForm />} />
             <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/privacy" element={<Privacy />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/support" element={<Support />} />
 
             {/* Dashboard accessible by all roles */}
             <Route

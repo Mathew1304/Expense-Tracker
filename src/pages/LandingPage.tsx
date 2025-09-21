@@ -557,7 +557,11 @@ export const LandingPage: React.FC = () => {
             {["Privacy Policy", "Terms of Service", "Support"].map((link, index) => (
               <motion.a
                 key={index}
-                href="#"
+                href={
+                  link === "Privacy Policy" ? "/privacy" :
+                  link === "Terms of Service" ? "/terms" :
+                  "/support"
+                }
                 whileHover={{ scale: 1.1, y: -2 }}
                 className="text-white/80 hover:text-white transition-colors"
               >

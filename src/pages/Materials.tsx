@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash } from "lucide-react";
+import { Plus, Search, X, Trash, AlertTriangle, CheckCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -35,6 +35,9 @@ export function Materials() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<Material | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
   const [newMaterial, setNewMaterial] = useState({
     name: "",
     qty_required: "",
@@ -49,6 +52,17 @@ export function Materials() {
     fetchMaterials();
     fetchProjects();
   }, []);
+
+  // Auto-hide success message after 3 seconds
+  useEffect(() => {
+    if (showSuccessMessage) {
+      const timer = setTimeout(() => {
+        setShowSuccessMessage(false);
+        setSuccessMessage("");
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSuccessMessage]);
 
   const fetchMaterials = async () => {
     setLoading(true);
@@ -140,6 +154,8 @@ export function Materials() {
         project_id: "",
         status: "In Stock",
       });
+      setSuccessMessage("Material added successfully!");
+      setShowSuccessMessage(true);
       fetchMaterials();
     }
   };
@@ -163,9 +179,19 @@ export function Materials() {
       } else {
         setEditingId(null);
         setEditValues(null);
+        setSuccessMessage("Material updated successfully!");
+        setShowSuccessMessage(true);
         fetchMaterials();
       }
     }
+  };
+
+  const showDeleteConfirmation = () => {
+    if (selectedMaterials.length === 0) {
+      alert("Please select materials to delete");
+      return;
+    }
+    setShowDeleteConfirm(true);
   };
 
   const handleDeleteMaterials = async () => {
@@ -178,7 +204,13 @@ export function Materials() {
     if (error) {
       alert("Error deleting materials: " + error.message);
     } else {
+      const deletedCount = selectedMaterials.length;
       setSelectedMaterials([]);
+      setShowDeleteConfirm(false);
+      setSuccessMessage(
+        `${deletedCount} material${deletedCount > 1 ? 's' : ''} deleted successfully!`
+      );
+      setShowSuccessMessage(true);
       fetchMaterials();
     }
   };
@@ -220,6 +252,20 @@ export function Materials() {
   return (
     <Layout>
       <div className="px-4 sm:px-6 lg:px-8 py-8">
+        {/* Success Message */}
+        {showSuccessMessage && (
+          <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <CheckCircle className="h-5 w-5" />
+            <span>{successMessage}</span>
+            <button
+              onClick={() => setShowSuccessMessage(false)}
+              className="ml-2 text-green-600 hover:text-green-800"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="sm:flex sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">Materials</h1>
@@ -232,10 +278,10 @@ export function Materials() {
             </button>
             {selectedMaterials.length > 0 && (
               <button
-                onClick={handleDeleteMaterials}
+                onClick={showDeleteConfirmation}
                 className="inline-flex items-center px-4 py-2 border border-red-300 rounded-lg shadow-sm text-sm font-medium bg-white text-red-600 hover:bg-red-50"
               >
-                <Trash className="h-4 w-4 mr-2" /> Delete Selected
+                <Trash className="h-4 w-4 mr-2" /> Delete Selected ({selectedMaterials.length})
               </button>
             )}
           </div>
@@ -291,10 +337,10 @@ export function Materials() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       <input
                         type="checkbox"
-                        checked={selectedMaterials.length === materials.length}
+                        checked={selectedMaterials.length === currentMaterials.length && currentMaterials.length > 0}
                         onChange={(e) =>
                           setSelectedMaterials(
-                            e.target.checked ? materials.map((m) => m.id) : []
+                            e.target.checked ? currentMaterials.map((m) => m.id) : []
                           )
                         }
                         className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
@@ -454,19 +500,30 @@ export function Materials() {
                         </td>
                         <td className="px-6 py-4 text-sm text-gray-500">
                           {editingId === material.id ? (
-                            <button
-                              onClick={() => handleUpdateMaterial(material.id)}
-                              className="px-2 py-1 bg-green-600 text-white rounded-lg"
-                            >
-                              Save
-                            </button>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => handleUpdateMaterial(material.id)}
+                                className="px-2 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                              >
+                                Save
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setEditingId(null);
+                                  setEditValues(null);
+                                }}
+                                className="px-2 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           ) : (
                             <button
                               onClick={() => {
                                 setEditingId(material.id);
                                 setEditValues({ ...material });
                               }}
-                              className="px-2 py-1 bg-blue-600 text-white rounded-lg"
+                              className="px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                             >
                               Edit
                             </button>
@@ -482,7 +539,7 @@ export function Materials() {
                 <button
                   onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                   disabled={currentPage === 1}
-                  className="px-3 py-1 bg-gray-200 rounded-lg disabled:opacity-50"
+                  className="px-3 py-1 bg-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-300"
                 >
                   Previous
                 </button>
@@ -492,7 +549,7 @@ export function Materials() {
                 <button
                   onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
                   disabled={currentPage === totalPages}
-                  className="px-3 py-1 bg-gray-200 rounded-lg disabled:opacity-50"
+                  className="px-3 py-1 bg-gray-200 rounded-lg disabled:opacity-50 hover:bg-gray-300"
                 >
                   Next
                 </button>
@@ -508,7 +565,7 @@ export function Materials() {
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold">Add Material</h2>
                 <button onClick={() => setShowModal(false)}>
-                  <X className="h-5 w-5 text-gray-500" />
+                  <X className="h-5 w-5 text-gray-500 hover:text-gray-700" />
                 </button>
               </div>
 
@@ -581,16 +638,54 @@ export function Materials() {
 
               <div className="mt-6 flex justify-end gap-2">
                 <button
-                  className="px-4 py-2 bg-gray-200 rounded-lg"
+                  className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300"
                   onClick={() => setShowModal(false)}
                 >
                   Cancel
                 </button>
                 <button
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   onClick={handleAddMaterial}
                 >
                   Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0">
+                  <AlertTriangle className="h-6 w-6 text-red-600" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">Confirm Deletion</h3>
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete {selectedMaterials.length} selected material{selectedMaterials.length > 1 ? 's' : ''}? 
+                  This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300"
+                  onClick={() => setShowDeleteConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                  onClick={handleDeleteMaterials}
+                >
+                  Delete
                 </button>
               </div>
             </div>
