@@ -1,10 +1,9 @@
-// src/pages/Documents.tsx
 import React, { useEffect, useState } from "react";
 import { Search, Download, Eye, Upload, X } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
-import { useAuth } from "../contexts/AuthContext"; // ✅ for user + role
-import imageCompression from "browser-image-compression"; // ✅ compression lib
+import { useAuth } from "../contexts/AuthContext";
+import imageCompression from "browser-image-compression";
 
 type DocRecord = {
   id: string;
@@ -45,12 +44,15 @@ const constructionCategories = [
 ];
 
 export function Documents() {
-  const { user } = useAuth(); // ✅ get logged in user
+  const { user } = useAuth();
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState("");
   const [showUploadForm, setShowUploadForm] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState<DocRecord | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [category, setCategory] = useState("");
@@ -62,14 +64,14 @@ export function Documents() {
     fetchUsers();
   }, [user?.id]);
 
-  // ✅ Fetch only the logged-in admin’s documents
+  // Fetch only the logged-in admin's documents
   async function fetchDocuments() {
     if (!user?.id) return;
 
     const { data, error } = await supabase
       .from("documents")
       .select("*")
-      .eq("uploaded_by", user.id) // <-- filter only current user
+      .eq("uploaded_by", user.id)
       .order("upload_date", { ascending: false });
 
     if (error) {
@@ -104,7 +106,7 @@ export function Documents() {
     }
   }
 
-  // ✅ Upload with compression
+  // Upload with compression
   async function handleUpload() {
     if (!selectedFile) {
       alert("Please select a file first");
@@ -122,7 +124,7 @@ export function Documents() {
     }
 
     try {
-      // ✅ Compress image if it's an image type
+      // Compress image if it's an image type
       let fileToUpload: File = selectedFile;
       if (selectedFile.type.startsWith("image/")) {
         const options = {
@@ -199,56 +201,193 @@ export function Documents() {
     return user?.full_name || user?.email || userId || "Unknown";
   }
 
+  // Get the header subtitle based on selected document
+  const getHeaderSubtitle = () => {
+    if (selectedDocument) {
+      return `${selectedDocument.name} - ${selectedDocument.category} - ${selectedDocument.project}`;
+    }
+    return undefined;
+  };
+
+  const filteredDocuments = documents.filter((doc) =>
+    doc.name?.toLowerCase().includes(search.toLowerCase())
+  );
+
+  const currentDocuments = filteredDocuments.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const totalPages = Math.ceil(filteredDocuments.length / itemsPerPage);
+
   return (
-    <Layout>
-      <div className="p-4">
-        {/* Header + Search */}
-        <div className="flex justify-between mb-4">
-          <h1 className="text-xl font-bold">Documents</h1>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              placeholder="Search..."
-              className="border px-2 py-1 rounded"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <Search className="cursor-pointer" />
+    <div className="h-screen flex flex-col">
+      <Layout title="Documents" subtitle={getHeaderSubtitle()}>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="p-4 flex-1 flex flex-col overflow-hidden">
+            {/* Header + Search */}
+            <div className="flex justify-between mb-4">
+              <div className="flex gap-2">
+                <div className="relative">
+                  <Search className="h-4 w-4 absolute left-3 top-3 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search documents..."
+                    className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Upload Button */}
+            <div className="mb-4">
+              <button
+                className="bg-blue-500 text-white px-4 py-2 rounded-lg flex items-center gap-2 hover:bg-blue-600 transition-colors"
+                onClick={() => setShowUploadForm(!showUploadForm)}
+              >
+                <Upload size={16} /> {showUploadForm ? "Cancel" : "Upload Document"}
+              </button>
+            </div>
+
+            {/* Documents Table Container - Scrollable */}
+            <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr className="text-left">
+                    <th className="p-3 font-medium text-gray-700 border-b">Name</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Category</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Project</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Uploaded By</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Upload Date</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Size</th>
+                    <th className="p-3 font-medium text-gray-700 border-b">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentDocuments.map((doc) => (
+                    <tr 
+                      key={doc.id}
+                      className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
+                        selectedDocument?.id === doc.id 
+                          ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                          : ""
+                      }`}
+                      onClick={() => setSelectedDocument(doc)}
+                    >
+                      <td className="p-3 text-gray-900">{doc.name}</td>
+                      <td className="p-3 text-gray-900">{doc.category}</td>
+                      <td className="p-3 text-gray-900">{doc.project}</td>
+                      <td className="p-3 text-gray-900">{getUserName(doc.uploaded_by)}</td>
+                      <td className="p-3 text-gray-900">
+                        {doc.upload_date
+                          ? new Date(doc.upload_date).toLocaleDateString()
+                          : ""}
+                      </td>
+                      <td className="p-3 text-gray-900">{doc.size}</td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(
+                                supabase.storage
+                                  .from("project-docs")
+                                  .getPublicUrl(doc.file_path || "").data.publicUrl,
+                                "_blank"
+                              );
+                            }}
+                            className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                            title="View"
+                          >
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDownload(doc.file_path || "", doc.name || "");
+                            }}
+                            className="text-green-600 hover:text-green-800 p-1 rounded transition-colors"
+                            title="Download"
+                          >
+                            <Download className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {currentDocuments.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-gray-500">
+                        No documents found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="mt-4 flex justify-center items-center gap-4 py-4">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              >
+                Previous
+              </button>
+              <span className="px-4 py-2 text-gray-700">
+                Page {currentPage} of {totalPages}
+              </span>
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </div>
+      </Layout>
 
-        {/* Upload Button */}
-        <div className="mb-4">
-          <button
-            className="bg-blue-500 text-white px-4 py-2 rounded flex items-center gap-1"
-            onClick={() => setShowUploadForm(!showUploadForm)}
-          >
-            <Upload size={16} /> {showUploadForm ? "Cancel" : "Upload"}
-          </button>
+      {/* Fixed Footer */}
+      <footer className="bg-gray-100 border-t border-gray-200 py-4 ml-64">
+        <div className="text-center text-gray-500 text-sm">
+          © 2025 Buildmyhomes.in — All Rights Reserved
         </div>
+      </footer>
 
-        {/* Upload Modal */}
-        {showUploadForm && (
-          <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50">
-            <div className="bg-white rounded shadow-lg w-full max-w-md p-6 relative">
-              {/* Header */}
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Upload Document</h2>
-                <X
-                  className="cursor-pointer"
-                  onClick={() => setShowUploadForm(false)}
-                />
-              </div>
+      {/* Upload Modal */}
+      {showUploadForm && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Upload Document</h2>
+              <button
+                onClick={() => setShowUploadForm(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-              {/* Form */}
-              <div className="flex flex-col gap-3">
+            {/* Form */}
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Select File</label>
                 <input
                   type="file"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
-                  className="border px-2 py-2 rounded"
+                  className="border border-gray-300 px-3 py-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Category</label>
                 <select
-                  className="border px-2 py-2 rounded"
+                  className="border border-gray-300 px-3 py-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                 >
@@ -259,8 +398,11 @@ export function Documents() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Project</label>
                 <select
-                  className="border px-2 py-2 rounded"
+                  className="border border-gray-300 px-3 py-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   value={project}
                   onChange={(e) => setProject(e.target.value)}
                 >
@@ -271,71 +413,25 @@ export function Documents() {
                     </option>
                   ))}
                 </select>
+              </div>
+              <div className="flex justify-end gap-2 mt-4">
                 <button
-                  className="bg-green-600 text-white px-4 py-2 rounded mt-2"
+                  className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                  onClick={() => setShowUploadForm(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
                   onClick={handleUpload}
                 >
-                  Confirm Upload
+                  Upload Document
                 </button>
               </div>
             </div>
           </div>
-        )}
-
-        {/* Documents Table */}
-        <table className="w-full border mt-6">
-          <thead>
-            <tr className="bg-gray-100 text-left">
-              <th className="p-2 border">Name</th>
-              <th className="p-2 border">Category</th>
-              <th className="p-2 border">Project</th>
-              <th className="p-2 border">Uploaded By</th>
-              <th className="p-2 border">Upload Date</th>
-              <th className="p-2 border">Size</th>
-              <th className="p-2 border">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {documents
-              .filter((doc) =>
-                doc.name?.toLowerCase().includes(search.toLowerCase())
-              )
-              .map((doc) => (
-                <tr key={doc.id}>
-                  <td className="p-2 border">{doc.name}</td>
-                  <td className="p-2 border">{doc.category}</td>
-                  <td className="p-2 border">{doc.project}</td>
-                  <td className="p-2 border">{getUserName(doc.uploaded_by)}</td>
-                  <td className="p-2 border">
-                    {doc.upload_date
-                      ? new Date(doc.upload_date).toLocaleDateString()
-                      : ""}
-                  </td>
-                  <td className="p-2 border">{doc.size}</td>
-                  <td className="p-2 border flex gap-2">
-                    <Eye
-                      className="cursor-pointer"
-                      onClick={() =>
-                        window.open(
-                          supabase.storage
-                            .from("project-docs")
-                            .getPublicUrl(doc.file_path || "").data.publicUrl,
-                          "_blank"
-                        )
-                      }
-                    />
-                    <Download
-                      className="cursor-pointer"
-                      onClick={() =>
-                        handleDownload(doc.file_path || "", doc.name || "")
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
-      </div>
-    </Layout>
+        </div>
+      )}
+    </div>
   );
 }

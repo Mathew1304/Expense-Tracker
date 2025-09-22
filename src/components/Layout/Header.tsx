@@ -1,4 +1,3 @@
-// src/components/Layout/Header.tsx
 import React, { useState } from "react";
 import { LogOut, CircleUserRound, Check, X } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
@@ -6,9 +5,10 @@ import { useNavigate, Link } from "react-router-dom";
 
 interface HeaderProps {
   title: string;
+  subtitle?: string;
 }
 
-export function Header({ title }: HeaderProps) {
+export function Header({ title, subtitle }: HeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -44,7 +44,12 @@ export function Header({ title }: HeaderProps) {
     <>
       <div className="ml-64 bg-white shadow-sm border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold text-gray-800">{title}</h1>
+          <div>
+            <h1 className="text-2xl font-semibold text-gray-800">{title}</h1>
+            {subtitle && (
+              <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
+            )}
+          </div>
 
           <div className="flex items-center space-x-6">
             {/* Profile */}

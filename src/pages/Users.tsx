@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { Layout } from "../components/Layout/Layout";
-import { Plus, Edit2, Trash2, X, Check } from "lucide-react";
+import { Plus, Edit2, Trash2, X, Check, Mail, User, AlertCircle } from "lucide-react";
 
 type User = {
   id: string;
@@ -35,8 +35,12 @@ export function Users() {
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   const [showForm, setShowForm] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [generatedPassword, setGeneratedPassword] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
@@ -52,6 +56,7 @@ export function Users() {
   });
 
   const [roleFilter, setRoleFilter] = useState<string>("");
+  const [showEmailSetup, setShowEmailSetup] = useState(false);
 
   // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
@@ -93,7 +98,7 @@ export function Users() {
         setRoles(rolesData as Role[]);
       }
 
-      // ✅ Fetch projects created by this admin
+      // Fetch projects created by this admin
       const { data: projectsData, error: projectsError } = await supabase
         .from("projects")
         .select("id, name")
@@ -111,10 +116,140 @@ export function Users() {
     fetchData();
   }, []);
 
-  // Add new user
+  // Generate random password
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  // Handle form submission - show confirmation modal
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    const password = generatePassword();
+    setGeneratedPassword(password);
+    setShowForm(false);
+    setShowConfirmModal(true);
+  }
 
+  // Send email with login credentials
+  async function sendWelcomeEmail() {
+    setSendingEmail(true);
+    
+    try {
+      // Option 1: Use EmailJS (Client-side email service)
+      await sendViaEmailJS();
+      
+    } catch (error) {
+      console.error('Error sending email:', error);
+      
+      // Fallback: Show email details in a modal for manual sending
+      showEmailDetailsModal();
+    }
+    
+    setSendingEmail(false);
+  }
+
+  // Option 1: EmailJS Implementation
+  async function sendViaEmailJS() {
+    // EmailJS configuration - UPDATE THESE WITH YOUR ACTUAL VALUES
+    const serviceId = 'service_7lchh47';
+    const templateId = 'template_e2y4ot5';
+    const publicKey = 'ddLUU50I7-6-0oREj';
+    
+    // EmailJS expects specific parameter structure
+    const templateParams = {
+      to_email: formData.email, // Primary recipient field
+      to_name: formData.name,
+      to: formData.email, // Backup recipient field
+      from_name: 'BuildMyHomes Team',
+      from_email: 'noreply@buildmyhomes.in',
+      reply_to: formData.email,
+      password: generatedPassword,
+      role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
+      project: projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned',
+      login_url: window.location.origin + '/login',
+      user_email: formData.email, // For template content
+      message: `Welcome to BuildMyHomes! Your login details are: Email: ${formData.email}, Password: ${generatedPassword}`,
+    };
+
+    console.log('EmailJS Configuration:', { serviceId, templateId, publicKey: publicKey.substring(0, 5) + '...' });
+    console.log('EmailJS Template Params:', templateParams);
+
+    // Load EmailJS if not already loaded
+    if (!window.emailjs) {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+      document.head.appendChild(script);
+      await new Promise(resolve => script.onload = resolve);
+      window.emailjs.init(publicKey);
+    }
+
+    try {
+      console.log('Sending email via EmailJS...');
+      
+      // Use sendForm method which is more reliable for recipient addresses
+      const response = await window.emailjs.send(
+        serviceId,
+        templateId,
+        templateParams,
+        publicKey // Pass public key as 4th parameter
+      );
+      
+      console.log('EmailJS Response:', response);
+      if (response.status === 200) {
+        alert('Welcome email sent successfully via EmailJS!');
+      } else {
+        throw new Error(`EmailJS failed with status: ${response.status}`);
+      }
+    } catch (error) {
+      console.error('EmailJS Error:', error);
+      
+      // More detailed error logging
+      if (error.status) {
+        console.error('EmailJS Error Status:', error.status);
+        console.error('EmailJS Error Text:', error.text);
+      }
+      
+      throw error;
+    }
+  }
+
+  // Fallback: Show email details for manual sending
+  function showEmailDetailsModal() {
+    const emailContent = `
+Subject: Welcome to BuildMyHomes - Your Account is Ready!
+
+Hello ${formData.name}!
+
+Welcome to BuildMyHomes! Your account has been created successfully.
+
+Login Details:
+Email: ${formData.email}
+Password: ${generatedPassword}
+Role: ${roles.find(r => r.id === formData.role_id)?.role_name || 'User'}
+Project: ${projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned'}
+
+Login URL: ${window.location.origin}/login
+
+Please change your password after your first login for security.
+
+Best regards,
+BuildMyHomes Team
+    `;
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(emailContent).then(() => {
+      alert(`Email content copied to clipboard! Please send this manually to ${formData.email}\n\nPassword: ${generatedPassword}`);
+    }).catch(() => {
+      alert(`Please send this email manually to ${formData.email}:\n\n${emailContent}`);
+    });
+  }
+  // Confirm and add user
+  async function confirmAddUser() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -122,8 +257,6 @@ export function Users() {
       console.error("No logged-in admin found");
       return;
     }
-
-    const password = Math.random().toString(36).slice(-8);
 
     const { data: newUser, error: insertError } = await supabase
       .from("users")
@@ -141,24 +274,33 @@ export function Users() {
 
     if (insertError) {
       console.error("Insert failed:", insertError.message);
+      alert("Failed to add user. Please try again.");
       return;
     }
 
-    console.log(`Send email to ${formData.email} with password ${password}`);
+    // Send welcome email
+    await sendWelcomeEmail();
 
     setUsers((prev) => [newUser, ...prev]);
-    setShowForm(false);
+    setShowConfirmModal(false);
     setFormData({ name: "", email: "", role_id: "", project_id: "" });
+    setGeneratedPassword("");
   }
 
   // Delete user
   async function handleDelete(userId: string) {
-    const { error } = await supabase.from("users").delete().eq("id", userId);
-    if (error) {
-      console.error("Delete failed:", error.message);
-      return;
+    if (window.confirm("Are you sure you want to delete this user?")) {
+      const { error } = await supabase.from("users").delete().eq("id", userId);
+      if (error) {
+        console.error("Delete failed:", error.message);
+        return;
+      }
+      setUsers(users.filter((u) => u.id !== userId));
+      // Clear selected user if it was deleted
+      if (selectedUser?.id === userId) {
+        setSelectedUser(null);
+      }
     }
-    setUsers(users.filter((u) => u.id !== userId));
   }
 
   // Start editing
@@ -204,230 +346,371 @@ export function Users() {
     ? users.filter((u) => u.roles?.role_name === roleFilter)
     : users;
 
-  if (loading) return <Layout>Loading...</Layout>;
+  // Get the header subtitle based on selected user
+  const getHeaderSubtitle = () => {
+    if (selectedUser) {
+      const roleName = selectedUser.roles?.role_name || 'No Role';
+      const projectName = selectedUser.projects?.name || 'No Project';
+      return `${selectedUser.name} - ${roleName} - ${projectName}`;
+    }
+    return undefined;
+  };
+
+  if (loading) {
+    return (
+      <Layout title="Users">
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl text-gray-600">Loading users...</p>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
-    <Layout>
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-4">Users</h1>
-
-        {/* Add User button aligned right */}
-        <div className="flex justify-end mb-4">
-          <button
-            onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Plus /> Add User
-          </button>
-        </div>
-
-        <div className="mb-4">
-          <label className="block font-semibold mb-1">Filter by Role</label>
-          <select
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-            className="border p-2 rounded"
-          >
-            <option value="">All Roles</option>
-            {roles.map((r) => (
-              <option key={r.id} value={r.role_name}>
-                {r.role_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {showForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg shadow-lg p-6 w-96">
-              <div className="flex justify-between items-center border-b pb-2 mb-4">
-                <h2 className="text-lg font-semibold text-gray-700">Add New User</h2>
-                <button
-                  onClick={() => setShowForm(false)}
-                  className="text-gray-500 hover:text-gray-700"
+    <div className="h-screen flex flex-col">
+      <Layout title="Users" subtitle={getHeaderSubtitle()}>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="p-6 flex-1 flex flex-col overflow-hidden">
+            {/* Header Section */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-4">
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 >
-                  <X size={20} />
+                  <option value="">All Roles</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.role_name}>
+                      {r.role_name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => setShowEmailSetup(true)}
+                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  <Mail size={18} /> Email Setup
                 </button>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Full Name</label>
-                  <input
-                    type="text"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Email Address</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Select role</label>
-                  <select
-                    value={formData.role_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, role_id: e.target.value })
-                    }
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    required
-                  >
-                    <option value="">Select role</option>
-                    {roles.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.role_name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Assign Project</label>
-                  <select
-                    value={formData.project_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, project_id: e.target.value })
-                    }
-                    className="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
-                    required
-                  >
-                    <option value="">Select project</option>
-                    {projects.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex justify-end gap-2 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowForm(false)}
-                    className="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
-                  >
-                    + Add
-                  </button>
-                </div>
-              </form>
+              <button
+                onClick={() => setShowForm(true)}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+              >
+                <Plus size={18} /> Add User
+              </button>
+            </div>
+
+            {/* Table Container - Scrollable */}
+            <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Name</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Email</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Role</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Project</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map((u) => (
+                    <tr
+                      key={u.id}
+                      className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
+                        selectedUser?.id === u.id 
+                          ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                          : ""
+                      }`}
+                      onClick={() => setSelectedUser(u)}
+                    >
+                      <td className="p-3 text-gray-900">
+                        {editingUser?.id === u.id ? (
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, name: e.target.value })
+                            }
+                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          u.name
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-900">
+                        {editingUser?.id === u.id ? (
+                          <input
+                            type="email"
+                            value={editForm.email}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, email: e.target.value })
+                            }
+                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        ) : (
+                          u.email
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-900">
+                        {editingUser?.id === u.id ? (
+                          <select
+                            value={editForm.role_id}
+                            onChange={(e) =>
+                              setEditForm({ ...editForm, role_id: e.target.value })
+                            }
+                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <option value="">Select role</option>
+                            {roles.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                {r.role_name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          u.roles?.role_name || "No Role"
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-900">
+                        {u.projects?.name || "No Project"}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          {editingUser?.id === u.id ? (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditSubmit(u.id);
+                                }}
+                                className="text-green-600 hover:text-green-800 p-1 rounded transition-colors"
+                                title="Save"
+                              >
+                                <Check size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  cancelEdit();
+                                }}
+                                className="text-gray-600 hover:text-gray-800 p-1 rounded transition-colors"
+                                title="Cancel"
+                              >
+                                <X size={18} />
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEdit(u);
+                                }}
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(u.id);
+                                }}
+                                className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-8 text-center text-gray-500">
+                        No users found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
-        )}
+        </div>
+      </Layout>
 
-        <table className="w-full border-collapse border">
-          <thead>
-            <tr className="bg-gray-100">
-              <th className="border p-2">Name</th>
-              <th className="border p-2">Email</th>
-              <th className="border p-2">Role</th>
-              <th className="border p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredUsers.map((u) => (
-              <tr key={u.id}>
-                <td className="border p-2">
-                  {editingUser?.id === u.id ? (
-                    <input
-                      type="text"
-                      value={editForm.name}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, name: e.target.value })
-                      }
-                      className="border p-1 rounded w-full"
-                    />
-                  ) : (
-                    u.name
-                  )}
-                </td>
-                <td className="border p-2">
-                  {editingUser?.id === u.id ? (
-                    <input
-                      type="email"
-                      value={editForm.email}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, email: e.target.value })
-                      }
-                      className="border p-1 rounded w-full"
-                    />
-                  ) : (
-                    u.email
-                  )}
-                </td>
-                <td className="border p-2">
-                  {editingUser?.id === u.id ? (
-                    <select
-                      value={editForm.role_id}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, role_id: e.target.value })
-                      }
-                      className="border p-1 rounded w-full"
-                    >
-                      <option value="">Select role</option>
-                      {roles.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.role_name}
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    u.roles?.role_name || "-"
-                  )}
-                </td>
-                <td className="border p-2 flex gap-2">
-                  {editingUser?.id === u.id ? (
-                    <>
-                      <button
-                        className="p-1 border rounded hover:bg-green-100 text-green-600"
-                        onClick={() => handleEditSubmit(u.id)}
-                      >
-                        <Check />
-                      </button>
-                      <button
-                        className="p-1 border rounded hover:bg-gray-100"
-                        onClick={cancelEdit}
-                      >
-                        <X />
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        className="p-1 border rounded hover:bg-gray-100"
-                        onClick={() => startEdit(u)}
-                      >
-                        <Edit2 />
-                      </button>
-                      <button
-                        className="p-1 border rounded hover:bg-red-100 text-red-600"
-                        onClick={() => handleDelete(u.id)}
-                      >
-                        <Trash2 />
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </Layout>
+      {/* Fixed Footer */}
+      <footer className="bg-gray-100 border-t border-gray-200 py-4 ml-64">
+        <div className="text-center text-gray-500 text-sm">
+          © 2025 Buildmyhomes.in — All Rights Reserved
+        </div>
+      </footer>
+
+      {/* Add User Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Add New User</h2>
+              <button
+                onClick={() => setShowForm(false)}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) =>
+                    setFormData({ ...formData, email: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
+                <select
+                  value={formData.role_id}
+                  onChange={(e) =>
+                    setFormData({ ...formData, role_id: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select role</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.role_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign Project</label>
+                <select
+                  value={formData.project_id}
+                  onChange={(e) =>
+                    setFormData({ ...formData, project_id: e.target.value })
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select project</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Review Details
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0">
+                <User className="h-8 w-8 text-blue-600" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-medium text-gray-900">Confirm User Details</h3>
+              </div>
+            </div>
+
+            <div className="mb-6 space-y-3">
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">User Information:</h4>
+                <p><strong>Name:</strong> {formData.name}</p>
+                <p><strong>Email:</strong> {formData.email}</p>
+                <p><strong>Role:</strong> {roles.find(r => r.id === formData.role_id)?.role_name}</p>
+                <p><strong>Project:</strong> {projects.find(p => p.id === formData.project_id)?.name}</p>
+              </div>
+              
+              <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+                <div className="flex items-start">
+                  <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-2" />
+                  <div>
+                    <h4 className="font-medium text-blue-900 mb-1">Generated Password:</h4>
+                    <p className="text-blue-800 font-mono text-sm bg-white px-2 py-1 rounded border">
+                      {generatedPassword}
+                    </p>
+                    <p className="text-blue-700 text-sm mt-2">
+                      This password will be sent to the user's email address.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowConfirmModal(false);
+                  setShowForm(true);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Back to Edit
+              </button>
+              <button
+                onClick={confirmAddUser}
+                disabled={sendingEmail}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Mail size={16} />
+                {sendingEmail ? 'Sending...' : 'Add User & Send Email'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email Setup Modal */}
+      {showEmailSetup && (
+        <EmailSetup onClose={() => setShowEmailSetup(false)} />
+      )}
+    </div>
   );
 }

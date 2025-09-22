@@ -35,18 +35,21 @@ export function Dashboard() {
       setStatus(profile?.status || null);
       setName(profile?.full_name || user.email);
 
-      // ✅ Stats queries
+      // ✅ Stats queries with proper filtering
       let allProjectsQuery = supabase.from("projects").select("*");
       let expensesQuery = supabase.from("expenses").select("amount");
       let materialsQuery = supabase.from("materials").select("qty_required");
       let teamMembersQuery = supabase.from("profiles").select("*");
 
+      // Apply filters based on role
       if (profile?.role === "Admin") {
+        // Admin sees only their own data
         allProjectsQuery = allProjectsQuery.eq("created_by", user.id);
         expensesQuery = expensesQuery.eq("created_by", user.id);
         materialsQuery = materialsQuery.eq("created_by", user.id);
         teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
       } else if (profile?.role === "client") {
+        // Client sees projects they're assigned to and their own data
         allProjectsQuery = allProjectsQuery.eq("client_id", user.id);
         expensesQuery = expensesQuery.eq("created_by", user.id);
         materialsQuery = materialsQuery.eq("created_by", user.id);
@@ -101,91 +104,91 @@ export function Dashboard() {
         },
       ]);
 
-      // ✅ Recent activities - simplified approach
+      // ✅ Recent activities - with strict filtering for current user only
       let recentExpensesQuery = supabase
         .from("expenses")
-        .select("id, amount, date, created_at, project_id, created_by");
+        .select("id, amount, date, created_at, project_id, created_by")
+        .eq("created_by", user.id); // Always filter by current user
 
-      if (profile?.role === "Admin") {
-        recentExpensesQuery = recentExpensesQuery.eq("created_by", user.id);
-      } else if (profile?.role === "client") {
-        recentExpensesQuery = recentExpensesQuery.eq("created_by", user.id);
+      let recentMaterialsQuery = supabase
+        .from("materials")
+        .select("id, name, project_id, created_by, updated_at, qty_required")
+        .eq("created_by", user.id); // Always filter by current user
+
+      let documentsQuery = supabase
+        .from("documents")
+        .select("id, name, project_id, uploaded_by, upload_date, status")
+        .eq("uploaded_by", user.id); // Always filter by current user
+
+      // For role-based additional filtering, only apply if needed
+      if (profile?.role === "Admin" || profile?.role === "client") {
+        // Additional filtering can be added here if needed
+        // But the primary filter by user.id should be sufficient
       }
 
       const { data: recentExpenses, error: expensesError } = await recentExpensesQuery
         .order("created_at", { ascending: false })
         .limit(5);
 
-      console.log("Recent expenses:", recentExpenses, "Error:", expensesError);
-
-      // ✅ Fetch recent materials
-      let recentMaterialsQuery = supabase
-        .from("materials")
-        .select("id, name, project_id, created_by, updated_at, qty_required");
-
-      if (profile?.role === "Admin") {
-        recentMaterialsQuery = recentMaterialsQuery.eq("created_by", user.id);
-      } else if (profile?.role === "client") {
-        recentMaterialsQuery = recentMaterialsQuery.eq("created_by", user.id);
-      }
-
       const { data: recentMaterials, error: materialsError } = await recentMaterialsQuery
         .order("updated_at", { ascending: false })
         .limit(5);
-
-      console.log("Recent materials:", recentMaterials, "Error:", materialsError);
-
-      // ✅ Fetch recent documents
-      let documentsQuery = supabase
-        .from("documents")
-        .select("id, name, project_id, uploaded_by, upload_date, status");
-
-      if (profile?.role === "Admin") {
-        documentsQuery = documentsQuery.eq("uploaded_by", user.id);
-      } else if (profile?.role === "client") {
-        documentsQuery = documentsQuery.eq("uploaded_by", user.id);
-      }
 
       const { data: recentDocuments, error: documentsError } = await documentsQuery
         .order("upload_date", { ascending: false })
         .limit(5);
 
-      console.log("Recent documents:", recentDocuments, "Error:", documentsError);
+      console.log("User ID:", user.id);
+      console.log("Recent expenses (filtered):", recentExpenses, "Error:", expensesError);
+      console.log("Recent materials (filtered):", recentMaterials, "Error:", materialsError);
+      console.log("Recent documents (filtered):", recentDocuments, "Error:", documentsError);
 
-      // ✅ Fetch recent users (only for Superadmin and Admin)
+      // ✅ Fetch recent users (only for Superadmin)
       let recentUsers: any[] = [];
-      if (profile?.role === "Superadmin" || profile?.role === "Admin") {
-        let usersQuery = supabase
+      if (profile?.role === "Superadmin") {
+        const { data: users, error: usersError } = await supabase
           .from("profiles")
-          .select("id, full_name, role, created_at, status");
-
-        if (profile?.role === "Admin") {
-          // Admin can only see users they created (if there's a created_by field)
-          // For now, we'll show all users for Admin as well
-        }
-
-        const { data: users, error: usersError } = await usersQuery
+          .select("id, full_name, role, created_at, status")
           .order("created_at", { ascending: false })
           .limit(5);
 
         recentUsers = users || [];
         console.log("Recent users:", recentUsers, "Error:", usersError);
+      } else if (profile?.role === "Admin") {
+        // Admin can only see users they created (if your system supports this)
+        const { data: users, error: usersError } = await supabase
+          .from("profiles")
+          .select("id, full_name, role, created_at, status")
+          .eq("created_by", user.id) // Only users created by this admin
+          .order("created_at", { ascending: false })
+          .limit(5);
+
+        recentUsers = users || [];
+        console.log("Recent users (Admin):", recentUsers, "Error:", usersError);
       }
 
-      // Get all projects for lookup
-      const { data: allProjectsForLookup } = await supabase
-        .from("projects")
-        .select("id, name");
+      // Get projects and profiles only for the current user's data
+      let projectsForLookupQuery = supabase.from("projects").select("id, name");
+      if (profile?.role === "Admin") {
+        projectsForLookupQuery = projectsForLookupQuery.eq("created_by", user.id);
+      } else if (profile?.role === "client") {
+        projectsForLookupQuery = projectsForLookupQuery.eq("client_id", user.id);
+      }
 
-      // Get all profiles for lookup
+      const { data: allProjectsForLookup } = await projectsForLookupQuery;
+
+      // For profiles lookup, we need all profiles to get names, but we'll only show activities from current user
       const { data: allProfilesForLookup } = await supabase
         .from("profiles")
         .select("id, full_name");
 
       let activities: any[] = [];
 
-      // Add expense activities with manual lookups
+      // Add expense activities - only from current user
       recentExpenses?.forEach((expense: any, index: number) => {
+        // Double-check that this expense belongs to current user
+        if (expense.created_by !== user.id) return;
+
         const project = allProjectsForLookup?.find(p => p.id === expense.project_id);
         const profile = allProfilesForLookup?.find(p => p.id === expense.created_by);
         
@@ -210,8 +213,11 @@ export function Dashboard() {
         });
       });
 
-      // Add material activities
+      // Add material activities - only from current user
       recentMaterials?.forEach((material: any, index: number) => {
+        // Double-check that this material belongs to current user
+        if (material.created_by !== user.id) return;
+
         const project = allProjectsForLookup?.find(p => p.id === material.project_id);
         const profile = allProfilesForLookup?.find(p => p.id === material.created_by);
         
@@ -237,8 +243,11 @@ export function Dashboard() {
         });
       });
 
-      // Add document activities
+      // Add document activities - only from current user
       recentDocuments?.forEach((document: any, index: number) => {
+        // Double-check that this document belongs to current user
+        if (document.uploaded_by !== user.id) return;
+
         const project = allProjectsForLookup?.find(p => p.id === document.project_id);
         const profile = allProfilesForLookup?.find(p => p.id === document.uploaded_by);
         
@@ -264,7 +273,7 @@ export function Dashboard() {
         });
       });
 
-      // Add user activities (only for Superadmin and Admin)
+      // Add user activities (only for Superadmin and Admin who created users)
       recentUsers?.forEach((userProfile: any, index: number) => {
         const colors = [
           "border-slate-500", 
@@ -295,7 +304,7 @@ export function Dashboard() {
       setRecentActivities(activities);
       setLoading(false);
       
-      console.log("Final activities:", activities);
+      console.log("Final filtered activities for user", user.id, ":", activities);
     };
 
     fetchData();
@@ -443,7 +452,7 @@ export function Dashboard() {
             <div className="bg-white shadow-lg rounded-xl border border-gray-200">
               <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-lg font-medium text-gray-900">
-                  Recent Activity
+                  My Recent Activity
                 </h3>
               </div>
               <div className="p-6 space-y-4 max-h-96 overflow-y-auto">

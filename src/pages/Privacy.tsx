@@ -193,9 +193,9 @@ export const Privacy: React.FC = () => {
                 If you have any questions about this Privacy Policy or our data practices, please contact us:
               </p>
               <div className="space-y-2 text-gray-700">
-                <p><strong>Email:</strong> privacy@buildmyhomes.in</p>
+                <p><strong>Email:</strong> support@buildmyhomes.in</p>
                 <p><strong>Phone:</strong> +91 77604 87250</p>
-                <p><strong>Address:</strong>No 12 Ground Floor, 3rd Street Bhavani Nagar, Pozhichalur, Chennai-600074, Tamil Nadu, India</p>
+                
               </div>
             </motion.section>
           </div>

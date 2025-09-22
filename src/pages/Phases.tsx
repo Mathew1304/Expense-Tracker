@@ -66,6 +66,7 @@ export function Phases() {
   const [comments, setComments] = useState<PhaseComment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
+  const [selectedPhase, setSelectedPhase] = useState<Phase | null>(null);
 
   const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
     userRole ?? ""
@@ -178,8 +179,6 @@ export function Phases() {
     setShowModal(true);
   };
 
-  
-
   const getBudgetUsage = (phase: Phase) => {
     const totalSpent = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
     if (!phase.estimated_cost) return 0;
@@ -238,11 +237,17 @@ export function Phases() {
     if (viewPhase) fetchComments(viewPhase.id);
   };
 
-  return (
-    <Layout>
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-4">Phases</h1>
+  // Get the header subtitle based on selected phase
+  const getHeaderSubtitle = () => {
+    if (selectedPhase) {
+      return `${selectedPhase.name} - ${selectedPhase.project_name}`;
+    }
+    return undefined;
+  };
 
+  return (
+    <Layout title="Phases" subtitle={getHeaderSubtitle()}>
+      <div className="p-6">
         {canManage && (
           <div className="mb-6 flex gap-4">
             <button
@@ -259,10 +264,18 @@ export function Phases() {
           {phases.map((phase) => (
             <div
               key={phase.id}
-              className="border rounded-lg p-4 shadow-sm flex justify-between items-center"
+              className={`border rounded-lg p-4 shadow-sm flex justify-between items-center cursor-pointer transition-all ${
+                selectedPhase?.id === phase.id 
+                  ? "border-blue-500 bg-blue-50" 
+                  : "hover:border-gray-300 hover:shadow-md"
+              }`}
+              onClick={() => setSelectedPhase(phase)}
             >
               <div>
                 <h2 className="text-lg font-semibold">{phase.name}</h2>
+                <p className="text-sm text-gray-500 mb-1">
+                  Project: {phase.project_name}
+                </p>
                 <p className="text-sm text-gray-600">
                   {phase.start_date} → {phase.end_date} | {phase.status}
                 </p>
@@ -272,7 +285,9 @@ export function Phases() {
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedPhase(phase);
                     setViewPhase(phase);
                     fetchPhasePhotos(phase.id);
                     fetchComments(phase.id);
@@ -530,7 +545,6 @@ export function Phases() {
                   >
                     Edit Phase
                   </button>
-                  
                 </div>
               )}
             </div>

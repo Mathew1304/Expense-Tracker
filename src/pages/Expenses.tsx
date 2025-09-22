@@ -1,11 +1,21 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, Edit2 } from "lucide-react";
+import { Plus, Search, X, Trash, Edit2, TrendingUp, TrendingDown } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 
-interface Expense {
+interface Transaction {
   id: string;
   phase_id: string;
   category: string;
@@ -15,6 +25,7 @@ interface Expense {
   project_name: string;
   payment_method: string;
   bill_path: string | null;
+  type: 'expense' | 'income';
 }
 
 interface Phase {
@@ -29,7 +40,13 @@ interface Project {
   name: string;
 }
 
-const CATEGORY_OPTIONS = [
+interface ChartData {
+  date: string;
+  expense: number;
+  income: number;
+}
+
+const EXPENSE_CATEGORY_OPTIONS = [
   "Labour",
   "Materials",
   "Machinery",
@@ -46,16 +63,32 @@ const CATEGORY_OPTIONS = [
   "Miscellaneous",
 ];
 
+const INCOME_CATEGORY_OPTIONS = [
+  "Client Payment",
+  "Advance Payment",
+  "Milestone Payment",
+  "Final Payment",
+  "Additional Work Payment",
+  "Material Refund",
+  "Insurance Claim",
+  "Government Subsidy",
+  "Loan Disbursement",
+  "Other Income",
+];
+
 const PAYMENT_OPTIONS = ["Cash", "UPI", "Card", "Bank Transfer", "Cheque"];
 
 export function Expenses() {
   const { user } = useAuth();
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [search, setSearch] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
+  const [dateFilter, setDateFilter] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     projectId: "",
@@ -77,7 +110,7 @@ export function Expenses() {
   useEffect(() => {
     if (projects.length > 0) {
       fetchPhases();
-      fetchExpenses();
+      fetchTransactions();
     }
   }, [projects]);
 
@@ -113,14 +146,14 @@ export function Expenses() {
     }
   }
 
-  async function fetchExpenses() {
+  async function fetchTransactions() {
     if (projects.length === 0) return;
     setLoading(true);
 
     const { data, error } = await supabase
       .from("expenses")
       .select(
-        `id, phase_id, category, amount, date, payment_method, bill_path,
+        `id, phase_id, category, amount, date, payment_method, bill_path, type,
         phases (id, name, project_id, projects (id, name))`
       )
       .in(
@@ -130,7 +163,7 @@ export function Expenses() {
       .order("date", { ascending: false });
 
     if (!error && data) {
-      setExpenses(
+      setTransactions(
         data.map((e: any) => ({
           id: e.id,
           phase_id: e.phase_id,
@@ -139,6 +172,7 @@ export function Expenses() {
           date: e.date,
           payment_method: e.payment_method,
           bill_path: e.bill_path,
+          type: e.type || 'expense',
           phase_name: e.phases?.name || "No Phase",
           project_name: e.phases?.projects?.name || "No Project",
         }))
@@ -188,17 +222,21 @@ export function Expenses() {
       date,
       payment_method: paymentMethod,
       bill_path,
+      type: formType,
+      created_by: user?.id,
     };
+
+    console.log('Saving transaction with payload:', payload);
 
     const { error } = editingId
       ? await supabase.from("expenses").update(payload).eq("id", editingId)
       : await supabase.from("expenses").insert([payload]);
 
     if (error) {
-      console.error("Error saving expense:", error);
-      alert("Failed to save expense.");
+      console.error("Error saving transaction:", error);
+      alert(`Failed to save transaction: ${error.message}`);
     } else {
-      fetchExpenses();
+      fetchTransactions();
       setShowForm(false);
       setEditingId(null);
       setFormData({
@@ -210,304 +248,504 @@ export function Expenses() {
         date: "",
         billFile: null,
       });
+      alert(`${formType === 'income' ? 'Income' : 'Expense'} saved successfully!`);
     }
   };
 
-  const handleEdit = (expense: Expense) => {
+  const handleEdit = (transaction: Transaction) => {
     const project =
-      phases.find((p) => p.id === expense.phase_id)?.project_id || "";
+      phases.find((p) => p.id === transaction.phase_id)?.project_id || "";
     setFormData({
       projectId: project,
-      phaseId: expense.phase_id,
-      category: expense.category,
-      amount: expense.amount.toString(),
-      paymentMethod: expense.payment_method,
-      date: expense.date,
+      phaseId: transaction.phase_id,
+      category: transaction.category,
+      amount: transaction.amount.toString(),
+      paymentMethod: transaction.payment_method,
+      date: transaction.date,
       billFile: null,
     });
-    setEditingId(expense.id);
+    setFormType(transaction.type);
+    setEditingId(transaction.id);
     setShowForm(true);
   };
 
   const handleDelete = async (id: string) => {
-    if (window.confirm("Are you sure you want to delete this expense?")) {
+    if (window.confirm("Are you sure you want to delete this transaction?")) {
       const { error } = await supabase.from("expenses").delete().eq("id", id);
-      if (!error) fetchExpenses();
+      if (!error) {
+        fetchTransactions();
+        if (selectedTransaction?.id === id) {
+          setSelectedTransaction(null);
+        }
+      }
     }
   };
 
-  const filteredExpenses = expenses.filter((e) => {
-    const matchesProject =
-      !selectedProject || e.project_name === selectedProject;
+  const openForm = (type: 'expense' | 'income') => {
+    setFormType(type);
+    setEditingId(null);
+    setFormData({
+      projectId: "",
+      phaseId: "",
+      category: "",
+      amount: "",
+      paymentMethod: "",
+      date: "",
+      billFile: null,
+    });
+    setShowForm(true);
+  };
+
+  // Filter transactions
+  const filteredTransactions = transactions.filter((t) => {
+    const matchesProject = !selectedProject || t.project_name === selectedProject;
+    const matchesDate = !dateFilter || t.date.startsWith(dateFilter);
     const matchesSearch =
       !search ||
-      e.project_name.toLowerCase().includes(search.toLowerCase()) ||
-      e.phase_name.toLowerCase().includes(search.toLowerCase()) ||
-      e.category.toLowerCase().includes(search.toLowerCase()) ||
-      e.payment_method.toLowerCase().includes(search.toLowerCase());
-    return matchesProject && matchesSearch;
+      t.project_name.toLowerCase().includes(search.toLowerCase()) ||
+      t.phase_name.toLowerCase().includes(search.toLowerCase()) ||
+      t.category.toLowerCase().includes(search.toLowerCase()) ||
+      t.payment_method.toLowerCase().includes(search.toLowerCase());
+    return matchesProject && matchesDate && matchesSearch;
   });
 
-  const currentExpenses = filteredExpenses.slice(
+  const currentTransactions = filteredTransactions.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
 
-  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
-  const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
+  const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
+  
+  // Calculate totals
+  const totalExpenses = filteredTransactions
+    .filter(t => t.type === 'expense')
+    .reduce((sum, t) => sum + t.amount, 0);
+  
+  const totalIncome = filteredTransactions
+    .filter(t => t.type === 'income')
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  // Prepare chart data
+  const getChartData = (): ChartData[] => {
+    const dataMap = new Map<string, { expense: number; income: number }>();
+    
+    filteredTransactions.forEach((t) => {
+      const date = format(new Date(t.date), "MMM dd");
+      if (!dataMap.has(date)) {
+        dataMap.set(date, { expense: 0, income: 0 });
+      }
+      const current = dataMap.get(date)!;
+      if (t.type === 'expense') {
+        current.expense += t.amount;
+      } else {
+        current.income += t.amount;
+      }
+    });
+
+    return Array.from(dataMap.entries())
+      .map(([date, values]) => ({
+        date,
+        expense: values.expense,
+        income: values.income,
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .slice(-30); // Last 30 data points
+  };
+
+  const chartData = getChartData();
+
+  // Get the header subtitle based on selected transaction
+  const getHeaderSubtitle = () => {
+    if (selectedTransaction) {
+      const typeLabel = selectedTransaction.type === 'income' ? 'Income' : 'Expense';
+      return `${typeLabel}: ${selectedTransaction.category} - ₹${selectedTransaction.amount.toFixed(2)} - ${selectedTransaction.project_name}`;
+    }
+    return undefined;
+  };
 
   return (
-    <Layout>
-      <div className="p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Expenses</h1>
-          <button
-            onClick={() => setShowForm(true)}
-            className="flex items-center bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-          >
-            <Plus className="mr-2" size={18} /> Add Expense
-          </button>
-        </div>
-
-        {/* Search + Filter */}
-        <div className="flex items-center mb-4 gap-4">
-          <div className="flex-1 flex items-center gap-2">
-            <Search size={18} />
-            <input
-              type="text"
-              placeholder="Search expenses..."
-              className="border p-2 rounded w-full"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-          <select
-            className="border p-2 rounded"
-            value={selectedProject}
-            onChange={(e) => {
-              setSelectedProject(e.target.value);
-              setCurrentPage(1);
-            }}
-          >
-            <option value="">All Projects</option>
-            {projects.map((project) => (
-              <option key={project.id} value={project.name}>
-                {project.name}
-              </option>
-            ))}
-          </select>
-          <div className="text-lg font-semibold">
-            Total: ₹{totalExpenses.toFixed(2)}
-          </div>
-        </div>
-
-        {/* Expenses Table */}
-        {loading ? (
-          <p>Loading...</p>
-        ) : (
-          <table className="w-full border">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="p-2 border">Project</th>
-                <th className="p-2 border">Phase</th>
-                <th className="p-2 border">Category</th>
-                <th className="p-2 border">Amount</th>
-                <th className="p-2 border">Payment Method</th>
-                <th className="p-2 border">Bill</th>
-                <th className="p-2 border">Date</th>
-                <th className="p-2 border">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {currentExpenses.map((e) => (
-                <tr key={e.id}>
-                  <td className="p-2 border">{e.project_name}</td>
-                  <td className="p-2 border">{e.phase_name}</td>
-                  <td className="p-2 border">{e.category}</td>
-                  <td className="p-2 border">₹{e.amount.toFixed(2)}</td>
-                  <td className="p-2 border">{e.payment_method}</td>
-                  <td className="p-2 border">
-                    {e.bill_path ? (
-                      <a
-                        href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${e.bill_path}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 underline"
-                      >
-                        View Bill
-                      </a>
-                    ) : (
-                      "No Bill"
-                    )}
-                  </td>
-                  <td className="p-2 border">
-                    {format(new Date(e.date), "yyyy-MM-dd")}
-                  </td>
-                  <td className="p-2 border flex gap-2">
-                    <button onClick={() => handleEdit(e)}>
-                      <Edit2 size={18} />
-                    </button>
-                    <button onClick={() => handleDelete(e.id)}>
-                      <Trash size={18} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-              {currentExpenses.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="p-2 border text-center">
-                    No expenses found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        )}
-
-        {/* Pagination */}
-        <div className="mt-4 flex justify-center gap-4">
-          <button
-            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-            disabled={currentPage === 1}
-          >
-            Previous
-          </button>
-          <span>
-            Page {currentPage} of {totalPages}
-          </span>
-          <button
-            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-            disabled={currentPage === totalPages}
-          >
-            Next
-          </button>
-        </div>
-
-        {/* Add/Edit Form Modal */}
-        {showForm && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-            <div className="bg-white p-6 rounded shadow-lg w-full max-w-md">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">
-                  {editingId ? "Edit Expense" : "Add Expense"}
-                </h2>
-                <button onClick={() => setShowForm(false)}>
-                  <X size={20} />
-                </button>
+    <div className="h-screen flex flex-col">
+      <Layout title="Financial Transactions" subtitle={getHeaderSubtitle()}>
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Charts Section */}
+          <div className="mb-6 bg-white rounded-lg shadow p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Income vs Expenses Trend</h3>
+              <div className="flex gap-4 text-sm">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-green-600" />
+                  <span className="text-green-600 font-medium">Income: ₹{totalIncome.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="w-4 h-4 text-red-600" />
+                  <span className="text-red-600 font-medium">Expenses: ₹{totalExpenses.toFixed(2)}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`font-medium ${totalIncome - totalExpenses >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    Net: ₹{(totalIncome - totalExpenses).toFixed(2)}
+                  </span>
+                </div>
               </div>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div>
-                  <label className="block font-medium">Select Project</label>
-                  <select
-                    className="border p-2 rounded w-full"
-                    value={formData.projectId}
-                    onChange={(e) => handleChange("projectId", e.target.value)}
-                    required
-                  >
-                    <option value="">Select Project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium">Select Phase</label>
-                  <select
-                    className="border p-2 rounded w-full"
-                    value={formData.phaseId}
-                    onChange={(e) => handleChange("phaseId", e.target.value)}
-                    required
-                  >
-                    <option value="">Select Phase</option>
-                    {filteredPhases.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium">Category</label>
-                  <select
-                    className="border p-2 rounded w-full"
-                    value={formData.category}
-                    onChange={(e) => handleChange("category", e.target.value)}
-                    required
-                  >
-                    <option value="">Select Category</option>
-                    {CATEGORY_OPTIONS.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium">Amount</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="border p-2 rounded w-full"
-                    value={formData.amount}
-                    onChange={(e) => handleChange("amount", e.target.value)}
-                    required
+            </div>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value: number, name: string) => [
+                      `₹${value.toFixed(2)}`, 
+                      name === 'expense' ? 'Expenses' : 'Income'
+                    ]}
                   />
-                </div>
-                <div>
-                  <label className="block font-medium">Payment Method</label>
-                  <select
-                    className="border p-2 rounded w-full"
-                    value={formData.paymentMethod}
-                    onChange={(e) =>
-                      handleChange("paymentMethod", e.target.value)
-                    }
-                    required
-                  >
-                    <option value="">Select Payment Method</option>
-                    {PAYMENT_OPTIONS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-medium">Date</label>
-                  <input
-                    type="date"
-                    className="border p-2 rounded w-full"
-                    value={formData.date}
-                    onChange={(e) => handleChange("date", e.target.value)}
+                  <Legend />
+                  <Line 
+                    type="monotone" 
+                    dataKey="income" 
+                    stroke="#10b981" 
+                    strokeWidth={2}
+                    name="Income"
                   />
-                </div>
-                <div>
-                  <label className="block font-medium">Attach Bill</label>
-                  <input
-                    type="file"
-                    accept="image/*,application/pdf"
-                    onChange={(e) =>
-                      handleChange(
-                        "billFile",
-                        e.target.files ? e.target.files[0] : null
-                      )
-                    }
+                  <Line 
+                    type="monotone" 
+                    dataKey="expense" 
+                    stroke="#ef4444" 
+                    strokeWidth={2}
+                    name="Expenses"
                   />
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                  >
-                    {editingId ? "Update" : "Save Expense"}
-                  </button>
-                </div>
-              </form>
+                </LineChart>
+              </ResponsiveContainer>
             </div>
           </div>
-        )}
-      </div>
-    </Layout>
+
+          {/* Header Section */}
+          <div className="flex justify-end items-center mb-6 gap-3">
+            <button
+              onClick={() => openForm('income')}
+              className="flex items-center bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 transition-colors"
+            >
+              <Plus className="mr-2" size={18} /> Add Income
+            </button>
+            <button
+              onClick={() => openForm('expense')}
+              className="flex items-center bg-red-600 text-white px-4 py-2 rounded hover:bg-red-700 transition-colors"
+            >
+              <Plus className="mr-2" size={18} /> Add Expense
+            </button>
+          </div>
+
+          {/* Search + Filter */}
+          <div className="flex items-center mb-4 gap-4">
+            <div className="flex-1 flex items-center gap-2">
+              <Search size={18} className="text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search transactions..."
+                className="border border-gray-300 p-2 rounded-lg w-half focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+            <select
+              className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={selectedProject}
+              onChange={(e) => {
+                setSelectedProject(e.target.value);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="">All Projects</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.name}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <input
+              type="month"
+              className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              value={dateFilter}
+              onChange={(e) => {
+                setDateFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+            />
+          </div>
+
+          {/* Table Container - Scrollable */}
+          <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
+            {loading ? (
+              <div className="flex justify-center items-center h-64">
+                <p className="text-xl text-gray-600">Loading...</p>
+              </div>
+            ) : (
+              <table className="w-full">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Type</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Project</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Phase</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Category</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Amount</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Payment Method</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Bill</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Date</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {currentTransactions.map((t) => (
+                    <tr 
+                      key={t.id}
+                      className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
+                        selectedTransaction?.id === t.id 
+                          ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                          : ""
+                      } ${t.type === 'expense' ? 'bg-red-50' : 'bg-green-50'}`}
+                      onClick={() => setSelectedTransaction(t)}
+                    >
+                      <td className="p-3">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          t.type === 'income' 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-red-100 text-red-800'
+                        }`}>
+                          {t.type === 'income' ? 'Income' : 'Expense'}
+                        </span>
+                      </td>
+                      <td className="p-3 text-gray-900">{t.project_name}</td>
+                      <td className="p-3 text-gray-900">{t.phase_name}</td>
+                      <td className="p-3 text-gray-900">{t.category}</td>
+                      <td className={`p-3 font-medium ${
+                        t.type === 'income' ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {t.type === 'income' ? '+' : '-'}₹{t.amount.toFixed(2)}
+                      </td>
+                      <td className="p-3 text-gray-900">{t.payment_method}</td>
+                      <td className="p-3">
+                        {t.bill_path ? (
+                          <a
+                            href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${t.bill_path}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-800 underline"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            View Bill
+                          </a>
+                        ) : (
+                          <span className="text-gray-500">No Bill</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-gray-900">
+                        {format(new Date(t.date), "yyyy-MM-dd")}
+                      </td>
+                      <td className="p-3">
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleEdit(t);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 size={18} />
+                          </button>
+                          <button 
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDelete(t.id);
+                            }}
+                            className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash size={18} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {currentTransactions.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="p-8 text-center text-gray-500">
+                        No transactions found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Pagination */}
+          <div className="mt-4 flex justify-center items-center gap-4 py-4">
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage === 1}
+              className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Previous
+            </button>
+            <span className="px-4 py-2 text-gray-700">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage === totalPages}
+              className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      </Layout>
+
+      {/* Add/Edit Form Modal */}
+      {showForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                {editingId 
+                  ? `Edit ${formType === 'income' ? 'Income' : 'Expense'}` 
+                  : `Add ${formType === 'income' ? 'Income' : 'Expense'}`
+                }
+              </h2>
+              <button 
+                onClick={() => setShowForm(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Select Project</label>
+                <select
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.projectId}
+                  onChange={(e) => handleChange("projectId", e.target.value)}
+                  required
+                >
+                  <option value="">Select Project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Select Phase</label>
+                <select
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.phaseId}
+                  onChange={(e) => handleChange("phaseId", e.target.value)}
+                  required
+                >
+                  <option value="">Select Phase</option>
+                  {filteredPhases.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.category}
+                  onChange={(e) => handleChange("category", e.target.value)}
+                  required
+                >
+                  <option value="">Select Category</option>
+                  {(formType === 'income' ? INCOME_CATEGORY_OPTIONS : EXPENSE_CATEGORY_OPTIONS).map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.amount}
+                  onChange={(e) => handleChange("amount", e.target.value)}
+                  required
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Payment Method</label>
+                <select
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.paymentMethod}
+                  onChange={(e) =>
+                    handleChange("paymentMethod", e.target.value)
+                  }
+                  required
+                >
+                  <option value="">Select Payment Method</option>
+                  {PAYMENT_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">Date</label>
+                <input
+                  type="date"
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={formData.date}
+                  onChange={(e) => handleChange("date", e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">
+                  Attach {formType === 'income' ? 'Receipt' : 'Bill'}
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  onChange={(e) =>
+                    handleChange(
+                      "billFile",
+                      e.target.files ? e.target.files[0] : null
+                    )
+                  }
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`px-4 py-2 text-white rounded-lg transition-colors ${
+                    formType === 'income' 
+                      ? 'bg-green-600 hover:bg-green-700' 
+                      : 'bg-red-600 hover:bg-red-700'
+                  }`}
+                >
+                  {editingId ? "Update" : `Save ${formType === 'income' ? 'Income' : 'Expense'}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
