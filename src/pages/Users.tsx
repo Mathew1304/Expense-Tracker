@@ -386,12 +386,7 @@ BuildMyHomes Team
                     </option>
                   ))}
                 </select>
-                <button
-                  onClick={() => setShowEmailSetup(true)}
-                  className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors"
-                >
-                  <Mail size={18} /> Email Setup
-                </button>
+                
               </div>
               <button
                 onClick={() => setShowForm(true)}

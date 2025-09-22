@@ -598,9 +598,9 @@ export function Materials() {
       </Layout>
 
       {/* Fixed Footer */}
-      <footer className="bg-gray-100 border-t border-gray-200 py-4 ml-64">
-        <div className="text-center text-gray-500 text-sm">
-          © 2025 Buildmyhomes.in — All Rights Reserved
+      <footer className="">
+        <div className="">
+          
         </div>
       </footer>
 

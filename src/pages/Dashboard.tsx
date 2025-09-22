@@ -6,10 +6,58 @@ import {
   Users,
   CheckCircle,
   IndianRupee,
+  FileText,
+  TrendingUp,
+  TrendingDown,
+  Calendar,
+  Activity,
+  DollarSign,
+  BarChart3,
+  PieChart,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieChart as RechartsPieChart,
+  Pie,
+  Cell,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+} from "recharts";
+
+const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+
+interface ChartData {
+  date: string;
+  income: number;
+  expenses: number;
+  profit: number;
+}
+
+interface ProjectStatusData {
+  name: string;
+  value: number;
+  color: string;
+}
+
+interface ExpenseCategoryData {
+  category: string;
+  amount: number;
+  percentage: number;
+}
 
 export function Dashboard() {
   const [stats, setStats] = useState<any[]>([]);
@@ -18,345 +66,20 @@ export function Dashboard() {
   const [status, setStatus] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [timePeriod, setTimePeriod] = useState('30');
+  const [chartData, setChartData] = useState<ChartData[]>([]);
+  const [projectStatusData, setProjectStatusData] = useState<ProjectStatusData[]>([]);
+  const [expenseCategoryData, setExpenseCategoryData] = useState<ExpenseCategoryData[]>([]);
   const { user } = useAuth();
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return;
-
-      // ✅ Fetch user role + status + full_name
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role, status, full_name")
-        .eq("id", user.id)
-        .single();
-
-      setRole(profile?.role || null);
-      setStatus(profile?.status || null);
-      setName(profile?.full_name || user.email);
-
-      // ✅ Stats queries with proper filtering
-      let allProjectsQuery = supabase.from("projects").select("*");
-      let expensesQuery = supabase.from("expenses").select("amount");
-      let materialsQuery = supabase.from("materials").select("qty_required");
-      let teamMembersQuery = supabase.from("profiles").select("*");
-
-      // Apply filters based on role
-      if (profile?.role === "Admin") {
-        // Admin sees only their own data
-        allProjectsQuery = allProjectsQuery.eq("created_by", user.id);
-        expensesQuery = expensesQuery.eq("created_by", user.id);
-        materialsQuery = materialsQuery.eq("created_by", user.id);
-        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
-      } else if (profile?.role === "client") {
-        // Client sees projects they're assigned to and their own data
-        allProjectsQuery = allProjectsQuery.eq("client_id", user.id);
-        expensesQuery = expensesQuery.eq("created_by", user.id);
-        materialsQuery = materialsQuery.eq("created_by", user.id);
-        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
-      }
-      // Superadmin sees all, so no filter applied
-
-      const { data: allProjects } = await allProjectsQuery;
-      const { data: expenses } = await expensesQuery;
-      const { data: materials } = await materialsQuery;
-      const { data: teamMembers } = await teamMembersQuery;
-
-      // ✅ Only count projects that are "not completed" as Active
-      const activeProjectsCount =
-        allProjects?.filter((p: any) => p.status !== "completed").length || 0;
-
-      setStats([
-        {
-          name: "Active Projects",
-          value: activeProjectsCount,
-          icon: FolderOpen,
-          color: "text-blue-600",
-          bgColor: "bg-blue-100",
-          href: "/projects",
-        },
-        {
-          name: "Total Expenses",
-          value: `₹${(
-            expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0
-          ).toLocaleString()}`,
-          icon: IndianRupee,
-          color: "text-green-600",
-          bgColor: "bg-green-100",
-          href: "/expenses",
-        },
-        {
-          name: "Materials Stock",
-          value:
-            materials?.reduce((sum, m) => sum + (m.qty_required || 0), 0) || 0,
-          icon: Package,
-          color: "text-yellow-600",
-          bgColor: "bg-yellow-100",
-          href: "/materials",
-        },
-        {
-          name: "Team Members",
-          value: teamMembers?.length || 0,
-          icon: Users,
-          color: "text-purple-600",
-          bgColor: "bg-purple-100",
-          href: "/users",
-        },
-      ]);
-
-      // ✅ Recent activities - with strict filtering for current user only
-      let recentExpensesQuery = supabase
-        .from("expenses")
-        .select("id, amount, date, created_at, project_id, created_by")
-        .eq("created_by", user.id); // Always filter by current user
-
-      let recentMaterialsQuery = supabase
-        .from("materials")
-        .select("id, name, project_id, created_by, updated_at, qty_required")
-        .eq("created_by", user.id); // Always filter by current user
-
-      let documentsQuery = supabase
-        .from("documents")
-        .select("id, name, project_id, uploaded_by, upload_date, status")
-        .eq("uploaded_by", user.id); // Always filter by current user
-
-      // For role-based additional filtering, only apply if needed
-      if (profile?.role === "Admin" || profile?.role === "client") {
-        // Additional filtering can be added here if needed
-        // But the primary filter by user.id should be sufficient
-      }
-
-      const { data: recentExpenses, error: expensesError } = await recentExpensesQuery
-        .order("created_at", { ascending: false })
-        .limit(5);
-
-      const { data: recentMaterials, error: materialsError } = await recentMaterialsQuery
-        .order("updated_at", { ascending: false })
-        .limit(5);
-
-      const { data: recentDocuments, error: documentsError } = await documentsQuery
-        .order("upload_date", { ascending: false })
-        .limit(5);
-
-      console.log("User ID:", user.id);
-      console.log("Recent expenses (filtered):", recentExpenses, "Error:", expensesError);
-      console.log("Recent materials (filtered):", recentMaterials, "Error:", materialsError);
-      console.log("Recent documents (filtered):", recentDocuments, "Error:", documentsError);
-
-      // ✅ Fetch recent users (only for Superadmin)
-      let recentUsers: any[] = [];
-      if (profile?.role === "Superadmin") {
-        const { data: users, error: usersError } = await supabase
-          .from("profiles")
-          .select("id, full_name, role, created_at, status")
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        recentUsers = users || [];
-        console.log("Recent users:", recentUsers, "Error:", usersError);
-      } else if (profile?.role === "Admin") {
-        // Admin can only see users they created (if your system supports this)
-        const { data: users, error: usersError } = await supabase
-          .from("profiles")
-          .select("id, full_name, role, created_at, status")
-          .eq("created_by", user.id) // Only users created by this admin
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        recentUsers = users || [];
-        console.log("Recent users (Admin):", recentUsers, "Error:", usersError);
-      }
-
-      // Get projects and profiles only for the current user's data
-      let projectsForLookupQuery = supabase.from("projects").select("id, name");
-      if (profile?.role === "Admin") {
-        projectsForLookupQuery = projectsForLookupQuery.eq("created_by", user.id);
-      } else if (profile?.role === "client") {
-        projectsForLookupQuery = projectsForLookupQuery.eq("client_id", user.id);
-      }
-
-      const { data: allProjectsForLookup } = await projectsForLookupQuery;
-
-      // For profiles lookup, we need all profiles to get names, but we'll only show activities from current user
-      const { data: allProfilesForLookup } = await supabase
-        .from("profiles")
-        .select("id, full_name");
-
-      let activities: any[] = [];
-
-      // Add expense activities - only from current user
-      recentExpenses?.forEach((expense: any, index: number) => {
-        // Double-check that this expense belongs to current user
-        if (expense.created_by !== user.id) return;
-
-        const project = allProjectsForLookup?.find(p => p.id === expense.project_id);
-        const profile = allProfilesForLookup?.find(p => p.id === expense.created_by);
-        
-        const colors = [
-          "border-blue-500", 
-          "border-orange-500", 
-          "border-green-500", 
-          "border-purple-500", 
-          "border-red-500"
-        ];
-        const colorIndex = index % colors.length;
-
-        activities.push({
-          id: `expense-${expense.id}`,
-          type: "expense",
-          amount: expense.amount,
-          project: project?.name || "Unknown Project",
-          addedBy: profile?.full_name || "Unknown User",
-          date: expense.date || expense.created_at,
-          borderColor: colors[colorIndex],
-          sortDate: new Date(expense.created_at || expense.date || 0),
-        });
-      });
-
-      // Add material activities - only from current user
-      recentMaterials?.forEach((material: any, index: number) => {
-        // Double-check that this material belongs to current user
-        if (material.created_by !== user.id) return;
-
-        const project = allProjectsForLookup?.find(p => p.id === material.project_id);
-        const profile = allProfilesForLookup?.find(p => p.id === material.created_by);
-        
-        const colors = [
-          "border-yellow-500", 
-          "border-indigo-500", 
-          "border-pink-500", 
-          "border-teal-500", 
-          "border-cyan-500"
-        ];
-        const colorIndex = index % colors.length;
-
-        activities.push({
-          id: `material-${material.id}`,
-          type: "material",
-          materialName: material.name,
-          quantity: material.qty_required,
-          project: project?.name || "Unknown Project",
-          addedBy: profile?.full_name || "Unknown User",
-          date: material.updated_at,
-          borderColor: colors[colorIndex],
-          sortDate: new Date(material.updated_at || 0),
-        });
-      });
-
-      // Add document activities - only from current user
-      recentDocuments?.forEach((document: any, index: number) => {
-        // Double-check that this document belongs to current user
-        if (document.uploaded_by !== user.id) return;
-
-        const project = allProjectsForLookup?.find(p => p.id === document.project_id);
-        const profile = allProfilesForLookup?.find(p => p.id === document.uploaded_by);
-        
-        const colors = [
-          "border-emerald-500", 
-          "border-rose-500", 
-          "border-violet-500", 
-          "border-amber-500", 
-          "border-lime-500"
-        ];
-        const colorIndex = index % colors.length;
-
-        activities.push({
-          id: `document-${document.id}`,
-          type: "document",
-          documentName: document.name,
-          status: document.status,
-          project: project?.name || "Unknown Project",
-          addedBy: profile?.full_name || "Unknown User",
-          date: document.upload_date,
-          borderColor: colors[colorIndex],
-          sortDate: new Date(document.upload_date || 0),
-        });
-      });
-
-      // Add user activities (only for Superadmin and Admin who created users)
-      recentUsers?.forEach((userProfile: any, index: number) => {
-        const colors = [
-          "border-slate-500", 
-          "border-gray-500", 
-          "border-zinc-500", 
-          "border-neutral-500", 
-          "border-stone-500"
-        ];
-        const colorIndex = index % colors.length;
-
-        activities.push({
-          id: `user-${userProfile.id}`,
-          type: "user",
-          userName: userProfile.full_name,
-          userRole: userProfile.role,
-          userStatus: userProfile.status,
-          date: userProfile.created_at,
-          borderColor: colors[colorIndex],
-          sortDate: new Date(userProfile.created_at || 0),
-        });
-      });
-
-      // Sort activities by date and limit
-      activities = activities
-        .sort((a, b) => b.sortDate.getTime() - a.sortDate.getTime())
-        .slice(0, 8);
-
-      setRecentActivities(activities);
-      setLoading(false);
-      
-      console.log("Final filtered activities for user", user.id, ":", activities);
-    };
-
-    fetchData();
-  }, [user]);
-
-  // ✅ Quick Actions
-  const quickActions = [
-    {
-      name: "Add New Project",
-      description: "Create a new construction project",
-      icon: FolderOpen,
-      href: "/projects",
-      color: "bg-blue-600 hover:bg-blue-700",
-      disabled:
-        role === "Superadmin" ||
-        role === "User" ||
-        (role === "Admin" && status !== "active"),
-    },
-    {
-      name: "Log Expense",
-      description: "Record a new project expense",
-      icon: IndianRupee,
-      href: "/expenses",
-      color: "bg-green-600 hover:bg-green-700",
-      disabled:
-        role === "Superadmin" ||
-        role === "User" ||
-        (role === "Admin" && status !== "active"),
-    },
-    {
-      name: "Material Request",
-      description: "Request materials for project",
-      icon: Package,
-      href: "/materials",
-      color: "bg-yellow-600 hover:bg-yellow-700",
-      disabled:
-        role === "Superadmin" ||
-        role === "User" ||
-        (role === "Admin" && status !== "active"),
-    },
-    {
-      name: "Generate Report",
-      description: "Create project or financial report",
-      icon: FolderOpen,
-      href: "/reports",
-      color: "bg-purple-600 hover:bg-purple-700",
-      disabled:
-        role === "Superadmin" ||
-        role === "User" ||
-        (role === "Admin" && status !== "active"),
-    },
-  ];
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount);
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -367,168 +90,504 @@ export function Dashboard() {
     });
   };
 
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!user) return;
+
+      // Fetch user profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("role, status, full_name")
+        .eq("id", user.id)
+        .single();
+
+      setRole(profile?.role || null);
+      setStatus(profile?.status || null);
+      setName(profile?.full_name || user.email);
+
+      // Calculate date range based on selected period
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - parseInt(timePeriod));
+
+      // Base queries with proper filtering
+      let projectsQuery = supabase.from("projects").select("*");
+      let expensesQuery = supabase.from("expenses").select("*");
+      let materialsQuery = supabase.from("materials").select("*");
+      let teamMembersQuery = supabase.from("profiles").select("*");
+
+      // Apply role-based filters
+      if (profile?.role === "Admin") {
+        projectsQuery = projectsQuery.eq("created_by", user.id);
+        expensesQuery = expensesQuery.eq("created_by", user.id);
+        materialsQuery = materialsQuery.eq("created_by", user.id);
+        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
+      } else if (profile?.role === "client") {
+        projectsQuery = projectsQuery.eq("client_id", user.id);
+        expensesQuery = expensesQuery.eq("created_by", user.id);
+        materialsQuery = materialsQuery.eq("created_by", user.id);
+        teamMembersQuery = teamMembersQuery.eq("created_by", user.id);
+      }
+
+      const [
+        { data: allProjects },
+        { data: expenses },
+        { data: materials },
+        { data: teamMembers }
+      ] = await Promise.all([
+        projectsQuery,
+        expensesQuery,
+        materialsQuery,
+        teamMembersQuery
+      ]);
+
+      // Calculate financial metrics
+      const totalIncome = expenses?.filter(e => e.type === 'income').reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const totalExpenses = expenses?.filter(e => e.type === 'expense').reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+      const netProfit = totalIncome - totalExpenses;
+      const activeProjectsCount = allProjects?.filter((p: any) => p.status !== "completed").length || 0;
+
+      // Set stats
+      setStats([
+        {
+          name: "Active Projects",
+          value: activeProjectsCount,
+          icon: FolderOpen,
+          color: "text-blue-600",
+          bgColor: "bg-blue-100",
+          href: "/projects",
+          trend: activeProjectsCount > 0 ? "up" : "neutral",
+          trendValue: `${activeProjectsCount} active`,
+        },
+        {
+          name: "Net Profit",
+          value: formatCurrency(netProfit),
+          icon: TrendingUp,
+          color: netProfit >= 0 ? "text-green-600" : "text-red-600",
+          bgColor: netProfit >= 0 ? "bg-green-100" : "bg-red-100",
+          href: "/expenses",
+          trend: netProfit >= 0 ? "up" : "down",
+          trendValue: netProfit >= 0 ? "Profitable" : "Loss",
+        },
+        {
+          name: "Total Expenses",
+          value: formatCurrency(totalExpenses),
+          icon: IndianRupee,
+          color: "text-red-600",
+          bgColor: "bg-red-100",
+          href: "/expenses",
+          trend: "down",
+          trendValue: `${expenses?.filter(e => e.type === 'expense').length || 0} transactions`,
+        },
+        {
+          name: "Materials Stock",
+          value: materials?.reduce((sum, m) => sum + (m.qty_required || 0), 0) || 0,
+          icon: Package,
+          color: "text-yellow-600",
+          bgColor: "bg-yellow-100",
+          href: "/materials",
+          trend: "up",
+          trendValue: `${materials?.length || 0} items`,
+        },
+      ]);
+
+      // Prepare chart data for the selected time period
+      const chartDataMap = new Map<string, { income: number; expenses: number }>();
+      
+      // Initialize all dates in the range
+      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+        const dateKey = d.toISOString().split('T')[0];
+        chartDataMap.set(dateKey, { income: 0, expenses: 0 });
+      }
+
+      // Populate with actual data
+      expenses?.forEach((expense: any) => {
+        const expenseDate = expense.date;
+        if (expenseDate >= startDate.toISOString().split('T')[0] && expenseDate <= endDate.toISOString().split('T')[0]) {
+          const existing = chartDataMap.get(expenseDate) || { income: 0, expenses: 0 };
+          if (expense.type === 'income') {
+            existing.income += Number(expense.amount);
+          } else {
+            existing.expenses += Number(expense.amount);
+          }
+          chartDataMap.set(expenseDate, existing);
+        }
+      });
+
+      const chartDataArray: ChartData[] = Array.from(chartDataMap.entries())
+        .map(([date, values]) => ({
+          date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          income: values.income,
+          expenses: values.expenses,
+          profit: values.income - values.expenses,
+        }))
+        .slice(-30); // Show last 30 data points
+
+      setChartData(chartDataArray);
+
+      // Project status data
+      const statusCounts = allProjects?.reduce((acc: any, project: any) => {
+        acc[project.status] = (acc[project.status] || 0) + 1;
+        return acc;
+      }, {}) || {};
+
+      const projectStatusArray: ProjectStatusData[] = Object.entries(statusCounts).map(([status, count], index) => ({
+        name: status || 'Unknown',
+        value: count as number,
+        color: COLORS[index % COLORS.length],
+      }));
+
+      setProjectStatusData(projectStatusArray);
+
+      // Expense categories data
+      const categoryTotals = expenses?.filter(e => e.type === 'expense').reduce((acc: any, expense: any) => {
+        acc[expense.category] = (acc[expense.category] || 0) + Number(expense.amount);
+        return acc;
+      }, {}) || {};
+
+      const totalCategoryExpenses = Object.values(categoryTotals).reduce((sum: number, amount: any) => sum + amount, 0);
+      
+      const expenseCategoryArray: ExpenseCategoryData[] = Object.entries(categoryTotals)
+        .map(([category, amount]) => ({
+          category,
+          amount: amount as number,
+          percentage: totalCategoryExpenses > 0 ? ((amount as number) / totalCategoryExpenses) * 100 : 0,
+        }))
+        .sort((a, b) => b.amount - a.amount)
+        .slice(0, 6); // Top 6 categories
+
+      setExpenseCategoryData(expenseCategoryArray);
+
+      // Recent activities
+      const recentExpensesQuery = supabase
+        .from("expenses")
+        .select("id, amount, date, created_at, project_id, created_by, category, type")
+        .eq("created_by", user.id)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const recentMaterialsQuery = supabase
+        .from("materials")
+        .select("id, name, project_id, created_by, updated_at, qty_required")
+        .eq("created_by", user.id)
+        .order("updated_at", { ascending: false })
+        .limit(5);
+
+      const [
+        { data: recentExpenses },
+        { data: recentMaterials }
+      ] = await Promise.all([
+        recentExpensesQuery,
+        recentMaterialsQuery
+      ]);
+
+      // Get projects for lookup
+      const { data: allProjectsForLookup } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("created_by", user.id);
+
+      let activities: any[] = [];
+
+      // Add expense/income activities
+      recentExpenses?.forEach((transaction: any) => {
+        const project = allProjectsForLookup?.find(p => p.id === transaction.project_id);
+        activities.push({
+          id: `transaction-${transaction.id}`,
+          type: transaction.type,
+          title: transaction.type === 'income' ? 'Income Received' : 'Expense Recorded',
+          description: `${transaction.category} - ${formatCurrency(transaction.amount)} for ${project?.name || 'Unknown Project'}`,
+          date: transaction.created_at || transaction.date,
+          icon: transaction.type === 'income' ? TrendingUp : TrendingDown,
+          color: transaction.type === 'income' ? 'text-green-600' : 'text-red-600',
+          bgColor: transaction.type === 'income' ? 'bg-green-100' : 'bg-red-100',
+        });
+      });
+
+      // Add material activities
+      recentMaterials?.forEach((material: any) => {
+        const project = allProjectsForLookup?.find(p => p.id === material.project_id);
+        activities.push({
+          id: `material-${material.id}`,
+          type: 'material',
+          title: 'Material Added',
+          description: `${material.name} (Qty: ${material.qty_required}) for ${project?.name || 'Unknown Project'}`,
+          date: material.updated_at,
+          icon: Package,
+          color: 'text-yellow-600',
+          bgColor: 'bg-yellow-100',
+        });
+      });
+
+      // Sort activities by date
+      activities = activities
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 6);
+
+      setRecentActivities(activities);
+      setLoading(false);
+    };
+
+    fetchData();
+  }, [user, timePeriod]);
+
   if (loading) {
     return (
       <Layout title="Dashboard">
         <div className="flex justify-center items-center h-screen">
-          <p className="text-xl text-gray-600">Loading...</p>
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
         </div>
       </Layout>
     );
   }
 
   return (
-    <Layout title="Dashboard">
-      <div className="space-y-8 p-6">
-        <h1 className="text-3xl font-bold text-gray-900">Welcome, {name}</h1>
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Layout title="Dashboard">
+        <div className="flex-1">
+          {/* Welcome Header - No top margin/padding */}
+          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg text-white p-8 mb-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h1 className="text-3xl font-bold mb-2">Welcome back, {name}!</h1>
+                <p className="text-blue-100">Here's what's happening with your projects today.</p>
+              </div>
+              <div className="flex items-center space-x-4">
+                <select
+                  value={timePeriod}
+                  onChange={(e) => setTimePeriod(e.target.value)}
+                  className="bg-white/20 border border-white/30 rounded-lg px-4 py-2 text-white placeholder-white/70 focus:outline-none focus:ring-2 focus:ring-white/50"
+                >
+                  <option value="7" className="text-gray-900">Last 7 days</option>
+                  <option value="30" className="text-gray-900">Last 30 days</option>
+                  <option value="90" className="text-gray-900">Last 3 months</option>
+                  <option value="180" className="text-gray-900">Last 6 months</option>
+                </select>
+              </div>
+            </div>
+          </div>
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map((stat) => {
-            const Icon = stat.icon;
-            return (
-              <Link
-                key={stat.name}
-                to={stat.href}
-                className="bg-white overflow-hidden shadow-lg rounded-xl border border-gray-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
-              >
-                <div className="p-6">
-                  <div className="flex items-center">
-                    <div
-                      className={`flex-shrink-0 ${stat.bgColor} p-4 rounded-xl`}
-                    >
-                      <Icon className={`h-8 w-8 ${stat.color}`} />
+          {/* Stats Overview */}
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-8">
+            {stats.map((stat) => {
+              const Icon = stat.icon;
+              const TrendIcon = stat.trend === 'up' ? ArrowUpRight : ArrowDownRight;
+              return (
+                <Link
+                  key={stat.name}
+                  to={stat.href}
+                  className="bg-white overflow-hidden shadow-lg rounded-xl border border-gray-200 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1"
+                >
+                  <div className="p-6">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center">
+                        <div className={`flex-shrink-0 ${stat.bgColor} p-3 rounded-lg`}>
+                          <Icon className={`h-6 w-6 ${stat.color}`} />
+                        </div>
+                        <div className="ml-4">
+                          <p className="text-sm font-medium text-gray-500">{stat.name}</p>
+                          <p className="text-2xl font-bold text-gray-900">{stat.value}</p>
+                        </div>
+                      </div>
+                      <div className={`flex items-center ${stat.trend === 'up' ? 'text-green-600' : stat.trend === 'down' ? 'text-red-600' : 'text-gray-400'}`}>
+                        <TrendIcon className="h-4 w-4" />
+                      </div>
                     </div>
-                    <div className="ml-5 w-0 flex-1">
-                      <dl>
-                        <dt className="text-sm font-medium text-gray-500 truncate">
-                          {stat.name}
-                        </dt>
-                        <dd className="text-2xl font-bold text-gray-900">
-                          {stat.value}
-                        </dd>
-                      </dl>
+                    <div className="mt-4">
+                      <p className="text-xs text-gray-500">{stat.trendValue}</p>
                     </div>
                   </div>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+                </Link>
+              );
+            })}
+          </div>
 
-        {/* Quick Actions + Recent Activity */}
-        {role !== "client" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Quick Actions */}
-            <div className="bg-white shadow-lg rounded-xl border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">
-                  Quick Actions
-                </h3>
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            {/* Financial Trend Chart */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Financial Trends</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" />
+                    <YAxis tickFormatter={(value) => formatCurrency(value)} />
+                    <Tooltip 
+                      formatter={(value: number, name: string) => [
+                        formatCurrency(value),
+                        name === 'income' ? 'Income' : name === 'expenses' ? 'Expenses' : 'Profit'
+                      ]}
+                    />
+                    <Legend />
+                    <Area
+                      type="monotone"
+                      dataKey="income"
+                      stackId="1"
+                      stroke="#10B981"
+                      fill="#10B981"
+                      fillOpacity={0.6}
+                      name="Income"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="expenses"
+                      stackId="2"
+                      stroke="#EF4444"
+                      fill="#EF4444"
+                      fillOpacity={0.6}
+                      name="Expenses"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="profit"
+                      stroke="#3B82F6"
+                      strokeWidth={3}
+                      name="Net Profit"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
-              <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {quickActions.map((action) => {
+            </div>
+
+            {/* Project Status Chart */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Project Status</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RechartsPieChart>
+                    <Pie
+                      data={projectStatusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={120}
+                      paddingAngle={5}
+                      dataKey="value"
+                    >
+                      {projectStatusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </RechartsPieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Expense Categories and Recent Activity */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+            {/* Expense Categories */}
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Top Expense Categories</h3>
+              <div className="space-y-4">
+                {expenseCategoryData.map((category, index) => (
+                  <div key={category.category} className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div 
+                        className="w-4 h-4 rounded-full"
+                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                      ></div>
+                      <span className="text-sm font-medium text-gray-900">{category.category}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-gray-900">{formatCurrency(category.amount)}</p>
+                      <p className="text-xs text-gray-500">{category.percentage.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Recent Activity</h3>
+              <div className="space-y-4 max-h-96 overflow-y-auto">
+                {recentActivities.length > 0 ? (
+                  recentActivities.map((activity) => {
+                    const Icon = activity.icon;
+                    return (
+                      <div key={activity.id} className="flex items-start space-x-4 p-3 rounded-lg hover:bg-gray-50 transition-colors">
+                        <div className={`p-2 rounded-full ${activity.bgColor}`}>
+                          <Icon className={`w-5 h-5 ${activity.color}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900">{activity.title}</p>
+                          <p className="text-sm text-gray-500">{activity.description}</p>
+                          <p className="text-xs text-gray-400 mt-1">{formatDate(activity.date)}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <p className="text-sm text-gray-500 text-center py-8">No recent activities found.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions */}
+          {role !== "client" && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Quick Actions</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {[
+                  {
+                    name: "New Project",
+                    description: "Create a new construction project",
+                    icon: FolderOpen,
+                    href: "/projects",
+                    color: "bg-blue-600 hover:bg-blue-700",
+                  },
+                  {
+                    name: "Add Transaction",
+                    description: "Record income or expense",
+                    icon: IndianRupee,
+                    href: "/expenses",
+                    color: "bg-green-600 hover:bg-green-700",
+                  },
+                  {
+                    name: "Manage Materials",
+                    description: "Update material inventory",
+                    icon: Package,
+                    href: "/materials",
+                    color: "bg-yellow-600 hover:bg-yellow-700",
+                  },
+                  {
+                    name: "View Reports",
+                    description: "Generate project reports",
+                    icon: FileText,
+                    href: "/reports",
+                    color: "bg-purple-600 hover:bg-purple-700",
+                  },
+                ].map((action) => {
                   const Icon = action.icon;
                   return (
                     <Link
                       key={action.name}
-                      to={action.disabled ? "#" : action.href}
-                      className={`${action.color} text-white p-6 rounded-xl text-center shadow-md hover:shadow-lg transition-all duration-300 ${
-                        action.disabled ? "opacity-50 cursor-not-allowed" : ""
-                      }`}
+                      to={action.href}
+                      className={`${action.color} text-white p-4 rounded-lg text-center shadow-md hover:shadow-lg transition-all duration-300 transform hover:-translate-y-1`}
                     >
-                      <Icon className="h-10 w-10 mx-auto mb-3" />
-                      <h4 className="font-semibold text-lg">{action.name}</h4>
-                      <p className="text-sm opacity-90 mt-1">
-                        {action.description}
-                      </p>
+                      <Icon className="h-8 w-8 mx-auto mb-2" />
+                      <h4 className="font-semibold text-sm">{action.name}</h4>
+                      <p className="text-xs opacity-90 mt-1">{action.description}</p>
                     </Link>
                   );
                 })}
               </div>
             </div>
+          )}
+        </div>
+      </Layout>
 
-            {/* Recent Activity */}
-            <div className="bg-white shadow-lg rounded-xl border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-lg font-medium text-gray-900">
-                  My Recent Activity
-                </h3>
-              </div>
-              <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
-                {recentActivities.length > 0 ? (
-                  recentActivities.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className={`border-l-4 ${activity.borderColor} pl-4 py-3`}
-                    >
-                      {activity.type === "expense" ? (
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                            Expense of ₹{Number(activity.amount).toLocaleString()} recorded
-                          </h4>
-                          <p className="text-sm text-gray-600 mb-2">
-                            Project: {activity.project} • Added by {activity.addedBy}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(activity.date)}
-                          </p>
-                        </div>
-                      ) : activity.type === "material" ? (
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                            Material "{activity.materialName}" added (Qty: {activity.quantity})
-                          </h4>
-                          <p className="text-sm text-gray-600 mb-2">
-                            Project: {activity.project} • Added by {activity.addedBy}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(activity.date)}
-                          </p>
-                        </div>
-                      ) : activity.type === "document" ? (
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                            Document "{activity.documentName}" uploaded
-                          </h4>
-                          <p className="text-sm text-gray-600 mb-2">
-                            Project: {activity.project} • Status: {activity.status} • Uploaded by {activity.addedBy}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(activity.date)}
-                          </p>
-                        </div>
-                      ) : activity.type === "user" ? (
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                            New user "{activity.userName}" registered
-                          </h4>
-                          <p className="text-sm text-gray-600 mb-2">
-                            Role: {activity.userRole} • Status: {activity.userStatus}
-                          </p>
-                          <p className="text-sm text-gray-500">
-                            {formatDate(activity.date)}
-                          </p>
-                        </div>
-                      ) : (
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-900 mb-1">
-                            Unknown activity type
-                          </h4>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-gray-500 text-center py-8">
-                    No recent activities found.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </Layout>
+      {/* Simple Centered Footer */}
+      <footer className="">
+        <div className="">
+          
+        </div>
+      </footer>
+    </div>
   );
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, Edit2, TrendingUp, TrendingDown } from "lucide-react";
+import { Plus, Search, X, Trash, Edit2, TrendingUp, TrendingDown, Calendar } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
@@ -86,7 +86,8 @@ export function Expenses() {
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [search, setSearch] = useState("");
   const [selectedProject, setSelectedProject] = useState("");
-  const [dateFilter, setDateFilter] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -296,17 +297,41 @@ export function Expenses() {
     setShowForm(true);
   };
 
+  // Clear date filters
+  const clearDateFilters = () => {
+    setFromDate("");
+    setToDate("");
+    setCurrentPage(1);
+  };
+
   // Filter transactions
   const filteredTransactions = transactions.filter((t) => {
     const matchesProject = !selectedProject || t.project_name === selectedProject;
-    const matchesDate = !dateFilter || t.date.startsWith(dateFilter);
     const matchesSearch =
       !search ||
       t.project_name.toLowerCase().includes(search.toLowerCase()) ||
       t.phase_name.toLowerCase().includes(search.toLowerCase()) ||
       t.category.toLowerCase().includes(search.toLowerCase()) ||
       t.payment_method.toLowerCase().includes(search.toLowerCase());
-    return matchesProject && matchesDate && matchesSearch;
+    
+    // Date range filtering
+    let matchesDateRange = true;
+    if (fromDate && toDate) {
+      const transactionDate = new Date(t.date);
+      const from = new Date(fromDate);
+      const to = new Date(toDate);
+      matchesDateRange = transactionDate >= from && transactionDate <= to;
+    } else if (fromDate) {
+      const transactionDate = new Date(t.date);
+      const from = new Date(fromDate);
+      matchesDateRange = transactionDate >= from;
+    } else if (toDate) {
+      const transactionDate = new Date(t.date);
+      const to = new Date(toDate);
+      matchesDateRange = transactionDate <= to;
+    }
+    
+    return matchesProject && matchesSearch && matchesDateRange;
   });
 
   const currentTransactions = filteredTransactions.slice(
@@ -436,13 +461,13 @@ export function Expenses() {
           </div>
 
           {/* Search + Filter */}
-          <div className="flex items-center mb-4 gap-4">
-            <div className="flex-1 flex items-center gap-2">
+          <div className="flex items-center mb-4 gap-4 flex-wrap">
+            <div className="flex-1 flex items-center gap-2 min-w-64">
               <Search size={18} className="text-gray-400" />
               <input
                 type="text"
                 placeholder="Search transactions..."
-                className="border border-gray-300 p-2 rounded-lg w-half focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -462,15 +487,40 @@ export function Expenses() {
                 </option>
               ))}
             </select>
-            <input
-              type="month"
-              className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              value={dateFilter}
-              onChange={(e) => {
-                setDateFilter(e.target.value);
-                setCurrentPage(1);
-              }}
-            />
+            
+            {/* Date Range Filters */}
+            <div className="flex items-center gap-2">
+              <Calendar size={18} className="text-gray-400" />
+              <span className="text-sm text-gray-600">From:</span>
+              <input
+                type="date"
+                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={fromDate}
+                onChange={(e) => {
+                  setFromDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+              <span className="text-sm text-gray-600">To:</span>
+              <input
+                type="date"
+                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                value={toDate}
+                onChange={(e) => {
+                  setToDate(e.target.value);
+                  setCurrentPage(1);
+                }}
+              />
+              {(fromDate || toDate) && (
+                <button
+                  onClick={clearDateFilters}
+                  className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                  title="Clear date filters"
+                >
+                  <X size={18} />
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Table Container - Scrollable */}
@@ -539,7 +589,7 @@ export function Expenses() {
                         )}
                       </td>
                       <td className="p-3 text-gray-900">
-                        {format(new Date(t.date), "yyyy-MM-dd")}
+                        {format(new Date(t.date), "dd-MM-yyyy")}
                       </td>
                       <td className="p-3">
                         <div className="flex gap-2">
@@ -746,6 +796,10 @@ export function Expenses() {
           </div>
         </div>
       )}
+
+      {/* Simple Centered Footer */}
+      
+    
     </div>
   );
 }

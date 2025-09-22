@@ -107,7 +107,7 @@ export function Sidebar({ theme }: SidebarProps) {
     >
       <div className="p-6">
         <h2 className={`text-xl font-bold mb-4 ${theme === "dark" ? "text-white" : "text-gray-800"}`}>
-          Build my Homes
+          Buildmyhomes
         </h2>
       </div>
 
