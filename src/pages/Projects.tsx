@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Edit, X, Eye, Download, File, User } from "lucide-react";
+import { Plus, Search, Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -22,6 +22,14 @@ export function Projects() {
   const [materials, setMaterials] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [phasePhotos, setPhasePhotos] = useState<any[]>([]);
+
+  // Share modal states
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [sharingProject, setSharingProject] = useState<any | null>(null);
+  const [shareType, setShareType] = useState<'public' | 'private' | null>(null);
+  const [sharePassword, setSharePassword] = useState('');
+  const [generatedLink, setGeneratedLink] = useState('');
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -698,7 +706,7 @@ export function Projects() {
     doc.setTextColor(52, 73, 94);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
-    doc.text('', margin, summaryYPos);
+    doc.text('PROJECT STATUS OVERVIEW:', margin, summaryYPos);
     
     summaryYPos += 15;
     doc.setFontSize(11);
@@ -723,6 +731,88 @@ export function Projects() {
     // Save with formatted filename
     const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_Project_Report_${new Date().toISOString().split('T')[0]}.pdf`;
     doc.save(fileName);
+  };
+
+  // Generate share link
+  const generateShareLink = async (project: any, type: 'public' | 'private', password?: string) => {
+    try {
+      const shareId = crypto.randomUUID();
+      const expiresAt = new Date();
+      expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours from now
+
+      const shareData = {
+        id: shareId,
+        project_id: project.id,
+        created_by: profileId,
+        share_type: type,
+        password: password || null,
+        expires_at: expiresAt.toISOString(),
+        created_at: new Date().toISOString()
+      };
+
+      const { error } = await supabase
+        .from('project_shares')
+        .insert([shareData]);
+
+      if (error) throw error;
+
+      const baseUrl = window.location.origin;
+      const shareUrl = `${baseUrl}/shared/${shareId}`;
+      
+      setGeneratedLink(shareUrl);
+      return shareUrl;
+    } catch (error: any) {
+      console.error('Error generating share link:', error.message);
+      alert('Error generating share link: ' + error.message);
+      return null;
+    }
+  };
+
+  // Handle share button click
+  const handleShare = (project: any) => {
+    setSharingProject(project);
+    setShareModalOpen(true);
+    setShareType(null);
+    setSharePassword('');
+    setGeneratedLink('');
+    setLinkCopied(false);
+  };
+
+  // Handle share type selection
+  const handleShareTypeSelect = async (type: 'public' | 'private') => {
+    setShareType(type);
+    
+    if (type === 'public') {
+      const link = await generateShareLink(sharingProject, 'public');
+      if (link) {
+        setGeneratedLink(link);
+      }
+    }
+  };
+
+  // Handle private share with password
+  const handlePrivateShare = async () => {
+    if (!sharePassword.trim()) {
+      alert('Please enter a password');
+      return;
+    }
+    
+    const link = await generateShareLink(sharingProject, 'private', sharePassword);
+    if (link) {
+      setGeneratedLink(link);
+    }
+  };
+
+  // Copy link to clipboard
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      alert('Failed to copy link to clipboard');
+    }
   };
 
   // ✅ Apply search + filter
@@ -821,6 +911,13 @@ export function Projects() {
                   >
                     <Download className="h-4 w-4 mr-1" />
                     Download
+                  </button>
+                  <button
+                    onClick={() => handleShare(project)}
+                    className="flex items-center px-3 py-1 bg-purple-600 text-white text-sm rounded-lg"
+                  >
+                    <Share2 className="h-4 w-4 mr-1" />
+                    Share
                   </button>
                   <button
                     onClick={() => {
@@ -1067,6 +1164,121 @@ export function Projects() {
               )}
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Share Modal */}
+      {shareModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">Share Project</h2>
+              <button onClick={() => setShareModalOpen(false)}>
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+            </div>
+
+            {!shareType && (
+              <div className="space-y-4">
+                <h3 className="text-md font-semibold text-gray-800">
+                  How would you like to share "{sharingProject?.name}"?
+                </h3>
+                
+                <div className="space-y-3">
+                  <button
+                    onClick={() => handleShareTypeSelect('public')}
+                    className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-left"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <Globe className="h-6 w-6 text-green-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Public Link</h4>
+                        <p className="text-sm text-gray-600">Anyone with the link can view (24h expiry)</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={() => handleShareTypeSelect('private')}
+                    className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-left"
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="p-2 bg-orange-100 rounded-lg">
+                        <Lock className="h-6 w-6 text-orange-600" />
+                      </div>
+                      <div>
+                        <h4 className="font-semibold text-gray-800">Private Link</h4>
+                        <p className="text-sm text-gray-600">Password protected (24h expiry)</p>
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {shareType === 'private' && !generatedLink && (
+              <div className="space-y-4">
+                <h3 className="text-md font-semibold text-gray-800">Set Password</h3>
+                <input
+                  type="password"
+                  placeholder="Enter password for the link"
+                  value={sharePassword}
+                  onChange={(e) => setSharePassword(e.target.value)}
+                  className="w-full border rounded-lg p-3"
+                />
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setShareType(null)}
+                    className="flex-1 px-4 py-2 rounded-lg border"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handlePrivateShare}
+                    className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white"
+                  >
+                    Generate Link
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {generatedLink && (
+              <div className="space-y-4">
+                <h3 className="text-md font-semibold text-gray-800">
+                  {shareType === 'public' ? 'Public' : 'Private'} Link Generated
+                </h3>
+                
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-sm text-gray-600 break-all">{generatedLink}</p>
+                </div>
+
+                {shareType === 'private' && (
+                  <div className="bg-orange-50 rounded-lg p-3">
+                    <p className="text-sm text-orange-800">
+                      <strong>Password:</strong> {sharePassword}
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-sm text-blue-800">
+                    ⏰ This link will expire in 24 hours
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => copyToClipboard(generatedLink)}
+                  className="w-full flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Copy className="h-4 w-4 mr-2" />
+                  {linkCopied ? 'Copied!' : 'Copy Link'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

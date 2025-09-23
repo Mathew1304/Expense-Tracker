@@ -1,4 +1,3 @@
-// src/App.tsx
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -21,6 +20,7 @@ import { AdminPayment } from "./pages/AdminPayment";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Support from "./pages/Support";
+import { SharedProject } from './pages/SharedProject';
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
@@ -62,6 +62,9 @@ function App() {
             <Route path="/privacy" element={<Privacy />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/support" element={<Support />} />
+            
+            {/* Shared project page - accessible without authentication */}
+            <Route path="/shared/:shareId" element={<SharedProject />} />
 
             {/* Dashboard accessible by all roles */}
             <Route
