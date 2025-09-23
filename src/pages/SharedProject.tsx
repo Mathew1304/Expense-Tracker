@@ -33,17 +33,32 @@ export function SharedProject() {
   const [password, setPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
 
+  // Add debug logging for route params
+  useEffect(() => {
+    console.log('🔍 SharedProject component mounted');
+    console.log('🔍 shareId from params:', shareId);
+    console.log('🔍 Current URL:', window.location.href);
+    console.log('🔍 Current pathname:', window.location.pathname);
+  }, []);
+
   useEffect(() => {
     if (shareId) {
+      console.log('🔍 Starting fetchShareData for shareId:', shareId);
       fetchShareData();
+    } else {
+      console.log('❌ No shareId found in URL params');
+      setError('Invalid share link - no share ID found');
+      setLoading(false);
     }
   }, [shareId]);
 
   const fetchShareData = async () => {
     try {
+      console.log('🔍 fetchShareData called with shareId:', shareId);
       setLoading(true);
       
       // Fetch share data
+      console.log('🔍 Fetching share data from project_shares table...');
       const { data: shareResult, error: shareError } = await supabase
         .from('project_shares')
         .select('*')
@@ -56,27 +71,35 @@ export function SharedProject() {
       }
       
       if (!shareResult) {
+        console.log('❌ No share data found for shareId:', shareId);
         throw new Error('Share link not found');
       }
+      
+      console.log('✅ Share data found:', shareResult);
       
       // Check if link has expired
       const now = new Date();
       const expiresAt = new Date(shareResult.expires_at);
+      console.log('🔍 Checking expiry - Now:', now, 'Expires:', expiresAt);
       
       if (now > expiresAt) {
+        console.log('❌ Share link has expired');
         throw new Error('This share link has expired');
       }
 
       setShareData(shareResult);
+      console.log('✅ Share data set successfully');
 
       // If private link, show password form
       if (shareResult.share_type === 'private') {
+        console.log('🔒 Private link detected, showing password form');
         setShowPasswordForm(true);
         setLoading(false);
         return;
       }
 
       // If public link, fetch project data directly
+      console.log('🌐 Public link detected, fetching project data');
       await fetchProjectData(shareResult.project_id);
       
     } catch (error: any) {
