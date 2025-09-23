@@ -736,6 +736,8 @@ export function Projects() {
   // Generate share link
   const generateShareLink = async (project: any, type: 'public' | 'private', password?: string) => {
     try {
+      console.log('🔍 generateShareLink called with:', { project: project?.name, type, hasPassword: !!password });
+      
       const shareId = crypto.randomUUID();
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours from now
@@ -750,6 +752,7 @@ export function Projects() {
         created_at: new Date().toISOString()
       };
 
+      console.log('🔍 Inserting share data:', shareData);
       const { error } = await supabase
         .from('project_shares')
         .insert([shareData]);
@@ -759,10 +762,12 @@ export function Projects() {
       const baseUrl = window.location.origin;
       const shareUrl = `${baseUrl}/shared/${shareId}`;
       
+      console.log('✅ Share link generated successfully:', shareUrl);
       setGeneratedLink(shareUrl);
       return shareUrl;
     } catch (error: any) {
       console.error('Error generating share link:', error.message);
+      console.error('Full error:', error);
       alert('Error generating share link: ' + error.message);
       return null;
     }
@@ -788,6 +793,7 @@ export function Projects() {
         setGeneratedLink(link);
       }
     }
+    // For private links, we don't generate immediately - we wait for password
   };
 
   // Handle private share with password
@@ -797,9 +803,16 @@ export function Projects() {
       return;
     }
     
+    console.log('🔍 Generating private share link...');
+    console.log('🔍 Project:', sharingProject?.name);
+    console.log('🔍 Password:', sharePassword);
+    
     const link = await generateShareLink(sharingProject, 'private', sharePassword);
     if (link) {
+      console.log('✅ Private link generated:', link);
       setGeneratedLink(link);
+    } else {
+      console.error('❌ Failed to generate private link');
     }
   };
 
@@ -1268,6 +1281,24 @@ export function Projects() {
                   <p className="text-sm text-blue-800">
                     ⏰ This link will expire in 24 hours
                   </p>
+                </div>
+
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => copyToClipboard(generatedLink)}
+                    className="flex-1 flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    {linkCopied ? 'Copied!' : 'Copy Link'}
+                  </button>
+                  
+                  <button
+                    onClick={() => window.open(generatedLink, '_blank')}
+                    className="flex-1 flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    <Eye className="h-4 w-4 mr-2" />
+                    Open Link
+                  </button>
                 </div>
 
                 <button
