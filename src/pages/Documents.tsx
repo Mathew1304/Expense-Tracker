@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Search, Download, Eye, Upload, X } from "lucide-react";
+import { Search, Download, Eye, Upload, X, Trash2, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -52,6 +52,8 @@ export function Documents() {
   const [showUploadForm, setShowUploadForm] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<DocRecord | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [documentToDelete, setDocumentToDelete] = useState<DocRecord | null>(null);
   const itemsPerPage = 10;
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -81,10 +83,14 @@ export function Documents() {
     }
   }
 
+  // Fetch only the logged-in admin's projects
   async function fetchProjects() {
+    if (!user?.id) return;
+
     const { data, error } = await supabase
       .from("projects")
       .select("id, name")
+      .eq("created_by", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -201,6 +207,66 @@ export function Documents() {
     return user?.full_name || user?.email || userId || "Unknown";
   }
 
+  // Delete document function
+  async function deleteDocument(document: DocRecord) {
+    if (!user?.id) {
+      alert("You must be logged in to delete documents");
+      return;
+    }
+
+    try {
+      console.log("Attempting to delete document:", document.id, document.name);
+      
+      // First, try to delete the file from storage
+      if (document.file_path) {
+        console.log("Deleting file from storage:", document.file_path);
+        const { error: storageError } = await supabase.storage
+          .from("project-docs")
+          .remove([document.file_path]);
+
+        if (storageError) {
+          console.warn("Storage deletion failed (continuing anyway):", storageError.message);
+        } else {
+          console.log("File deleted from storage successfully");
+        }
+      }
+
+      // Delete the document record from database
+      console.log("Deleting document record from database");
+      const { error: dbError } = await supabase
+        .from("documents")
+        .delete()
+        .eq("id", document.id)
+        .eq("uploaded_by", user.id); // Only allow deleting own documents
+
+      if (dbError) {
+        console.error("Database delete error:", dbError);
+        alert(`Failed to delete document: ${dbError.message}`);
+        return;
+      }
+
+      console.log("Document deleted successfully from database");
+      
+      // Refresh documents list
+      await fetchDocuments();
+      
+      // Clear selected document if it was deleted
+      if (selectedDocument?.id === document.id) {
+        setSelectedDocument(null);
+      }
+
+      // Close modals
+      setShowDeleteConfirm(false);
+      setDocumentToDelete(null);
+      
+      alert("Document deleted successfully!");
+      
+    } catch (error) {
+      console.error("Error deleting document:", error);
+      alert(`An error occurred while deleting the document: ${error.message}`);
+    }
+  }
+
   // Get the header subtitle based on selected document
   const getHeaderSubtitle = () => {
     if (selectedDocument) {
@@ -313,6 +379,17 @@ export function Documents() {
                           >
                             <Download className="h-4 w-4" />
                           </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDocumentToDelete(doc);
+                              setShowDeleteConfirm(true);
+                            }}
+                            className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -353,9 +430,9 @@ export function Documents() {
       </Layout>
 
       {/* Fixed Footer */}
-      <footer className="">
-        <div className="">
-          
+      <footer className="bg-gray-100 border-t border-gray-200 py-4 ml-64">
+        <div className="text-center text-gray-500 text-sm">
+          © 2025 Buildmyhomes.in — All Rights Reserved
         </div>
       </footer>
 
@@ -428,6 +505,47 @@ export function Documents() {
                   Upload Document
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && documentToDelete && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0">
+                <AlertTriangle className="h-8 w-8 text-red-600" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-medium text-gray-900">Delete Document</h3>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-sm text-gray-500">
+                Are you sure you want to delete the document "{documentToDelete.name}"? 
+                This will permanently remove the file from storage and cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowDeleteConfirm(false);
+                  setDocumentToDelete(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => deleteDocument(documentToDelete)}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Delete Document
+              </button>
             </div>
           </div>
         </div>

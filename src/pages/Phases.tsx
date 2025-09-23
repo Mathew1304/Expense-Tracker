@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, X } from "lucide-react";
+import { Plus, Edit2, Trash2, X, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -67,6 +67,8 @@ export function Phases() {
   const [newComment, setNewComment] = useState("");
   const [fullScreenImage, setFullScreenImage] = useState<string | null>(null);
   const [selectedPhase, setSelectedPhase] = useState<Phase | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [phaseToDelete, setPhaseToDelete] = useState<Phase | null>(null);
 
   const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
     userRole ?? ""
@@ -75,22 +77,46 @@ export function Phases() {
   // Fetch projects
   useEffect(() => {
     const fetchProjects = async () => {
+      if (!user?.id) return;
+      
       const { data, error } = await supabase
         .from("projects")
         .select("id, name")
+        .eq("created_by", user.id)
         .order("name");
       if (!error) setProjects(data || []);
     };
     fetchProjects();
-  }, []);
+  }, [user?.id]);
 
   // Fetch phases and their expenses
   const fetchPhases = async () => {
+    if (!user?.id) return;
+    
+    // First get projects created by the logged-in admin
+    const { data: adminProjects, error: projectsError } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("created_by", user.id);
+
+    if (projectsError) {
+      console.error("Error fetching admin projects:", projectsError.message);
+      return;
+    }
+
+    if (!adminProjects || adminProjects.length === 0) {
+      setPhases([]);
+      return;
+    }
+
+    const adminProjectIds = adminProjects.map(p => p.id);
+
     const { data, error } = await supabase
       .from("phases")
       .select(
         `id, project_id, name, start_date, end_date, status, estimated_cost, contractor_name, projects!inner(name)`
       )
+      .in("project_id", adminProjectIds)
       .order("start_date");
 
     if (error) return console.error("Error fetching phases:", error.message);
@@ -120,8 +146,10 @@ export function Phases() {
   };
 
   useEffect(() => {
-    fetchPhases();
-  }, []);
+    if (user?.id) {
+      fetchPhases();
+    }
+  }, [user?.id]);
 
   // Save phase (create or update)
   const savePhase = async () => {
@@ -163,6 +191,53 @@ export function Phases() {
       contractor_name: "",
     });
     fetchPhases();
+  };
+
+  const deletePhase = async (phase: Phase) => {
+    try {
+      console.log("Attempting to delete phase:", phase.id);
+      
+      // Delete the phase - related data should cascade automatically
+      const { error } = await supabase
+        .from("phases")
+        .delete()
+        .eq("id", phase.id);
+
+      if (error) {
+        console.error("Supabase delete error:", error);
+        alert(`Failed to delete phase: ${error.message}`);
+        return;
+      }
+
+      console.log("Phase deleted successfully from database");
+      
+      // Refresh phases from database to ensure sync
+      await fetchPhases();
+      
+      // Clear selected phase if it was deleted
+      if (selectedPhase?.id === phase.id) {
+        setSelectedPhase(null);
+      }
+      
+      // Close view modal if the deleted phase was being viewed
+      if (viewPhase?.id === phase.id) {
+        setViewPhase(null);
+      }
+
+      setShowDeleteConfirm(false);
+      setPhaseToDelete(null);
+      alert("Phase deleted successfully!");
+      
+    } catch (error) {
+      console.error("Error deleting phase:", error);
+      alert(`An error occurred while deleting the phase: ${error.message}`);
+    }
+  };
+
+  const handleDeleteClick = (e: React.MouseEvent, phase: Phase) => {
+    e.stopPropagation();
+    setPhaseToDelete(phase);
+    setShowDeleteConfirm(true);
   };
 
   const editPhase = (phase: Phase) => {
@@ -294,8 +369,27 @@ export function Phases() {
                   }}
                   className="bg-green-600 text-white px-3 py-1 rounded"
                 >
-                  View Phase Details
+                  View Details
                 </button>
+                {canManage && (
+                  <>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        editPhase(phase);
+                      }}
+                      className="bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={(e) => handleDeleteClick(e, phase)}
+                      className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           ))}
@@ -545,8 +639,56 @@ export function Phases() {
                   >
                     Edit Phase
                   </button>
+                  <button
+                    onClick={() => handleDeleteClick({} as React.MouseEvent, viewPhase)}
+                    className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition-colors"
+                  >
+                    Delete Phase
+                  </button>
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && phaseToDelete && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0">
+                  <AlertTriangle className="h-8 w-8 text-red-600" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">Delete Phase</h3>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete the phase "{phaseToDelete.name}"? 
+                  This action will also delete all associated expenses, photos, and comments. 
+                  This action cannot be undone.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowDeleteConfirm(false);
+                    setPhaseToDelete(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => deletePhase(phaseToDelete)}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Delete Phase
+                </button>
+              </div>
             </div>
           </div>
         )}
