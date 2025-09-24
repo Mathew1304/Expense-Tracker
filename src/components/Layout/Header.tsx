@@ -6,9 +6,11 @@ import { useNavigate, Link } from "react-router-dom";
 interface HeaderProps {
   title: string;
   subtitle?: string;
+  isSidebarOpen?: boolean;
+  isMobile?: boolean;
 }
 
-export function Header({ title, subtitle }: HeaderProps) {
+export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false }: HeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [showUpgrade, setShowUpgrade] = useState(false);
@@ -39,7 +41,6 @@ export function Header({ title, subtitle }: HeaderProps) {
     '2025-11-01': 'Diwali',
     '2025-11-05': 'Bhai Dooj',
     '2025-12-25': 'Christmas Day',
-    // Add more holidays as needed
   };
 
   // Check if date is Indian holiday
@@ -102,18 +103,23 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   return (
     <>
-      <div className="ml-64 bg-white shadow-sm border-b border-gray-200 px-6 py-4">
+      <div className={`bg-white shadow-sm border-b border-gray-200 px-6 py-4 transition-all duration-200 ${
+        !isMobile && isSidebarOpen ? 'ml-64' : 'ml-0'
+      }`}
+      style={{
+        paddingLeft: isMobile || !isSidebarOpen ? '80px' : '24px' // Add padding to avoid hamburger button overlap
+      }}>
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-800">{title}</h1>
+          <div className="flex-1 min-w-0"> {/* Add min-w-0 to prevent flex item from overflowing */}
+            <h1 className="text-2xl font-semibold text-gray-800 truncate">{title}</h1>
             {subtitle && (
-              <p className="text-sm text-gray-600 mt-1">{subtitle}</p>
+              <p className="text-sm text-gray-600 mt-1 truncate">{subtitle}</p>
             )}
           </div>
 
-          <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-4 flex-shrink-0"> {/* Reduce space and add flex-shrink-0 */}
             {/* Time and Calendar */}
-            <div className="flex items-center space-x-3">
+            <div className="hidden sm:flex items-center space-x-3"> {/* Hide on very small screens */}
               {/* Time Display */}
               <div className="flex items-center space-x-2 text-gray-600">
                 <Clock className="w-4 h-4" />
@@ -123,34 +129,38 @@ export function Header({ title, subtitle }: HeaderProps) {
               {/* Calendar Button */}
               <button
                 onClick={() => setShowCalendar(true)}
-                className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
                 title="View Calendar"
               >
                 <Calendar className="w-4 h-4" />
-                <span className="text-sm font-medium">Calendar</span>
+                <span className="text-sm font-medium hidden md:inline">Calendar</span>
               </button>
             </div>
 
             {/* Profile */}
-            <Link to="/profile">
-              <CircleUserRound className="w-7 h-7 cursor-pointer text-gray-700 hover:text-gray-900" />
+            <Link 
+              to="/profile"
+              className="transition-colors duration-150 hover:text-gray-900"
+            >
+              <CircleUserRound className="w-7 h-7 text-gray-700" />
             </Link>
 
             {/* Upgrade */}
             <button
               onClick={() => setShowUpgrade(true)}
-              className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg shadow hover:bg-purple-700 transition"
+              className="hidden sm:flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg shadow hover:bg-purple-700 transition-colors duration-150"
             >
-              Upgrade Plan
+              <span className="text-sm">Upgrade</span>
             </button>
 
             {/* Logout */}
             <button
               onClick={handleSignOut}
-              className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors"
+              className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors duration-150"
+              title="Logout"
             >
               <LogOut className="w-4 h-4" />
-              <span>Logout</span>
+              <span className="hidden md:inline">Logout</span>
             </button>
           </div>
         </div>
@@ -158,12 +168,12 @@ export function Header({ title, subtitle }: HeaderProps) {
 
       {/* Upgrade Plan Modal */}
       {showUpgrade && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-20">
-          <div className="rounded-lg shadow-lg w-[900px] p-8 relative bg-white text-black">
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
+          <div className="rounded-lg shadow-lg w-full max-w-4xl p-6 relative bg-white text-black max-h-[90vh] overflow-y-auto">
             {/* Close */}
             <button
               onClick={() => setShowUpgrade(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-800"
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors duration-150"
             >
               <X className="h-6 w-6" />
             </button>
@@ -175,7 +185,7 @@ export function Header({ title, subtitle }: HeaderProps) {
             {/* Plans */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Basic */}
-              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition bg-white border-gray-200">
+              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-white border-gray-200">
                 <h3 className="text-lg font-semibold mb-2">Basic</h3>
                 <p className="text-gray-600 mb-4">₹2,999 / month</p>
                 <ul className="space-y-2 mb-6 text-sm text-gray-700">
@@ -188,21 +198,21 @@ export function Header({ title, subtitle }: HeaderProps) {
                     "PDF/Excel export",
                   ].map((feature, idx) => (
                     <li key={idx} className="flex items-center">
-                      <Check className="w-4 h-4 text-green-600 mr-2" />
+                      <Check className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
                       {feature}
                     </li>
                   ))}
                 </ul>
                 <button
                   onClick={() => handleSelectPlan("Basic")}
-                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition"
+                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors duration-150"
                 >
                   Choose Basic
                 </button>
               </div>
 
               {/* Pro */}
-              <div className="border-2 rounded-lg p-6 shadow-lg hover:shadow-xl transition relative bg-white border-purple-600">
+              <div className="border-2 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 relative bg-white border-purple-600">
                 <span className="absolute top-2 right-2 text-xs bg-purple-600 text-white px-2 py-1 rounded">
                   Most Popular
                 </span>
@@ -219,21 +229,21 @@ export function Header({ title, subtitle }: HeaderProps) {
                     "Data backup",
                   ].map((feature, idx) => (
                     <li key={idx} className="flex items-center">
-                      <Check className="w-4 h-4 text-green-600 mr-2" />
+                      <Check className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
                       {feature}
                     </li>
                   ))}
                 </ul>
                 <button
                   onClick={() => handleSelectPlan("Pro")}
-                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition"
+                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors duration-150"
                 >
                   Choose Pro
                 </button>
               </div>
 
               {/* Enterprise */}
-              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition bg-white border-gray-200">
+              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-white border-gray-200">
                 <h3 className="text-lg font-semibold mb-2">Enterprise</h3>
                 <p className="text-gray-600 mb-4">Custom Pricing</p>
                 <ul className="space-y-2 mb-6 text-sm text-gray-700">
@@ -246,14 +256,14 @@ export function Header({ title, subtitle }: HeaderProps) {
                     "SLA guarantee",
                   ].map((feature, idx) => (
                     <li key={idx} className="flex items-center">
-                      <Check className="w-4 h-4 text-green-600 mr-2" />
+                      <Check className="w-4 h-4 text-green-600 mr-2 flex-shrink-0" />
                       {feature}
                     </li>
                   ))}
                 </ul>
                 <button
                   onClick={() => handleSelectPlan("Enterprise")}
-                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition"
+                  className="w-full bg-orange-500 text-white py-2 rounded-lg hover:bg-orange-600 transition-colors duration-150"
                 >
                   Contact Sales
                 </button>
@@ -265,7 +275,7 @@ export function Header({ title, subtitle }: HeaderProps) {
 
       {/* Calendar Modal */}
       {showCalendar && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-30">
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
@@ -275,7 +285,7 @@ export function Header({ title, subtitle }: HeaderProps) {
               </div>
               <button
                 onClick={() => setShowCalendar(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-gray-500 hover:text-gray-700 transition-colors duration-150"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -289,7 +299,7 @@ export function Header({ title, subtitle }: HeaderProps) {
                   newDate.setMonth(newDate.getMonth() - 1);
                   setCalendarDate(newDate);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors duration-150"
               >
                 <span className="text-lg font-bold text-gray-600">‹</span>
               </button>
@@ -309,7 +319,7 @@ export function Header({ title, subtitle }: HeaderProps) {
                   newDate.setMonth(newDate.getMonth() + 1);
                   setCalendarDate(newDate);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors duration-150"
               >
                 <span className="text-lg font-bold text-gray-600">›</span>
               </button>
@@ -348,7 +358,7 @@ export function Header({ title, subtitle }: HeaderProps) {
                   return (
                     <div
                       key={i}
-                      className={`h-10 w-10 flex items-center justify-center text-sm rounded cursor-pointer relative ${
+                      className={`h-10 w-10 flex items-center justify-center text-sm rounded cursor-pointer transition-colors duration-150 ${
                         isCurrentMonth
                           ? isToday
                             ? 'bg-blue-600 text-white font-bold'
@@ -388,7 +398,7 @@ export function Header({ title, subtitle }: HeaderProps) {
             <div className="text-center">
               <button
                 onClick={() => setShowCalendar(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-150"
               >
                 Close
               </button>

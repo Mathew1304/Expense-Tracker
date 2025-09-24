@@ -146,7 +146,14 @@ export function LoginForm() {
           <div className="absolute top-8 left-8">
             <div className="flex items-center text-white/80">
               <Building2 className="w-6 h-6 mr-2" />
-              <span className="text-sm font-medium">BUILD MY HOMES</span>
+              <a 
+                href="https://www.buildmyhomes.in" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-sm font-medium hover:text-white transition-colors cursor-pointer"
+              >
+                BUILD MY HOMES
+              </a>
             </div>
           </div>
           
@@ -164,11 +171,11 @@ export function LoginForm() {
               WELCOME BACK
             </h1>
             <p className="text-white/80 leading-relaxed max-w-sm">
-            Track every brick, every rupee  manage your construction expenses with ease.
+              Track every brick, every rupee manage your construction expenses with ease.
 
-Stay on budget, stay on schedule  your project’s financial control starts here.
+              Stay on budget, stay on schedule your project's financial control starts here.
 
-One platform to monitor costs, materials, and progress  all in real time.
+              One platform to monitor costs, materials, and progress all in real time.
             </p>
           </div>
         </div>
