@@ -263,7 +263,7 @@ One platform to monitor costs, materials, and progress  all in real time.
                       onClick={() => setShowForgotPassword(true)}
                       className="text-blue-600 hover:underline text-sm font-medium"
                     >
-                      Already a member?
+                      Forgot Password
                     </button>
                   </div>
                 )}
