@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { LogOut, CircleUserRound, Check, X } from "lucide-react";
+import { LogOut, CircleUserRound, Check, X, Calendar, Clock } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 
@@ -12,6 +12,46 @@ export function Header({ title, subtitle }: HeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [showUpgrade, setShowUpgrade] = useState(false);
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [currentTime, setCurrentTime] = useState(new Date());
+  const [calendarDate, setCalendarDate] = useState(new Date());
+
+  // Update time every second
+  React.useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, []);
+
+  // Indian Government Holidays 2025
+  const indianHolidays = {
+    '2025-01-26': 'Republic Day',
+    '2025-03-14': 'Holi',
+    '2025-04-14': 'Ram Navami',
+    '2025-04-18': 'Good Friday',
+    '2025-05-01': 'Labour Day',
+    '2025-08-15': 'Independence Day',
+    '2025-08-16': 'Janmashtami',
+    '2025-10-02': 'Gandhi Jayanti',
+    '2025-10-20': 'Dussehra',
+    '2025-11-01': 'Diwali',
+    '2025-11-05': 'Bhai Dooj',
+    '2025-12-25': 'Christmas Day',
+    // Add more holidays as needed
+  };
+
+  // Check if date is Indian holiday
+  const isIndianHoliday = (date: Date) => {
+    const dateStr = date.toISOString().split('T')[0];
+    return indianHolidays[dateStr as keyof typeof indianHolidays];
+  };
+
+  // Check if date is Sunday
+  const isSunday = (date: Date) => {
+    return date.getDay() === 0;
+  };
 
   // Logout
   const handleSignOut = async () => {
@@ -40,6 +80,26 @@ export function Header({ title, subtitle }: HeaderProps) {
     }
   };
 
+  // Format time
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
+  };
+
+  // Format date
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
   return (
     <>
       <div className="ml-64 bg-white shadow-sm border-b border-gray-200 px-6 py-4">
@@ -52,6 +112,25 @@ export function Header({ title, subtitle }: HeaderProps) {
           </div>
 
           <div className="flex items-center space-x-6">
+            {/* Time and Calendar */}
+            <div className="flex items-center space-x-3">
+              {/* Time Display */}
+              <div className="flex items-center space-x-2 text-gray-600">
+                <Clock className="w-4 h-4" />
+                <span className="text-sm font-medium">{formatTime(currentTime)}</span>
+              </div>
+
+              {/* Calendar Button */}
+              <button
+                onClick={() => setShowCalendar(true)}
+                className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                title="View Calendar"
+              >
+                <Calendar className="w-4 h-4" />
+                <span className="text-sm font-medium">Calendar</span>
+              </button>
+            </div>
+
             {/* Profile */}
             <Link to="/profile">
               <CircleUserRound className="w-7 h-7 cursor-pointer text-gray-700 hover:text-gray-900" />
@@ -179,6 +258,140 @@ export function Header({ title, subtitle }: HeaderProps) {
                   Contact Sales
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Modal */}
+      {showCalendar && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-30">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2">
+                <Calendar className="w-5 h-5 text-blue-600" />
+                <h2 className="text-lg font-semibold text-gray-900">Calendar</h2>
+              </div>
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Month/Year Navigation */}
+            <div className="flex justify-between items-center mb-6">
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setMonth(newDate.getMonth() - 1);
+                  setCalendarDate(newDate);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <span className="text-lg font-bold text-gray-600">‹</span>
+              </button>
+              
+              <div className="text-center">
+                <div className="text-xl font-bold text-gray-900">
+                  {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </div>
+                <div className="text-sm text-gray-600">
+                  {formatDate(new Date())}
+                </div>
+              </div>
+              
+              <button
+                onClick={() => {
+                  const newDate = new Date(calendarDate);
+                  newDate.setMonth(newDate.getMonth() + 1);
+                  setCalendarDate(newDate);
+                }}
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <span className="text-lg font-bold text-gray-600">›</span>
+              </button>
+            </div>
+
+            {/* Mini Calendar */}
+            <div className="mb-6">
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
+                <div>Sun</div>
+                <div>Mon</div>
+                <div>Tue</div>
+                <div>Wed</div>
+                <div>Thu</div>
+                <div>Fri</div>
+                <div>Sat</div>
+              </div>
+              <div className="grid grid-cols-7 gap-1">
+                {Array.from({ length: 42 }, (_, i) => {
+                  const date = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1);
+                  const firstDay = date.getDay();
+                  const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
+                  const dayNumber = i - firstDay + 1;
+                  const isCurrentMonth = dayNumber > 0 && dayNumber <= daysInMonth;
+                  
+                  const cellDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), dayNumber);
+                  const today = new Date();
+                  const isToday = isCurrentMonth && 
+                    dayNumber === today.getDate() && 
+                    calendarDate.getMonth() === today.getMonth() && 
+                    calendarDate.getFullYear() === today.getFullYear();
+                  
+                  const isHoliday = isCurrentMonth && isIndianHoliday(cellDate);
+                  const isSundayDate = isCurrentMonth && isSunday(cellDate);
+                  const isRedDate = isHoliday || isSundayDate;
+                  
+                  return (
+                    <div
+                      key={i}
+                      className={`h-10 w-10 flex items-center justify-center text-sm rounded cursor-pointer relative ${
+                        isCurrentMonth
+                          ? isToday
+                            ? 'bg-blue-600 text-white font-bold'
+                            : isRedDate
+                            ? 'text-red-600 font-semibold hover:bg-red-50'
+                            : 'text-gray-900 hover:bg-gray-100'
+                          : 'text-gray-300'
+                      }`}
+                      title={isHoliday ? isIndianHoliday(cellDate) : isSundayDate ? 'Sunday' : ''}
+                      onClick={() => {
+                        if (isCurrentMonth) {
+                          const selectedDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), dayNumber);
+                          console.log('Selected date:', selectedDate.toDateString());
+                        }
+                      }}
+                    >
+                      {isCurrentMonth ? dayNumber : ''}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex justify-center items-center space-x-4 mb-4 text-xs">
+              <div className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-blue-600 rounded"></div>
+                <span className="text-gray-600">Today</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className="w-3 h-3 bg-red-600 rounded"></div>
+                <span className="text-gray-600">Holidays & Sundays</span>
+              </div>
+            </div>
+
+            {/* Close Button */}
+            <div className="text-center">
+              <button
+                onClick={() => setShowCalendar(false)}
+                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
