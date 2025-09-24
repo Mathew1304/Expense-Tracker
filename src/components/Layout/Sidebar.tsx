@@ -301,8 +301,8 @@ export function Sidebar({ theme }: SidebarProps) {
           <div className={`text-center text-xs ${
             theme === "dark" ? "text-gray-400" : "text-gray-500"
           }`}>
-            <p>© 2025 BuildMyHomes</p>
-            <p>Construction Management</p>
+            <p></p>
+            <p></p>
           </div>
         </div>
       </aside>
