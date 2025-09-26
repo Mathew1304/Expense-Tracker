@@ -1106,59 +1106,77 @@ export function Projects() {
             </div>
 
             <div className="space-y-3">
-              <input
-                type="text"
-                placeholder="Project Name"
-                value={newProject.name}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, name: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              />
-              <textarea
-                placeholder="Description"
-                value={newProject.description}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, description: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              />
-              <input
-                type="text"
-                placeholder="Location"
-                value={newProject.location}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, location: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              />
-              <select
-                value={newProject.status}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, status: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              >
-                <option value="pending">Pending</option>
-                <option value="active">Active</option>
-                <option value="completed">Completed</option>
-              </select>
-              <input
-                type="date"
-                value={newProject.start_date}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, start_date: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              />
-              <input
-                type="date"
-                value={newProject.end_date}
-                onChange={(e) =>
-                  setNewProject({ ...newProject, end_date: e.target.value })
-                }
-                className="w-full border rounded-lg p-2"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Project Name</label>
+                <input
+                  type="text"
+                  placeholder="Project Name"
+                  value={newProject.name}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, name: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  placeholder="Description"
+                  value={newProject.description}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, description: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Location</label>
+                <input
+                  type="text"
+                  placeholder="Location"
+                  value={newProject.location}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, location: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Status</label>
+                <select
+                  value={newProject.status}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, status: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                >
+                  <option value="pending">Pending</option>
+                  <option value="active">Active</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Start Date</label>
+                <input
+                  type="date"
+                  value={newProject.start_date}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, start_date: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">End Date</label>
+                <input
+                  type="date"
+                  value={newProject.end_date}
+                  onChange={(e) =>
+                    setNewProject({ ...newProject, end_date: e.target.value })
+                  }
+                  className="w-full border rounded-lg p-2"
+                />
+              </div>
             </div>
 
             <div className="mt-4 flex justify-end space-x-2">
