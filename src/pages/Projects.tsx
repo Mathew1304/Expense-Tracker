@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe } from "lucide-react";
+import { Plus, Search, CreditCard as Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -19,6 +19,7 @@ export function Projects() {
   const [viewingProject, setViewingProject] = useState<any | null>(null);
   const [phases, setPhases] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [income, setIncome] = useState<any[]>([]);
   const [materials, setMaterials] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [phasePhotos, setPhasePhotos] = useState<any[]>([]);
@@ -113,83 +114,114 @@ export function Projects() {
   const fetchProjectDetails = async (projectId: string) => {
     console.log("Fetching details for project:", projectId);
 
-    // Fetch phases
-    const { data: phaseData, error: phaseError } = await supabase
-      .from("phases")
-      .select("*")
-      .eq("project_id", projectId);
+    try {
+      // Fetch phases
+      const { data: phaseData, error: phaseError } = await supabase
+        .from("phases")
+        .select("*")
+        .eq("project_id", projectId);
 
-    if (phaseError) {
-      console.error("Fetch phases error:", phaseError.message);
-    } else {
-      console.log("Phases data:", phaseData);
+      if (phaseError) {
+        console.error("Fetch phases error:", phaseError.message);
+      }
+
+      // Fetch expenses and income separately
+      const { data: expenseData, error: expenseError } = await supabase
+        .from("expenses")
+        .select(`
+          *,
+          phases!inner(name)
+        `)
+        .eq("project_id", projectId)
+        .eq("type", "expense");
+
+      if (expenseError) {
+        console.error("Fetch expenses error:", expenseError.message);
+      }
+
+      const { data: incomeData, error: incomeError } = await supabase
+        .from("expenses")
+        .select(`
+          *,
+          phases!inner(name)
+        `)
+        .eq("project_id", projectId)
+        .eq("type", "income");
+
+      if (incomeError) {
+        console.error("Fetch income error:", incomeError.message);
+      }
+
+      // Fetch materials
+      const { data: materialData, error: materialError } = await supabase
+        .from("materials")
+        .select("id, name, unit_cost, qty_required, status, updated_at")
+        .eq("project_id", projectId);
+
+      if (materialError) {
+        console.error("Fetch materials error:", materialError.message);
+      }
+
+      // Fetch team members
+      const { data: teamData, error: teamError } = await supabase
+        .from("users")
+        .select("id, name, email, role_id, status, active")
+        .eq("project_id", projectId)
+        .eq("created_by", profileId);
+
+      if (teamError) {
+        console.error("Fetch team members error:", teamError.message);
+      }
+
+      // Fetch phase photos
+      const { data: photoData, error: photoError } = await supabase
+        .from("phase_photos")
+        .select(`
+          *,
+          phases!inner(name)
+        `)
+        .eq("project_id", projectId);
+
+      if (photoError) {
+        console.error("Fetch phase photos error:", photoError.message);
+      }
+
+      // Update state with fetched data
       setPhases(phaseData || []);
-    }
-
-    // Fetch expenses with phase names
-    const { data: expenseData, error: expenseError } = await supabase
-      .from("expenses")
-      .select(`
-        *,
-        phases!inner(name)
-      `)
-      .eq("project_id", projectId);
-
-    if (expenseError) {
-      console.error("Fetch expenses error:", expenseError.message);
-    } else {
-      console.log("Expenses data:", expenseData);
       setExpenses(expenseData || []);
-    }
-
-    // Fetch materials
-    const { data: materialData, error: materialError } = await supabase
-      .from("materials")
-      .select("id, name, unit_cost, qty_required, status, updated_at")
-      .eq("project_id", projectId);
-
-    if (materialError) {
-      console.error("Fetch materials error:", materialError.message);
-    } else {
-      console.log("Materials data:", materialData);
+      setIncome(incomeData || []);
       setMaterials(materialData || []);
-    }
-
-    // Fetch team members - simplified approach
-    const { data: teamData, error: teamError } = await supabase
-      .from("users")
-      .select("id, name, email, role_id, status, active")
-      .eq("project_id", projectId)
-      .eq("created_by", profileId);
-
-    if (teamError) {
-      console.error("Fetch team members error:", teamError.message);
-    } else {
-      console.log("Team data:", teamData);
       setTeamMembers(teamData || []);
-    }
-
-    // Fetch phase photos
-    const { data: photoData, error: photoError } = await supabase
-      .from("phase_photos")
-      .select(`
-        *,
-        phases!inner(name)
-      `)
-      .eq("project_id", projectId);
-
-    if (photoError) {
-      console.error("Fetch phase photos error:", photoError.message);
-    } else {
-      console.log("Phase photos data:", photoData);
       setPhasePhotos(photoData || []);
-    }
 
-    setPhases(phaseData || []);
-    setExpenses(expenseData || []);
-    setMaterials(materialData || []);
-    setTeamMembers(teamData || []);
-    setPhasePhotos(photoData || []);
+      console.log("Fetched data:", {
+        phases: phaseData?.length || 0,
+        expenses: expenseData?.length || 0,
+        income: incomeData?.length || 0,
+        materials: materialData?.length || 0,
+        teamMembers: teamData?.length || 0,
+        phasePhotos: photoData?.length || 0
+      });
+
+      return {
+        phases: phaseData || [],
+        expenses: expenseData || [],
+        income: incomeData || [],
+        materials: materialData || [],
+        teamMembers: teamData || [],
+        phasePhotos: photoData || []
+      };
+    } catch (error) {
+      console.error("Error fetching project details:", error);
+      return {
+        phases: [],
+        expenses: [],
+        income: [],
+        materials: [],
+        teamMembers: [],
+        phasePhotos: []
+      };
+    }
   };
 
   const handleViewProject = async (project: any) => {
@@ -213,14 +245,15 @@ export function Projects() {
     }
   };
 
-  // ✅ PDF Download with Phase Photos
+  // ✅ PDF Download with Phase Photos and separate expense/income sections
   const handleDownloadReport = async (project: any) => {
     console.log("Starting PDF generation for project:", project.name);
-    console.log("Starting PDF generation for project:", project.name);
-    await fetchProjectDetails(project.id);
+    
+    // Fetch fresh data for PDF generation
+    const projectData = await fetchProjectDetails(project.id);
     
     // Wait a moment for state to update
-    await new Promise(resolve => setTimeout(resolve, 100));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
@@ -258,10 +291,12 @@ export function Projects() {
       doc.text(`${project.name} - Project Report`, margin, pageHeight - 10);
     };
 
-    // --- PAGE 1: PROJECT OVERVIEW (CENTERED) ---
+    let currentPageNum = 1;
+
+    // --- PAGE 1: PROJECT OVERVIEW ---
     addHeader('PROJECT OVERVIEW');
     
-    let yPos = 80; // Start lower for centering
+    let yPos = 80;
     
     // Project name centered
     doc.setFontSize(22);
@@ -325,16 +360,14 @@ export function Projects() {
       doc.text(line, (pageWidth - lineWidth) / 2, yPos + (index * 6));
     });
     
-    addFooter(1);
+    addFooter(currentPageNum++);
 
     // --- PAGE 2: PHASES ---
     doc.addPage();
     addHeader('PROJECT PHASES');
     
-    console.log("Phases for PDF:", phases);
-    
-    if (phases.length > 0) {
-      const phaseRows = phases.map((p) => {
+    if (projectData.phases.length > 0) {
+      const phaseRows = projectData.phases.map((p) => {
         const estimatedCost = Number(p.estimated_cost || 0);
         return [
           p.name || 'Unnamed Phase',
@@ -380,22 +413,22 @@ export function Projects() {
       doc.text('No phases found for this project.', margin, 70);
     }
     
-    addFooter(2);
+    addFooter(currentPageNum++);
 
     // --- PAGE 3: PHASE PHOTOS ---
-    if (phasePhotos.length > 0) {
+    if (projectData.phasePhotos.length > 0) {
       doc.addPage();
       addHeader('PHASE PHOTOS');
       
       let currentY = 60;
       let photosPerPage = 0;
-      const maxPhotosPerPage = 4; // 2x2 grid
+      const maxPhotosPerPage = 4;
       const photoWidth = 70;
       const photoHeight = 50;
       const photoSpacing = 10;
       
       // Group photos by phase
-      const photosByPhase = phasePhotos.reduce((acc, photo) => {
+      const photosByPhase = projectData.phasePhotos.reduce((acc, photo) => {
         const phaseName = photo.phases?.name || 'Unknown Phase';
         if (!acc[phaseName]) acc[phaseName] = [];
         acc[phaseName].push(photo);
@@ -481,83 +514,161 @@ export function Projects() {
         currentY += rows * (photoHeight + photoSpacing + 15) + 20;
       }
       
-      addFooter(3);
+      addFooter(currentPageNum++);
     }
 
     // --- PAGE 4: EXPENSES ---
     doc.addPage();
     addHeader('PROJECT EXPENSES');
     
-    console.log("Expenses for PDF:", expenses);
-    
-    if (expenses.length > 0) {
-      // Format expense data properly to avoid prefix issues
-      const expenseRows = expenses.map((e) => {
+    if (projectData.expenses.length > 0) {
+      const expenseRows = projectData.expenses.map((e) => {
         const amount = Number(e.amount || 0);
+        const gstAmount = Number(e.gst_amount || 0);
+        const totalAmount = amount + gstAmount;
+        
         return [
           e.phases?.name || 'No Phase',
           e.category || 'Uncategorized',
           `Rs ${amount.toLocaleString()}`,
+          gstAmount > 0 ? `Rs ${gstAmount.toLocaleString()}` : 'No GST',
+          `Rs ${totalAmount.toLocaleString()}`,
           e.date ? new Date(e.date).toLocaleDateString() : 'No Date',
           e.payment_method || 'Not Specified'
         ];
       });
       
-      const totalExpenses = expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+      const totalExpenses = projectData.expenses.reduce((sum, e) => {
+        const amount = Number(e.amount || 0);
+        const gstAmount = Number(e.gst_amount || 0);
+        return sum + amount + gstAmount;
+      }, 0);
       
       (doc as any).autoTable({
-        head: [['Phase', 'Category', 'Amount', 'Date', 'Payment Method']],
+        head: [['Phase', 'Category', 'Amount', 'GST', 'Total', 'Date', 'Payment Method']],
         body: expenseRows,
         startY: 55,
         theme: 'striped',
         headStyles: {
-          fillColor: [46, 204, 113],
+          fillColor: [231, 76, 60],
           textColor: [255, 255, 255],
-          fontSize: 10,
+          fontSize: 9,
           fontStyle: 'bold',
           halign: 'center'
         },
         bodyStyles: {
-          fontSize: 9,
-          cellPadding: 4
+          fontSize: 8,
+          cellPadding: 3
         },
         alternateRowStyles: {
           fillColor: [245, 245, 245]
         },
         columnStyles: {
-          0: { cellWidth: 40 },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 30, halign: 'right' },
-          3: { cellWidth: 25, halign: 'center' },
-          4: { cellWidth: 35, halign: 'center' }
+          0: { cellWidth: 25 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 22, halign: 'right' },
+          3: { cellWidth: 20, halign: 'right' },
+          4: { cellWidth: 22, halign: 'right' },
+          5: { cellWidth: 20, halign: 'center' },
+          6: { cellWidth: 25, halign: 'center' }
         }
       });
       
       // Add total expenses box
       const finalY = (doc as any).lastAutoTable.finalY + 10;
-      doc.setFillColor(46, 204, 113);
-      doc.rect(pageWidth - margin - 80, finalY, 80, 15, 'F');
+      doc.setFillColor(231, 76, 60);
+      doc.rect(pageWidth - margin - 100, finalY, 100, 15, 'F');
       doc.setTextColor(255, 255, 255);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(12);
-      doc.text(`Total: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 75, finalY + 10);
+      doc.text(`Total Expenses: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 95, finalY + 10);
     } else {
       doc.setFontSize(12);
       doc.setTextColor(128, 128, 128);
       doc.text('No expenses recorded for this project.', margin, 70);
     }
     
-    addFooter(phasePhotos.length > 0 ? 4 : 3);
+    addFooter(currentPageNum++);
 
-    // --- PAGE 5: MATERIALS ---
+    // --- PAGE 5: INCOME ---
+    doc.addPage();
+    addHeader('PROJECT INCOME');
+    
+    if (projectData.income.length > 0) {
+      const incomeRows = projectData.income.map((i) => {
+        const amount = Number(i.amount || 0);
+        const gstAmount = Number(i.gst_amount || 0);
+        const totalAmount = amount + gstAmount;
+        
+        return [
+          i.phases?.name || 'No Phase',
+          i.category || 'Uncategorized',
+          `Rs ${amount.toLocaleString()}`,
+          gstAmount > 0 ? `Rs ${gstAmount.toLocaleString()}` : 'No GST',
+          `Rs ${totalAmount.toLocaleString()}`,
+          i.date ? new Date(i.date).toLocaleDateString() : 'No Date',
+          i.payment_method || 'Not Specified'
+        ];
+      });
+      
+      const totalIncome = projectData.income.reduce((sum, i) => {
+        const amount = Number(i.amount || 0);
+        const gstAmount = Number(i.gst_amount || 0);
+        return sum + amount + gstAmount;
+      }, 0);
+      
+      (doc as any).autoTable({
+        head: [['Phase', 'Category', 'Amount', 'GST', 'Total', 'Date', 'Payment Method']],
+        body: incomeRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [46, 204, 113],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 8,
+          cellPadding: 3
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 25 },
+          1: { cellWidth: 25 },
+          2: { cellWidth: 22, halign: 'right' },
+          3: { cellWidth: 20, halign: 'right' },
+          4: { cellWidth: 22, halign: 'right' },
+          5: { cellWidth: 20, halign: 'center' },
+          6: { cellWidth: 25, halign: 'center' }
+        }
+      });
+      
+      // Add total income box
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      doc.setFillColor(46, 204, 113);
+      doc.rect(pageWidth - margin - 100, finalY, 100, 15, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12);
+      doc.text(`Total Income: Rs ${totalIncome.toLocaleString()}`, pageWidth - margin - 95, finalY + 10);
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No income recorded for this project.', margin, 70);
+    }
+    
+    addFooter(currentPageNum++);
+
+    // --- PAGE 6: MATERIALS ---
     doc.addPage();
     addHeader('MATERIALS INVENTORY');
     
-    console.log("Materials for PDF:", materials);
-    
-    if (materials.length > 0) {
-      // Format material data properly to avoid prefix issues
-      const materialRows = materials.map((m) => {
+    if (projectData.materials.length > 0) {
+      const materialRows = projectData.materials.map((m) => {
         const unitCost = Number(m.unit_cost || 0);
         const quantity = Number(m.qty_required || 0);
         return [
@@ -569,7 +680,7 @@ export function Projects() {
         ];
       });
       
-      const totalMaterialCost = materials.reduce((sum, m) => {
+      const totalMaterialCost = projectData.materials.reduce((sum, m) => {
         const cost = Number(m.unit_cost || 0);
         const qty = Number(m.qty_required || 0);
         return sum + (cost * qty);
@@ -619,16 +730,14 @@ export function Projects() {
       doc.text('No materials recorded for this project.', margin, 70);
     }
     
-    addFooter(phasePhotos.length > 0 ? 5 : 4);
+    addFooter(currentPageNum++);
 
-    // --- PAGE 6: TEAM MEMBERS ---
+    // --- PAGE 7: TEAM MEMBERS ---
     doc.addPage();
     addHeader('TEAM MEMBERS');
     
-    console.log("Team members for PDF:", teamMembers);
-    
-    if (teamMembers.length > 0) {
-      const teamRows = teamMembers.map((t) => [
+    if (projectData.teamMembers.length > 0) {
+      const teamRows = projectData.teamMembers.map((t) => [
         t.name || t.full_name || 'Unknown Member',
         t.email || 'No Email',
         t.status || 'pending',
@@ -667,21 +776,36 @@ export function Projects() {
       doc.text('No team members assigned to this project.', margin, 70);
     }
     
-    addFooter(phasePhotos.length > 0 ? 6 : 5);
+    addFooter(currentPageNum++);
 
-    // --- PAGE 7: SUMMARY ---
+    // --- PAGE 8: SUMMARY ---
     doc.addPage();
     addHeader('PROJECT SUMMARY');
     
     let summaryYPos = 60;
     
-    // Summary statistics without symbols
+    // Calculate totals
+    const totalExpenseAmount = projectData.expenses.reduce((sum, e) => {
+      const amount = Number(e.amount || 0);
+      const gstAmount = Number(e.gst_amount || 0);
+      return sum + amount + gstAmount;
+    }, 0);
+    
+    const totalIncomeAmount = projectData.income.reduce((sum, i) => {
+      const amount = Number(i.amount || 0);
+      const gstAmount = Number(i.gst_amount || 0);
+      return sum + amount + gstAmount;
+    }, 0);
+    
+    // Summary statistics
     const summaryData = [
-      { label: 'Total Phases', value: phases.length.toString() },
-      { label: 'Total Expenses', value: `Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}` },
-      { label: 'Total Materials', value: materials.length.toString() },
-      { label: 'Team Size', value: teamMembers.length.toString() },
-      { label: 'Phase Photos', value: phasePhotos.length.toString() },
+      { label: 'Total Phases', value: projectData.phases.length.toString() },
+      { label: 'Total Expenses', value: `Rs ${totalExpenseAmount.toLocaleString()}` },
+      { label: 'Total Income', value: `Rs ${totalIncomeAmount.toLocaleString()}` },
+      { label: 'Net Profit/Loss', value: `Rs ${(totalIncomeAmount - totalExpenseAmount).toLocaleString()}` },
+      { label: 'Total Materials', value: projectData.materials.length.toString() },
+      { label: 'Team Size', value: projectData.teamMembers.length.toString() },
+      { label: 'Phase Photos', value: projectData.phasePhotos.length.toString() },
     ];
     
     summaryData.forEach((item, index) => {
@@ -689,7 +813,12 @@ export function Projects() {
       const boxY = summaryYPos + Math.floor(index / 2) * 40;
       
       // Summary box
-      doc.setFillColor(52, 152, 219);
+      const isProfit = item.label === 'Net Profit/Loss' && (totalIncomeAmount - totalExpenseAmount) >= 0;
+      const boxColor = item.label === 'Net Profit/Loss' 
+        ? (isProfit ? [46, 204, 113] : [231, 76, 60])
+        : [52, 152, 219];
+      
+      doc.setFillColor(boxColor[0], boxColor[1], boxColor[2]);
       doc.rect(boxX, boxY, contentWidth / 2 - 10, 30, 'F');
       
       doc.setTextColor(255, 255, 255);
@@ -702,7 +831,7 @@ export function Projects() {
     });
     
     // Project status summary
-    summaryYPos += 100;
+    summaryYPos += 160;
     doc.setTextColor(52, 73, 94);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
@@ -716,17 +845,19 @@ export function Projects() {
       `• Project "${project.name}" is currently ${project.status.toUpperCase()}`,
       `• Started: ${project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not specified'}`,
       `• Expected completion: ${project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not specified'}`,
-      `• Total budget spent: Rs ${expenses.reduce((sum, e) => sum + Number(e.amount || 0), 0).toLocaleString()}`,
-      `• Active team members: ${teamMembers.filter(t => t.active !== false).length}`,
-      `• Phases in progress: ${phases.filter(p => p.status === 'In Progress').length}`,
-      `• Total phase photos: ${phasePhotos.length}`,
+      `• Total expenses: Rs ${totalExpenseAmount.toLocaleString()}`,
+      `• Total income: Rs ${totalIncomeAmount.toLocaleString()}`,
+      `• Net result: Rs ${(totalIncomeAmount - totalExpenseAmount).toLocaleString()} ${totalIncomeAmount >= totalExpenseAmount ? '(Profit)' : '(Loss)'}`,
+      `• Active team members: ${projectData.teamMembers.filter(t => t.active !== false).length}`,
+      `• Phases in progress: ${projectData.phases.filter(p => p.status === 'In Progress').length}`,
+      `• Total phase photos: ${projectData.phasePhotos.length}`,
     ];
     
     statusText.forEach((text, index) => {
       doc.text(text, margin, summaryYPos + (index * 8));
     });
     
-    addFooter(phasePhotos.length > 0 ? 7 : 6);
+    addFooter(currentPageNum);
 
     // Save with formatted filename
     const fileName = `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_Project_Report_${new Date().toISOString().split('T')[0]}.pdf`;
@@ -1051,7 +1182,7 @@ export function Projects() {
       {/* ✅ View Project Modal */}
       {viewingProject && (
         <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-2xl shadow-lg max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-lg p-6 w-full max-w-4xl shadow-lg max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Project Details</h2>
               <button onClick={() => setViewingProject(null)}>
@@ -1105,42 +1236,116 @@ export function Projects() {
                 <p className="text-gray-500">No phase photos</p>
               )}
 
-              <h2 className="text-xl font-bold">Expenses</h2>
+              {/* Separate Expenses Section */}
+              <h2 className="text-xl font-bold text-red-600">Expenses</h2>
               {expenses.length > 0 ? (
                 <>
                   <table className="w-full border-collapse">
                     <thead>
-                      <tr>
+                      <tr className="bg-red-50">
                         <th className="border p-2 text-left">Phase</th>
                         <th className="border p-2 text-left">Category</th>
                         <th className="border p-2 text-left">Amount</th>
+                        <th className="border p-2 text-left">GST</th>
+                        <th className="border p-2 text-left">Total</th>
                         <th className="border p-2 text-left">Date</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {expenses.map((e) => (
-                        <tr key={e.id}>
-                          <td className="border p-2">
-                            {e.phases?.name || "-"}
-                          </td>
-                          <td className="border p-2">{e.category}</td>
-                          <td className="border p-2">
-                            ₹{Number(e.amount).toLocaleString()}
-                          </td>
-                          <td className="border p-2">{e.date || "-"}</td>
-                        </tr>
-                      ))}
+                      {expenses.map((e) => {
+                        const amount = Number(e.amount || 0);
+                        const gstAmount = Number(e.gst_amount || 0);
+                        const total = amount + gstAmount;
+                        return (
+                          <tr key={e.id}>
+                            <td className="border p-2">
+                              {e.phases?.name || "-"}
+                            </td>
+                            <td className="border p-2">{e.category}</td>
+                            <td className="border p-2 text-red-600">
+                              ₹{amount.toLocaleString()}
+                            </td>
+                            <td className="border p-2 text-red-600">
+                              {gstAmount > 0 ? `₹${gstAmount.toLocaleString()}` : 'No GST'}
+                            </td>
+                            <td className="border p-2 text-red-600 font-semibold">
+                              ₹{total.toLocaleString()}
+                            </td>
+                            <td className="border p-2">{e.date || "-"}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
-                  <p className="font-semibold mt-2">
-                    Total: ₹
+                  <p className="font-semibold mt-2 text-red-600">
+                    Total Expenses: ₹
                     {expenses
-                      .reduce((sum, e) => sum + Number(e.amount), 0)
+                      .reduce((sum, e) => {
+                        const amount = Number(e.amount || 0);
+                        const gstAmount = Number(e.gst_amount || 0);
+                        return sum + amount + gstAmount;
+                      }, 0)
                       .toLocaleString()}
                   </p>
                 </>
               ) : (
                 <p className="text-gray-500">No expenses</p>
+              )}
+
+              {/* Separate Income Section */}
+              <h2 className="text-xl font-bold text-green-600">Income</h2>
+              {income.length > 0 ? (
+                <>
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-green-50">
+                        <th className="border p-2 text-left">Phase</th>
+                        <th className="border p-2 text-left">Category</th>
+                        <th className="border p-2 text-left">Amount</th>
+                        <th className="border p-2 text-left">GST</th>
+                        <th className="border p-2 text-left">Total</th>
+                        <th className="border p-2 text-left">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {income.map((i) => {
+                        const amount = Number(i.amount || 0);
+                        const gstAmount = Number(i.gst_amount || 0);
+                        const total = amount + gstAmount;
+                        return (
+                          <tr key={i.id}>
+                            <td className="border p-2">
+                              {i.phases?.name || "-"}
+                            </td>
+                            <td className="border p-2">{i.category}</td>
+                            <td className="border p-2 text-green-600">
+                              ₹{amount.toLocaleString()}
+                            </td>
+                            <td className="border p-2 text-green-600">
+                              {gstAmount > 0 ? `₹${gstAmount.toLocaleString()}` : 'No GST'}
+                            </td>
+                            <td className="border p-2 text-green-600 font-semibold">
+                              ₹{total.toLocaleString()}
+                            </td>
+                            <td className="border p-2">{i.date || "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <p className="font-semibold mt-2 text-green-600">
+                    Total Income: ₹
+                    {income
+                      .reduce((sum, i) => {
+                        const amount = Number(i.amount || 0);
+                        const gstAmount = Number(i.gst_amount || 0);
+                        return sum + amount + gstAmount;
+                      }, 0)
+                      .toLocaleString()}
+                  </p>
+                </>
+              ) : (
+                <p className="text-gray-500">No income</p>
               )}
 
               <h2 className="text-xl font-bold">Materials</h2>

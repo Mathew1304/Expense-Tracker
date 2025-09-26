@@ -109,7 +109,10 @@ export function Materials() {
   };
 
   const fetchProjects = async () => {
-    const { data, error } = await supabase.from("projects").select("id, name");
+    const { data, error } = await supabase
+      .from("projects")
+      .select("id, name")
+      .eq("created_by", user?.id); // only fetch projects created by logged in admin
 
     if (error) {
       console.error("Fetch projects error:", error);
