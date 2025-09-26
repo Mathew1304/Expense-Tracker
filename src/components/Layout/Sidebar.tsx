@@ -71,6 +71,13 @@ export function Sidebar({ theme }: SidebarProps) {
     }
   }, [location.pathname, isMobile]);
 
+  // Dispatch sidebar state to parent components
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('sidebarStateChange', { 
+      detail: { isOpen, isMobile } 
+    }));
+  }, [isOpen, isMobile]);
+
   const navigationItems = [
     {
       name: "Dashboard",
@@ -148,7 +155,7 @@ export function Sidebar({ theme }: SidebarProps) {
     setIsOpen(!isOpen);
     // Dispatch custom event to notify Layout component
     window.dispatchEvent(new CustomEvent('sidebarToggle', { 
-      detail: { isOpen: !isOpen } 
+      detail: { isOpen: !isOpen, isMobile } 
     }));
   };
 

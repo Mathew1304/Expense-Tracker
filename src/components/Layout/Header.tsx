@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { LogOut, CircleUserRound, Check, X, Calendar, Clock } from "lucide-react";
+import { LogOut, Check, X, Calendar, Clock, Menu, User } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
 
@@ -17,6 +17,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
   const [showCalendar, setShowCalendar] = useState(false);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [calendarDate, setCalendarDate] = useState(new Date());
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
 
   // Update time every second
   React.useEffect(() => {
@@ -104,20 +105,22 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
   return (
     <>
       <div className={`bg-white shadow-sm border-b border-gray-200 px-6 py-4 transition-all duration-200 ${
-        !isMobile && isSidebarOpen ? 'ml-64' : 'ml-0'
+        !isMobile && isSidebarOpen 
+          ? 'ml-64' 
+          : isMobile || !isSidebarOpen
+          ? 'pl-20'  // Add padding-left when sidebar is closed to account for hamburger button
+          : 'ml-0'
       }`}
-      style={{
-        paddingLeft: isMobile || !isSidebarOpen ? '80px' : '24px' // Add padding to avoid hamburger button overlap
-      }}>
+      >
         <div className="flex items-center justify-between">
-          <div className="flex-1 min-w-0"> {/* Add min-w-0 to prevent flex item from overflowing */}
+          <div className="flex-1 min-w-0">
             <h1 className="text-2xl font-semibold text-gray-800 truncate">{title}</h1>
             {subtitle && (
               <p className="text-sm text-gray-600 mt-1 truncate">{subtitle}</p>
             )}
           </div>
 
-          <div className="flex items-center space-x-4 flex-shrink-0"> {/* Reduce space and add flex-shrink-0 */}
+          <div className="flex items-center space-x-4 flex-shrink-0">
             {/* Time and Calendar */}
             <div className="hidden sm:flex items-center space-x-3"> {/* Hide on very small screens */}
               {/* Time Display */}
@@ -137,31 +140,57 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
               </button>
             </div>
 
-            {/* Profile */}
-            <Link 
-              to="/profile"
-              className="transition-colors duration-150 hover:text-gray-900"
-            >
-              <CircleUserRound className="w-7 h-7 text-gray-700" />
-            </Link>
-
             {/* Upgrade */}
             <button
               onClick={() => setShowUpgrade(true)}
-              className="hidden sm:flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg shadow hover:bg-purple-700 transition-colors duration-150"
+              className="flex items-center px-4 py-2 bg-purple-600 text-white rounded-lg shadow hover:bg-purple-700 transition-colors duration-150"
             >
               <span className="text-sm">Upgrade</span>
             </button>
 
-            {/* Logout */}
-            <button
-              onClick={handleSignOut}
-              className="flex items-center space-x-2 px-3 py-2 text-sm text-gray-600 hover:text-red-600 hover:bg-gray-100 rounded-lg transition-colors duration-150"
-              title="Logout"
-            >
-              <LogOut className="w-4 h-4" />
-              <span className="hidden md:inline">Logout</span>
-            </button>
+            {/* Profile Hamburger Menu */}
+            <div className="relative">
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="flex items-center space-x-2 p-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-150 border border-gray-200"
+                title="Profile Menu"
+              >
+                <Menu className="w-5 h-5" />
+                <span className="text-sm font-medium hidden sm:inline">Menu</span>
+              </button>
+
+              {/* Profile Dropdown Menu */}
+              {showProfileMenu && (
+                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
+                  <div className="px-4 py-2 border-b border-gray-100">
+                    <p className="text-sm font-medium text-gray-900">
+                      {user?.email || 'User'}
+                    </p>
+                    <p className="text-xs text-gray-500">Manage your account</p>
+                  </div>
+                  
+                  <Link
+                    to="/profile"
+                    onClick={() => setShowProfileMenu(false)}
+                    className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+                  >
+                    <User className="w-4 h-4" />
+                    <span>Profile</span>
+                  </Link>
+                  
+                  <button
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      handleSignOut();
+                    }}
+                    className="flex items-center space-x-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
