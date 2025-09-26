@@ -216,7 +216,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
               {/* Basic */}
               <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-white border-gray-200">
                 <h3 className="text-lg font-semibold mb-2">Basic</h3>
-                <p className="text-gray-600 mb-4">₹2,999 / month</p>
+                <p className="text-gray-600 mb-4">₹1,499 / month</p>
                 <ul className="space-y-2 mb-6 text-sm text-gray-700">
                   {[
                     "5 Projects",
@@ -246,7 +246,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                   Most Popular
                 </span>
                 <h3 className="text-lg font-semibold mb-2">Pro</h3>
-                <p className="text-gray-600 mb-4">₹7,999 / month</p>
+                <p className="text-gray-600 mb-4">₹3,499 / month</p>
                 <ul className="space-y-2 mb-6 text-sm text-gray-700">
                   {[
                     "Unlimited Projects",
