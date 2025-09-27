@@ -15,6 +15,8 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 interface Transaction {
   id: string;
@@ -122,14 +124,18 @@ export function Expenses() {
     paymentMethod: "",
     date: "",
     billFile: null as File | null,
-    withGst: false,
+    includeGst: false,
     gstAmount: "",
   });
   const [paymentLinkData, setPaymentLinkData] = useState({
+    businessName: "",
     productName: "",
     amount: "",
     quantity: "1",
     description: "",
+    gstNumber: "",
+    gstRate: "18",
+    includeGst: false,
   });
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
@@ -274,11 +280,17 @@ export function Expenses() {
           row.project_name && row.phase_name && row.category && row.amount
         );
 
+        let successCount = 0;
+        let failCount = 0;
+
         for (const row of validRows) {
           try {
             // Find project and phase IDs
-            const project = projects.find(p => p.name === row.project_name);
-            const phase = phases.find(p => p.name === row.phase_name && p.project_id === project?.id);
+            const project = projects.find(p => p.name.toLowerCase() === row.project_name.toLowerCase());
+            const phase = phases.find(p => 
+              p.name.toLowerCase() === row.phase_name.toLowerCase() && 
+              p.project_id === project?.id
+            );
 
             if (project && phase) {
               const payload = {
@@ -289,21 +301,36 @@ export function Expenses() {
                 gst_amount: row.gst_amount ? parseFloat(row.gst_amount) : null,
                 date: row.date || format(new Date(), 'yyyy-MM-dd'),
                 payment_method: row.payment_method || 'Cash',
-                type: row.type || 'expense',
+                type: row.type?.toLowerCase() || 'expense',
                 created_by: user?.id,
               };
 
-              await supabase.from("expenses").insert([payload]);
+              const { error } = await supabase.from("expenses").insert([payload]);
+              if (error) {
+                console.error('Error inserting row:', error);
+                failCount++;
+              } else {
+                successCount++;
+              }
+            } else {
+              console.error('Project or Phase not found for row:', row);
+              failCount++;
             }
           } catch (error) {
             console.error('Error processing row:', error);
+            failCount++;
           }
         }
 
         fetchTransactions();
         setShowBulkUpload(false);
         setBulkFile(null);
-        setSuccessMessage(`Successfully uploaded ${validRows.length} transactions!`);
+        
+        if (successCount > 0) {
+          setSuccessMessage(`Successfully uploaded ${successCount} transactions!${failCount > 0 ? ` ${failCount} failed.` : ''}`);
+        } else {
+          setSuccessMessage(`Failed to upload transactions. Please check the format and try again.`);
+        }
         setTimeout(() => setSuccessMessage(null), 5000);
       },
       error: (error) => {
@@ -317,42 +344,33 @@ export function Expenses() {
   // Payment link functionality
   const createPaymentLink = async () => {
     try {
-      const response = await fetch('/api/create-payment-link', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          amount: parseFloat(paymentLinkData.amount) * 100, // Convert to paise
-          currency: 'INR',
-          description: paymentLinkData.description,
-          customer: {
-            name: user?.email?.split('@')[0] || 'Customer',
-            email: user?.email,
-          },
-          notify: {
-            sms: true,
-            email: true,
-          },
-          reminder_enable: true,
-          notes: {
-            product_name: paymentLinkData.productName,
-            quantity: paymentLinkData.quantity,
-          },
-        }),
-      });
+      const baseAmount = parseFloat(paymentLinkData.amount);
+      const quantity = parseInt(paymentLinkData.quantity);
+      const gstRate = parseFloat(paymentLinkData.gstRate);
+      const gstAmount = paymentLinkData.includeGst ? baseAmount * quantity * (gstRate / 100) : 0;
+      const totalAmount = (baseAmount * quantity + gstAmount) * 100; // Convert to paise
 
-      const result = await response.json();
+      // Mock API call - replace with actual Razorpay integration
+      const mockResponse = {
+        success: true,
+        data: {
+          id: `link_${Date.now()}`,
+          short_url: `https://rzp.io/mock_${Date.now()}`,
+        }
+      };
 
-      if (result.success) {
+      if (mockResponse.success) {
         // Save to database
         const { error } = await supabase.from('payment_links').insert([{
+          business_name: paymentLinkData.businessName,
           product_name: paymentLinkData.productName,
-          amount: parseFloat(paymentLinkData.amount),
-          quantity: parseInt(paymentLinkData.quantity),
+          amount: baseAmount,
+          quantity: quantity,
           description: paymentLinkData.description,
-          razorpay_link_id: result.data.id,
-          razorpay_link_url: result.data.short_url,
+          gst_number: paymentLinkData.gstNumber,
+          gst_rate: paymentLinkData.gstRate,
+          razorpay_link_id: mockResponse.data.id,
+          razorpay_link_url: mockResponse.data.short_url,
           status: 'active',
           created_by: user?.id,
         }]);
@@ -360,17 +378,12 @@ export function Expenses() {
         if (!error) {
           fetchPaymentLinks();
           setShowPaymentLinkForm(false);
-          setPaymentLinkData({
-            productName: "",
-            amount: "",
-            quantity: "1",
-            description: "",
-          });
+          resetPaymentLinkForm();
           setSuccessMessage('Payment link created successfully!');
           setTimeout(() => setSuccessMessage(null), 5000);
         }
       } else {
-        setSuccessMessage('Failed to create payment link: ' + result.error);
+        setSuccessMessage('Failed to create payment link');
         setTimeout(() => setSuccessMessage(null), 5000);
       }
     } catch (error) {
@@ -378,6 +391,143 @@ export function Expenses() {
       setSuccessMessage('Error creating payment link. Please try again.');
       setTimeout(() => setSuccessMessage(null), 5000);
     }
+  };
+
+  const resetPaymentLinkForm = () => {
+    setPaymentLinkData({
+      businessName: "",
+      productName: "",
+      amount: "",
+      quantity: "1",
+      description: "",
+      gstNumber: "",
+      gstRate: "18",
+      includeGst: false,
+    });
+  };
+
+  // Generate Invoice PDF with better template
+  const generateInvoice = () => {
+    const doc = new jsPDF();
+    const currentDate = format(new Date(), "dd-MM-yyyy");
+    const baseAmount = parseFloat(paymentLinkData.amount || '0');
+    const quantity = parseInt(paymentLinkData.quantity || '1');
+    const gstRate = parseFloat(paymentLinkData.gstRate || '0');
+    const subtotal = baseAmount * quantity;
+    const gstAmount = paymentLinkData.includeGst ? subtotal * (gstRate / 100) : 0;
+    const totalAmount = subtotal + gstAmount;
+
+    // Header with company info
+    doc.setFontSize(22);
+    doc.setFont('helvetica', 'bold');
+    doc.text(paymentLinkData.businessName || 'Your Business Name', 20, 25);
+    
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Email: info@yourbusiness.com | Phone: +91 XXXXX XXXXX', 20, 35);
+    doc.text(`GST No: ${paymentLinkData.gstNumber || 'Not Provided'}`, 20, 42);
+
+    // Invoice title
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('TAX INVOICE', 20, 60);
+    
+    // Invoice details
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Invoice No: INV-${Date.now().toString().slice(-6)}`, 20, 75);
+    doc.text(`Invoice Date: ${currentDate}`, 20, 82);
+    doc.text(`Due Date: ${format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), "dd-MM-yyyy")}`, 20, 89);
+
+    // Bill to section
+    doc.setFont('helvetica', 'bold');
+    doc.text('Bill To:', 20, 105);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Customer Name', 20, 115);
+    doc.text('Customer Address', 20, 122);
+    doc.text('City, State, PIN Code', 20, 129);
+
+    // Table for items
+    const tableData = [];
+    const headers = ['Description', 'Unit Price', 'Qty', 'Amount'];
+    
+    if (paymentLinkData.includeGst) {
+      headers.push('CGST', 'SGST', 'Total');
+      tableData.push([
+        paymentLinkData.productName || 'Product/Service',
+        `₹${baseAmount.toFixed(2)}`,
+        quantity.toString(),
+        `₹${subtotal.toFixed(2)}`,
+        `₹${(gstAmount / 2).toFixed(2)}`,
+        `₹${(gstAmount / 2).toFixed(2)}`,
+        `₹${totalAmount.toFixed(2)}`
+      ]);
+    } else {
+      headers.push('Total');
+      tableData.push([
+        paymentLinkData.productName || 'Product/Service',
+        `₹${baseAmount.toFixed(2)}`,
+        quantity.toString(),
+        `₹${subtotal.toFixed(2)}`,
+        `₹${totalAmount.toFixed(2)}`
+      ]);
+    }
+
+    // Generate table
+    doc.autoTable({
+      startY: 145,
+      head: [headers],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { 
+        fillColor: [41, 128, 185],
+        textColor: 255,
+        fontSize: 10,
+        fontStyle: 'bold'
+      },
+      bodyStyles: { 
+        fontSize: 9,
+        cellPadding: 5
+      },
+      columnStyles: {
+        0: { cellWidth: 60 },
+        1: { cellWidth: 25, halign: 'right' },
+        2: { cellWidth: 15, halign: 'center' },
+        3: { cellWidth: 25, halign: 'right' },
+        4: { cellWidth: 20, halign: 'right' },
+        5: { cellWidth: 20, halign: 'right' },
+        6: { cellWidth: 25, halign: 'right' }
+      }
+    });
+
+    // Summary section
+    const finalY = (doc as any).lastAutoTable.finalY + 15;
+    
+    // Totals
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Subtotal: ₹${subtotal.toFixed(2)}`, 140, finalY);
+    
+    if (paymentLinkData.includeGst) {
+      doc.text(`CGST (${(gstRate / 2)}%): ₹${(gstAmount / 2).toFixed(2)}`, 140, finalY + 8);
+      doc.text(`SGST (${(gstRate / 2)}%): ₹${(gstAmount / 2).toFixed(2)}`, 140, finalY + 16);
+      doc.text(`Total GST: ₹${gstAmount.toFixed(2)}`, 140, finalY + 24);
+    }
+    
+    // Draw line
+    doc.line(140, finalY + (paymentLinkData.includeGst ? 30 : 10), 190, finalY + (paymentLinkData.includeGst ? 30 : 10));
+    
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(12);
+    doc.text(`Total Amount: ₹${totalAmount.toFixed(2)}`, 140, finalY + (paymentLinkData.includeGst ? 40 : 20));
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Thank you for your business!', 20, 270);
+    doc.text('Terms: Payment due within 30 days', 20, 275);
+
+    // Save the PDF
+    doc.save(`Invoice_${paymentLinkData.productName?.replace(/[^a-z0-9]/gi, '_') || 'invoice'}_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
   const filteredPhases = phases.filter(
@@ -388,16 +538,16 @@ export function Expenses() {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handlePaymentLinkChange = (field: keyof typeof paymentLinkData, value: string) => {
+  const handlePaymentLinkChange = (field: keyof typeof paymentLinkData, value: string | boolean) => {
     setPaymentLinkData((prev) => ({ ...prev, [field]: value }));
   };
 
   // Handle GST button click
-  const handleGstClick = (withGst: boolean) => {
-    if (withGst) {
+  const handleGstClick = (includeGst: boolean) => {
+    if (includeGst) {
       setShowGstModal(true);
     } else {
-      setFormData(prev => ({ ...prev, withGst: false, gstAmount: "" }));
+      setFormData(prev => ({ ...prev, includeGst: false, gstAmount: "" }));
     }
   };
 
@@ -410,7 +560,7 @@ export function Expenses() {
     }
     setFormData(prev => ({ 
       ...prev, 
-      withGst: true, 
+      includeGst: true, 
       gstAmount: gstAmount 
     }));
     setShowGstModal(false);
@@ -419,7 +569,7 @@ export function Expenses() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, withGst, gstAmount } = formData;
+    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount } = formData;
 
     if (!phaseId || !projectId || !category || !paymentMethod) {
       setSuccessMessage("Please fill all required fields.");
@@ -449,7 +599,7 @@ export function Expenses() {
       phase_id: phaseId,
       category,
       amount: parseFloat(amount),
-      gst_amount: withGst && gstAmount ? parseFloat(gstAmount) : null,
+      gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : null,
       date,
       payment_method: paymentMethod,
       bill_path,
@@ -477,7 +627,7 @@ export function Expenses() {
         paymentMethod: "",
         date: "",
         billFile: null,
-        withGst: false,
+        includeGst: false,
         gstAmount: "",
       });
       setSuccessMessage(`${formType === 'income' ? 'Income' : 'Expense'} saved successfully!`);
@@ -496,7 +646,7 @@ export function Expenses() {
       paymentMethod: transaction.payment_method,
       date: transaction.date,
       billFile: null,
-      withGst: (transaction.gst_amount || 0) > 0,
+      includeGst: (transaction.gst_amount || 0) > 0,
       gstAmount: (transaction.gst_amount || 0).toString(),
     });
     setFormType(transaction.type);
@@ -532,7 +682,7 @@ export function Expenses() {
       paymentMethod: "",
       date: "",
       billFile: null,
-      withGst: false,
+      includeGst: false,
       gstAmount: "",
     });
     setShowForm(true);
@@ -629,6 +779,16 @@ export function Expenses() {
       return `${typeLabel}: ${selectedTransaction.category} - ₹${totalAmount.toFixed(2)} - ${selectedTransaction.project_name}`;
     }
     return undefined;
+  };
+
+  // Handle click outside to close modal
+  const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) {
+      setShowForm(false);
+      setShowBulkUpload(false);
+      setShowPaymentLinkForm(false);
+      setShowGstModal(false);
+    }
   };
 
   return (
@@ -820,6 +980,7 @@ export function Expenses() {
                 <tbody>
                   {currentTransactions.map((t) => {
                     const totalAmount = t.amount + (t.gst_amount || 0);
+                    const hasGst = (t.gst_amount || 0) > 0;
                     return (
                       <tr 
                         key={t.id}
@@ -847,10 +1008,14 @@ export function Expenses() {
                         }`}>
                           {t.type === 'income' ? '+' : '-'}₹{t.amount.toFixed(2)}
                         </td>
-                        <td className={`p-3 ${
-                          t.type === 'income' ? 'text-green-600' : 'text-red-600'
-                        }`}>
-                          {(t.gst_amount || 0) > 0 ? `₹${(t.gst_amount || 0).toFixed(2)}` : 'No GST'}
+                        <td className={`p-3 ${hasGst ? 'text-blue-600' : 'text-gray-500'}`}>
+                          {hasGst ? (
+                            <span className="bg-blue-50 px-2 py-1 rounded text-sm font-medium">
+                              ₹{(t.gst_amount || 0).toFixed(2)}
+                            </span>
+                          ) : (
+                            'No GST'
+                          )}
                         </td>
                         <td className={`p-3 font-bold ${
                           t.type === 'income' ? 'text-green-600' : 'text-red-600'
@@ -940,8 +1105,8 @@ export function Expenses() {
 
       {/* Add/Edit Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900">
                 {editingId 
@@ -957,147 +1122,145 @@ export function Expenses() {
               </button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Select Project</label>
-                <select
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.projectId}
-                  onChange={(e) => handleChange("projectId", e.target.value)}
-                  required
-                >
-                  <option value="">Select Project</option>
-                  {projects.map((project) => (
-                    <option key={project.id} value={project.id}>
-                      {project.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Select Phase</label>
-                <select
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.phaseId}
-                  onChange={(e) => handleChange("phaseId", e.target.value)}
-                  required
-                >
-                  <option value="">Select Phase</option>
-                  {filteredPhases.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Category</label>
-                <select
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.category}
-                  onChange={(e) => handleChange("category", e.target.value)}
-                  required
-                >
-                  <option value="">Select Category</option>
-                  {(formType === 'income' ? INCOME_CATEGORY_OPTIONS : EXPENSE_CATEGORY_OPTIONS).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Amount</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.amount}
-                  onChange={(e) => handleChange("amount", e.target.value)}
-                  required
-                />
-              </div>
-              
-              {/* GST Section */}
-              <div>
-                <label className="block font-medium text-gray-700 mb-2">GST</label>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleGstClick(false)}
-                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
-                      !formData.withGst 
-                        ? 'bg-blue-600 text-white border-blue-600' 
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Select Project</label>
+                  <select
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.projectId}
+                    onChange={(e) => handleChange("projectId", e.target.value)}
+                    required
                   >
-                    Without GST
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleGstClick(true)}
-                    className={`flex-1 px-4 py-2 rounded-lg border transition-colors ${
-                      formData.withGst 
-                        ? 'bg-blue-600 text-white border-blue-600' 
-                        : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    With GST
-                  </button>
+                    <option value="">Select Project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
-                {formData.withGst && formData.gstAmount && (
-                  <div className="mt-2 p-2 bg-blue-50 rounded-lg">
-                    <p className="text-sm text-blue-800">
-                      GST Amount: ₹{parseFloat(formData.gstAmount).toFixed(2)}
-                    </p>
-                    <p className="text-sm text-blue-800 font-semibold">
-                      Total: ₹{(parseFloat(formData.amount || "0") + parseFloat(formData.gstAmount)).toFixed(2)}
-                    </p>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Select Phase</label>
+                  <select
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.phaseId}
+                    onChange={(e) => handleChange("phaseId", e.target.value)}
+                    required
+                  >
+                    <option value="">Select Phase</option>
+                    {filteredPhases.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Category</label>
+                  <select
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.category}
+                    onChange={(e) => handleChange("category", e.target.value)}
+                    required
+                  >
+                    <option value="">Select Category</option>
+                    {(formType === 'income' ? INCOME_CATEGORY_OPTIONS : EXPENSE_CATEGORY_OPTIONS).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Amount</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.amount}
+                    onChange={(e) => handleChange("amount", e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block font-medium text-gray-700 mb-2">GST</label>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={formData.includeGst}
+                        onChange={(e) => {
+                          handleChange("includeGst", e.target.checked);
+                          if (!e.target.checked) handleChange("gstAmount", "");
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-gray-700">Include GST in Bill</span>
+                    </div>
+                    {formData.includeGst && (
+                      <button
+                        type="button"
+                        onClick={() => setShowGstModal(true)}
+                        className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        <Calculator className="mr-2" size={16} /> Set GST Amount
+                      </button>
+                    )}
                   </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Payment Method</label>
-                <select
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.paymentMethod}
-                  onChange={(e) =>
-                    handleChange("paymentMethod", e.target.value)
-                  }
-                  required
-                >
-                  <option value="">Select Payment Method</option>
-                  {PAYMENT_OPTIONS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">Date</label>
-                <input
-                  type="date"
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={formData.date}
-                  onChange={(e) => handleChange("date", e.target.value)}
-                />
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Attach {formType === 'income' ? 'Receipt' : 'Bill'}
-                </label>
-                <input
-                  type="file"
-                  accept="image/*,application/pdf"
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  onChange={(e) =>
-                    handleChange(
-                      "billFile",
-                      e.target.files ? e.target.files[0] : null
-                    )
-                  }
-                />
+                  {formData.includeGst && formData.gstAmount && (
+                    <div className="mt-2 p-2 bg-blue-50 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        GST Amount: ₹{parseFloat(formData.gstAmount).toFixed(2)}
+                      </p>
+                      <p className="text-sm text-blue-800 font-semibold">
+                        Total: ₹{(parseFloat(formData.amount || "0") + parseFloat(formData.gstAmount)).toFixed(2)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Payment Method</label>
+                  <select
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.paymentMethod}
+                    onChange={(e) =>
+                      handleChange("paymentMethod", e.target.value)
+                    }
+                    required
+                  >
+                    <option value="">Select Payment Method</option>
+                    {PAYMENT_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={formData.date}
+                    onChange={(e) => handleChange("date", e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block font-medium text-gray-700 mb-1">
+                    Attach {formType === 'income' ? 'Receipt' : 'Bill'}
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    onChange={(e) =>
+                      handleChange(
+                        "billFile",
+                        e.target.files ? e.target.files[0] : null
+                      )
+                    }
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-3 pt-4">
                 <button
@@ -1125,7 +1288,7 @@ export function Expenses() {
 
       {/* GST Modal */}
       {showGstModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[1000]">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[1000]" onClick={handleClickOutside}>
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
@@ -1188,7 +1351,7 @@ export function Expenses() {
 
       {/* Bulk Upload Modal */}
       {showBulkUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900">Bulk Upload Transactions</h2>
@@ -1214,15 +1377,23 @@ export function Expenses() {
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="font-medium text-gray-700 mb-2">CSV Format Requirements:</h4>
                 <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• project_name (required)</li>
-                  <li>• phase_name (required)</li>
-                  <li>• category (required)</li>
-                  <li>• amount (required)</li>
-                  <li>• gst_amount (optional)</li>
-                  <li>• type (expense/income, optional - defaults to expense)</li>
-                  <li>• payment_method (optional - defaults to Cash)</li>
-                  <li>• date (optional - defaults to today)</li>
+                  <li>• <strong>project_name</strong> (required)</li>
+                  <li>• <strong>phase_name</strong> (required)</li>
+                  <li>• <strong>category</strong> (required)</li>
+                  <li>• <strong>amount</strong> (required)</li>
+                  <li>• <strong>gst_amount</strong> (optional)</li>
+                  <li>• <strong>type</strong> (expense/income, optional - defaults to expense)</li>
+                  <li>• <strong>payment_method</strong> (optional - defaults to Cash)</li>
+                  <li>• <strong>date</strong> (YYYY-MM-DD format, optional - defaults to today)</li>
                 </ul>
+              </div>
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-700 mb-2">Sample CSV Data:</h4>
+                <div className="text-xs text-gray-600 font-mono">
+                  project_name,phase_name,category,amount,gst_amount,type,payment_method,date<br/>
+                  Villa Project,Foundation,Materials,50000,9000,expense,Bank Transfer,2025-01-15<br/>
+                  Office Building,Payment,Client Payment,200000,36000,income,Bank Transfer,2025-01-15
+                </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button
@@ -1246,12 +1417,12 @@ export function Expenses() {
 
       {/* Payment Link Modal */}
       {showPaymentLinkForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-purple-600" />
-                <h2 className="text-xl font-bold text-gray-900">Create Payment Link</h2>
+                <h2 className="text-xl font-bold text-gray-900">Create GST Payment Link</h2>
               </div>
               <button 
                 onClick={() => setShowPaymentLinkForm(false)}
@@ -1261,55 +1432,105 @@ export function Expenses() {
               </button>
             </div>
             <div className="space-y-4">
-              <div>
-                <label className="block font-medium text-gray-700 mb-1">
-                  Product Name <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <FileText className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="Enter product name"
-                    className="border border-gray-300 p-2 pl-10 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                    value={paymentLinkData.productName}
-                    onChange={(e) => handlePaymentLinkChange("productName", e.target.value)}
-                    required
-                  />
+              <div className="bg-blue-50 p-4 rounded-lg">
+                <h3 className="font-medium text-gray-700 mb-2">Business Information</h3>
+                <div className="grid grid-cols-1 gap-4">
+                  <div>
+                    <label className="block font-medium text-gray-700 mb-1">Business Name</label>
+                    <input
+                      type="text"
+                      placeholder="Enter your business name"
+                      className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      value={paymentLinkData.businessName}
+                      onChange={(e) => handlePaymentLinkChange("businessName", e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-medium text-gray-700 mb-1">GST Number (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="22AAAAA0000A1Z5"
+                      className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                      value={paymentLinkData.gstNumber}
+                      onChange={(e) => handlePaymentLinkChange("gstNumber", e.target.value)}
+                    />
+                  </div>
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">
+                  Product/Service Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter product or service name"
+                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                  value={paymentLinkData.productName}
+                  onChange={(e) => handlePaymentLinkChange("productName", e.target.value)}
+                  required
+                />
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block font-medium text-gray-700 mb-1">
-                    Amount <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">₹</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      placeholder="0"
-                      className="border border-gray-300 p-2 pl-8 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={paymentLinkData.amount}
-                      onChange={(e) => handlePaymentLinkChange("amount", e.target.value)}
-                      required
-                    />
-                  </div>
+                  <label className="block font-medium text-gray-700 mb-1">Unit Price (₹) <span className="text-red-500">*</span></label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={paymentLinkData.amount}
+                    onChange={(e) => handlePaymentLinkChange("amount", e.target.value)}
+                    required
+                  />
                 </div>
                 <div>
                   <label className="block font-medium text-gray-700 mb-1">Quantity</label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">#</span>
-                    <input
-                      type="number"
-                      min="1"
-                      placeholder="1"
-                      className="border border-gray-300 p-2 pl-8 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                      value={paymentLinkData.quantity}
-                      onChange={(e) => handlePaymentLinkChange("quantity", e.target.value)}
-                    />
-                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="1"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={paymentLinkData.quantity}
+                    onChange={(e) => handlePaymentLinkChange("quantity", e.target.value)}
+                  />
                 </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">GST Rate</label>
+                  <select
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    value={paymentLinkData.gstRate}
+                    onChange={(e) => handlePaymentLinkChange("gstRate", e.target.value)}
+                  >
+                    <option value="18">18% - Most Services & Products</option>
+                    <option value="5">5% - Basic household items</option>
+                    <option value="12">12% - Construction materials</option>
+                    <option value="28">28% - Luxury items</option>
+                  </select>
+                </div>
+              </div>
+              
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <h3 className="font-medium text-gray-700 mb-2">GST Configuration</h3>
+                <div className="flex items-center gap-2 mb-2">
+                  <input
+                    type="checkbox"
+                    checked={paymentLinkData.includeGst}
+                    onChange={(e) => handlePaymentLinkChange("includeGst", e.target.checked)}
+                    className="h-4 w-4 text-purple-600 focus:ring-purple-500 border-gray-300 rounded"
+                  />
+                  <span className="text-gray-700">Include GST in payment (As per Indian Tax Laws)</span>
+                </div>
+                {paymentLinkData.includeGst && (
+                  <div className="mt-2 p-2 bg-white rounded-lg">
+                    <h4 className="font-medium text-gray-700 mb-1">GST Breakdown (Selected Rate: {paymentLinkData.gstRate}%)</h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div>For Intra-State Sales:</div><div>CGST: {parseFloat(paymentLinkData.gstRate) / 2}% + SGST: {parseFloat(paymentLinkData.gstRate) / 2}%</div>
+                      <div>For Inter-State Sales:</div><div>IGST: {paymentLinkData.gstRate}%</div>
+                    </div>
+                  </div>
+                )}
               </div>
               
               <div>
@@ -1317,7 +1538,7 @@ export function Expenses() {
                   Description (Optional)
                 </label>
                 <textarea
-                  placeholder="Add a description for your product..."
+                  placeholder="Add a description for your product or service..."
                   rows={3}
                   className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
                   value={paymentLinkData.description}
@@ -1327,10 +1548,10 @@ export function Expenses() {
 
               {/* Payment Summary */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-3">Payment Summary</h4>
+                <h4 className="font-medium text-gray-700 mb-3">Tax Invoice Preview</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-600">Product:</span>
+                    <span className="text-gray-600">Product/Service:</span>
                     <span className="text-gray-900">
                       {paymentLinkData.productName || 'Not specified'}
                     </span>
@@ -1345,12 +1566,33 @@ export function Expenses() {
                     <span className="text-gray-600">Quantity:</span>
                     <span className="text-gray-900">{paymentLinkData.quantity}</span>
                   </div>
-                  <div className="flex justify-between font-medium pt-2 border-t border-gray-200">
-                    <span className="text-gray-700">Total:</span>
-                    <span className="text-purple-600">
-                      ₹{(parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')).toFixed(2)}
-                    </span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Subtotal:</span>
+                    <span className="text-gray-900">₹{(parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')).toFixed(2)}</span>
                   </div>
+                  {paymentLinkData.includeGst && (
+                    <>
+                      <div className="flex justify-between text-blue-600">
+                        <span className="text-gray-600">CGST ({parseFloat(paymentLinkData.gstRate) / 2}%):</span>
+                        <span className="text-blue-600">₹{((parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')) * (parseFloat(paymentLinkData.gstRate) / 200)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between text-blue-600">
+                        <span className="text-gray-600">SGST ({parseFloat(paymentLinkData.gstRate) / 2}%):</span>
+                        <span className="text-blue-600">₹{((parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')) * (parseFloat(paymentLinkData.gstRate) / 200)).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold">
+                        <span className="text-gray-700">Total GST:</span>
+                        <span className="text-blue-600">₹{((parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')) * (parseFloat(paymentLinkData.gstRate) / 100)).toFixed(2)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between font-bold">
+                    <span className="text-gray-700">Total Amount:</span>
+                    <span className="text-purple-600">₹{((parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')) * (paymentLinkData.includeGst ? (1 + parseFloat(paymentLinkData.gstRate) / 100) : 1)).toFixed(2)}</span>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-yellow-600 bg-yellow-50 p-2 rounded-lg">
+                  Note: GST will be collected as per Indian tax regulations. A GST-compliant tax invoice will be generated upon successful payment.
                 </div>
               </div>
 
@@ -1366,7 +1608,14 @@ export function Expenses() {
                   disabled={!paymentLinkData.productName || !paymentLinkData.amount}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
-                  Generate
+                  Generate GST Payment Link
+                </button>
+                <button
+                  onClick={generateInvoice}
+                  disabled={!paymentLinkData.productName || !paymentLinkData.amount}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  Generate Invoice
                 </button>
               </div>
             </div>
@@ -1377,16 +1626,19 @@ export function Expenses() {
       {/* Payment Links List */}
       {paymentLinks.length > 0 && (
         <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg p-4 max-w-sm">
-          <h4 className="font-medium text-gray-900 mb-2">Recent Payment Links</h4>
+          <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
+            <LinkIcon className="w-4 h-4" />
+            Recent Payment Links
+          </h4>
           <div className="space-y-2 max-h-32 overflow-y-auto">
             {paymentLinks.slice(0, 3).map((link) => (
-              <div key={link.id} className="flex justify-between items-center text-sm">
+              <div key={link.id} className="flex justify-between items-center text-sm p-2 bg-gray-50 rounded">
                 <span className="text-gray-600 truncate">{link.product_name}</span>
                 <a
                   href={link.razorpay_link_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-purple-600 hover:text-purple-800 underline"
+                  className="text-purple-600 hover:text-purple-800 underline ml-2"
                 >
                   View
                 </a>

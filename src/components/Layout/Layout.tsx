@@ -24,8 +24,8 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
     };
 
     checkScreenSize();
-    window.addEventListener('resize', checkScreenSize);
-    return () => window.removeEventListener('resize', checkScreenSize);
+    window.addEventListener("resize", checkScreenSize);
+    return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
 
   // Listen for sidebar toggle events
@@ -34,27 +34,35 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
       setIsSidebarOpen(event.detail.isOpen);
     };
 
-    window.addEventListener('sidebarToggle', handleSidebarToggle as EventListener);
-    return () => window.removeEventListener('sidebarToggle', handleSidebarToggle as EventListener);
+    window.addEventListener("sidebarToggle", handleSidebarToggle as EventListener);
+    return () => window.removeEventListener("sidebarToggle", handleSidebarToggle as EventListener);
   }, []);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <Sidebar />
-      <Header 
-        title={title} 
-        subtitle={subtitle} 
+      <Header
+        title={title}
+        subtitle={subtitle}
         isSidebarOpen={isSidebarOpen}
         isMobile={isMobile}
       />
-      <main className={`pt-4 p-6 flex-1 transition-all duration-300 ${
-        !isMobile && isSidebarOpen ? 'ml-64' : 'ml-0'
-      }`}>
+
+      {/* Main content without transitions */}
+      <main
+        className={`pt-4 p-6 flex-1 ${
+          !isMobile && isSidebarOpen ? "ml-64" : "ml-0"
+        }`}
+      >
         {children}
       </main>
-      <footer className={`bg-white border-t border-gray-200 py-4 transition-all duration-300 ${
-        !isMobile && isSidebarOpen ? 'ml-64' : 'ml-0'
-      }`}>
+
+      {/* Footer without transitions */}
+      <footer
+        className={`bg-white border-t border-gray-200 py-4 ${
+          !isMobile && isSidebarOpen ? "ml-64" : "ml-0"
+        }`}
+      >
         <div className="text-center text-gray-500 text-sm">
           © 2025 BuildMyHomes.in — All Rights Reserved
         </div>

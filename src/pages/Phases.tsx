@@ -25,6 +25,7 @@ type Expense = {
   category: string;
   amount: number;
   date: string;
+  type: 'expense' | 'income';
 };
 
 type PhasePhoto = {
@@ -50,6 +51,7 @@ export function Phases() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [expenses, setExpenses] = useState<Record<string, Expense[]>>({});
+  const [incomes, setIncomes] = useState<Record<string, Expense[]>>({});
   const [form, setForm] = useState({
     project_id: "",
     name: "",
@@ -137,11 +139,17 @@ export function Phases() {
 
     // Fetch expenses per phase
     for (const phase of mapped) {
-      const { data: exp } = await supabase
+      const { data: allTransactions } = await supabase
         .from("expenses")
         .select("*")
         .eq("phase_id", phase.id);
-      setExpenses((prev) => ({ ...prev, [phase.id]: exp || [] }));
+      
+      const transactions = allTransactions || [];
+      const expenses = transactions.filter(t => t.type === 'expense' || !t.type);
+      const incomes = transactions.filter(t => t.type === 'income');
+      
+      setExpenses((prev) => ({ ...prev, [phase.id]: expenses }));
+      setIncomes((prev) => ({ ...prev, [phase.id]: incomes }));
     }
   };
 
@@ -256,8 +264,10 @@ export function Phases() {
 
   const getBudgetUsage = (phase: Phase) => {
     const totalSpent = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+    const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+    const netExpense = totalSpent - totalIncome;
     if (!phase.estimated_cost) return 0;
-    return Math.round((totalSpent / phase.estimated_cost) * 100);
+    return Math.round((netExpense / phase.estimated_cost) * 100);
   };
 
   // Fetch phase photos
@@ -320,6 +330,13 @@ export function Phases() {
     return undefined;
   };
 
+  // Close modal when clicking outside
+  const handleModalClick = (e: React.MouseEvent, closeModal: () => void) => {
+    if (e.target === e.currentTarget) {
+      closeModal();
+    }
+  };
+
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
       <div className="p-6">
@@ -354,7 +371,7 @@ export function Phases() {
                 <p className="text-sm text-gray-600">
                   {phase.start_date} → {phase.end_date} | {phase.status}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className={`text-sm ${getBudgetUsage(phase) > 100 ? 'text-red-600 font-semibold' : 'text-gray-600'}`}>
                   {getBudgetUsage(phase)}% budget used
                 </p>
               </div>
@@ -397,13 +414,16 @@ export function Phases() {
 
         {/* Create/Edit Modal */}
         {showModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={(e) => handleModalClick(e, () => setShowModal(false))}
+          >
             <div className="bg-white p-6 rounded-lg w-full max-w-md z-50">
               <h2 className="text-xl font-semibold mb-4">
                 {editingPhase ? "Edit Phase" : "Create New Phase"}
               </h2>
 
-              <label className="block text-sm mb-1">Project</label>
+              <label className="block text-sm mb-1 font-medium">Project</label>
               <select
                 className="border p-2 rounded w-full mb-3"
                 value={form.project_id}
@@ -425,6 +445,7 @@ export function Phases() {
                 className="border p-2 rounded w-full mb-3"
               />
 
+              <label className="block text-sm mb-1 font-medium">Start Date</label>
               <input
                 type="date"
                 value={form.start_date}
@@ -432,6 +453,7 @@ export function Phases() {
                 className="border p-2 rounded w-full mb-3"
               />
 
+              <label className="block text-sm mb-1 font-medium">End Date</label>
               <input
                 type="date"
                 value={form.end_date}
@@ -487,7 +509,10 @@ export function Phases() {
 
         {/* View Phase Details Modal */}
         {viewPhase && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
+            onClick={(e) => handleModalClick(e, () => setViewPhase(null))}
+          >
             <div className="bg-white p-6 rounded-lg w-full max-w-2xl overflow-y-auto max-h-[90vh] z-40">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-xl font-bold">{viewPhase.name}</h2>
@@ -519,33 +544,162 @@ export function Phases() {
               <div className="my-3">
                 <div className="w-full bg-gray-200 rounded h-2">
                   <div
-                    className="bg-green-600 h-2 rounded"
-                    style={{ width: `${getBudgetUsage(viewPhase)}%` }}
+                    className={`h-2 rounded ${getBudgetUsage(viewPhase) > 100 ? 'bg-red-600' : 'bg-green-600'}`}
+                    style={{ width: `${Math.min(getBudgetUsage(viewPhase), 100)}%` }}
                   />
                 </div>
-                <p>{getBudgetUsage(viewPhase)}% of budget used</p>
+                <p className={getBudgetUsage(viewPhase) > 100 ? 'text-red-600 font-semibold' : ''}>
+                  {getBudgetUsage(viewPhase)}% of budget used
+                </p>
               </div>
 
-              {/* Expenses */}
-              <h3 className="font-semibold mt-4">Expenses</h3>
-              <table className="w-full border mt-2">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="p-2 border">Category</th>
-                    <th className="p-2 border">Amount</th>
-                    <th className="p-2 border">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expenses[viewPhase.id]?.map((e) => (
-                    <tr key={e.id}>
-                      <td className="p-2 border">{e.category}</td>
-                      <td className="p-2 border">₹{e.amount.toLocaleString()}</td>
-                      <td className="p-2 border">{e.date}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              {/* Financial Summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                {/* Expenses Section */}
+                <div>
+                  <h3 className="font-semibold text-red-600 mb-3 flex items-center">
+                    <span className="w-3 h-3 bg-red-600 rounded-full mr-2"></span>
+                    Expenses
+                  </h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-red-50">
+                          <th className="p-2 border-b text-left text-sm">Category</th>
+                          <th className="p-2 border-b text-right text-sm">Amount</th>
+                          <th className="p-2 border-b text-center text-sm">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {expenses[viewPhase.id]?.length > 0 ? (
+                          expenses[viewPhase.id].map((e) => (
+                            <tr key={e.id} className="hover:bg-gray-50">
+                              <td className="p-2 border-b text-sm">{e.category}</td>
+                              <td className="p-2 border-b text-right text-sm text-red-600 font-medium">
+                                -₹{e.amount.toLocaleString()}
+                              </td>
+                              <td className="p-2 border-b text-center text-sm">{e.date}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="p-4 text-center text-gray-500 text-sm">
+                              No expenses recorded
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {expenses[viewPhase.id]?.length > 0 && (
+                      <div className="bg-red-50 p-2 border-t">
+                        <div className="text-right font-semibold text-red-600">
+                          Total Expenses: ₹{expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Income Section */}
+                <div>
+                  <h3 className="font-semibold text-green-600 mb-3 flex items-center">
+                    <span className="w-3 h-3 bg-green-600 rounded-full mr-2"></span>
+                    Income
+                  </h3>
+                  <div className="border rounded-lg overflow-hidden">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-green-50">
+                          <th className="p-2 border-b text-left text-sm">Category</th>
+                          <th className="p-2 border-b text-right text-sm">Amount</th>
+                          <th className="p-2 border-b text-center text-sm">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {incomes[viewPhase.id]?.length > 0 ? (
+                          incomes[viewPhase.id].map((e) => (
+                            <tr key={e.id} className="hover:bg-gray-50">
+                              <td className="p-2 border-b text-sm">{e.category}</td>
+                              <td className="p-2 border-b text-right text-sm text-green-600 font-medium">
+                                +₹{e.amount.toLocaleString()}
+                              </td>
+                              <td className="p-2 border-b text-center text-sm">{e.date}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={3} className="p-4 text-center text-gray-500 text-sm">
+                              No income recorded
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                    {incomes[viewPhase.id]?.length > 0 && (
+                      <div className="bg-green-50 p-2 border-t">
+                        <div className="text-right font-semibold text-green-600">
+                          Total Income: ₹{incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Net Financial Summary */}
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+                <div className="flex justify-between items-center">
+                  <span className="font-semibold">Net Amount:</span>
+                  <span className={`font-bold text-lg ${
+                    (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                    (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) > 0 
+                      ? 'text-red-600' : 'text-green-600'
+                  }`}>
+                    {(expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                     (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) > 0 ? '-' : '+'}
+                    ₹{Math.abs(
+                      (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                      (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
+                    ).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Budget vs Actual Comparison */}
+              {viewPhase.estimated_cost && (
+                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                  <h4 className="font-semibold mb-2">Budget Analysis</h4>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span>Estimated Budget:</span>
+                      <span className="font-medium">₹{viewPhase.estimated_cost.toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Net Spent:</span>
+                      <span className="font-medium">
+                        ₹{Math.abs(
+                          (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                          (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-t pt-2">
+                      <span>Remaining Budget:</span>
+                      <span className={`font-bold ${
+                        viewPhase.estimated_cost - 
+                        ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                         (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)) < 0 
+                          ? 'text-red-600' : 'text-green-600'
+                      }`}>
+                        ₹{(viewPhase.estimated_cost - 
+                          ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                           (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0))
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Photos */}
               <h3 className="font-semibold mt-6">Phase Photos</h3>
@@ -653,7 +807,13 @@ export function Phases() {
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && phaseToDelete && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={(e) => handleModalClick(e, () => {
+              setShowDeleteConfirm(false);
+              setPhaseToDelete(null);
+            })}
+          >
             <div className="bg-white rounded-lg p-6 w-full max-w-md">
               <div className="flex items-center mb-4">
                 <div className="flex-shrink-0">

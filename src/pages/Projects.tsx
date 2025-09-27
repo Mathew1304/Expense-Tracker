@@ -1,14 +1,23 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, CreditCard as Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe } from "lucide-react";
+import { Plus, Search, CreditCard as Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
+// Storage limits by plan type (in MB)
+const STORAGE_LIMITS = {
+  free: 800,
+  basic: 3072, // 3GB
+  pro: -1 // unlimited
+};
+
 export function Projects() {
   const { user } = useAuth();
   const [profileId, setProfileId] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState<'free' | 'basic' | 'pro'>('free');
+  const [storageUsed, setStorageUsed] = useState(0);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [projects, setProjects] = useState<any[]>([]);
@@ -31,6 +40,16 @@ export function Projects() {
   const [sharePassword, setSharePassword] = useState('');
   const [generatedLink, setGeneratedLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  
+  // Share options state
+  const [shareOptions, setShareOptions] = useState({
+    expenseDetails: true,
+    phaseDetails: true,
+    materialsDetails: true,
+    incomeDetails: true,
+    phasePhotos: true,
+    teamMembers: true
+  });
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -43,10 +62,140 @@ export function Projects() {
 
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // ✅ Fetch current admin ID
+  // ✅ Fetch current admin ID and user plan
   useEffect(() => {
-    if (user) setProfileId(user.id);
+    if (user) {
+      setProfileId(user.id);
+      fetchUserPlanAndStorage(user.id);
+    }
   }, [user]);
+
+  // ✅ Fetch user plan and calculate storage usage
+  const fetchUserPlanAndStorage = async (userId: string) => {
+    try {
+      // Fetch user profile to get plan
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('plan_type')
+        .eq('id', userId)
+        .single();
+
+      if (profileError) {
+        console.error('Profile fetch error:', profileError);
+        setUserPlan('free'); // Default to free
+      } else {
+        setUserPlan(profile?.plan_type || 'free');
+      }
+
+      // Calculate storage usage (sum of all project files, photos, etc.)
+      // This is a simplified calculation - in production you'd track actual file sizes
+      const { data: projectsData } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('created_by', userId);
+
+      const { data: photosData } = await supabase
+        .from('phase_photos')
+        .select('id')
+        .eq('created_by', userId);
+
+      // Estimate storage: 10MB per project + 2MB per photo
+      const projectStorage = (projectsData?.length || 0) * 10;
+      const photoStorage = (photosData?.length || 0) * 2;
+      const totalStorage = projectStorage + photoStorage;
+
+      setStorageUsed(totalStorage);
+    } catch (error) {
+      console.error('Error fetching user plan and storage:', error);
+    }
+  };
+
+  // ✅ Check storage limit before creating project
+  const checkStorageLimit = (): boolean => {
+    const limit = STORAGE_LIMITS[userPlan];
+    if (limit === -1) return true; // Unlimited for pro users
+    
+    const estimatedNewProjectSize = 10; // MB
+    return (storageUsed + estimatedNewProjectSize) <= limit;
+  };
+
+  // ✅ Get storage limit text
+  const getStorageLimitText = (): string => {
+    const limit = STORAGE_LIMITS[userPlan];
+    if (limit === -1) return 'Unlimited';
+    return `${limit} MB`;
+  };
+
+  // ✅ Get storage percentage
+  const getStoragePercentage = (): number => {
+    const limit = STORAGE_LIMITS[userPlan];
+    if (limit === -1) return 0; // Unlimited
+    return Math.min((storageUsed / limit) * 100, 100);
+  };
+
+  // ✅ Storage bar component
+  const StorageBar = () => {
+    const percentage = getStoragePercentage();
+    const limit = STORAGE_LIMITS[userPlan];
+    const isOverLimit = limit !== -1 && storageUsed > limit;
+    const isNearLimit = limit !== -1 && percentage > 80;
+
+    return (
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center space-x-2">
+            <div className={`p-1 rounded ${userPlan === 'pro' ? 'bg-purple-100' : userPlan === 'basic' ? 'bg-blue-100' : 'bg-orange-100'}`}>
+              {userPlan === 'pro' && <Crown className="h-4 w-4 text-purple-600" />}
+              {userPlan === 'basic' && <File className="h-4 w-4 text-blue-600" />}
+              {userPlan === 'free' && <AlertTriangle className="h-4 w-4 text-orange-600" />}
+            </div>
+            <div>
+              <h3 className="font-semibold text-gray-800">
+                {userPlan === 'pro' && 'Pro Plan - Unlimited Access'}
+                {userPlan === 'basic' && 'Basic Plan - Enhanced Access'}
+                {userPlan === 'free' && 'Free Plan - Limited Access'}
+              </h3>
+              <p className="text-sm text-gray-600">
+                {userPlan === 'pro' && 'Unlimited projects and storage'}
+                {userPlan === 'basic' && `You can manage unlimited projects with up to 3GB storage`}
+                {userPlan === 'free' && `You can manage 1 project with up to ${STORAGE_LIMITS.free}MB storage`}
+              </p>
+            </div>
+          </div>
+          {userPlan !== 'pro' && (
+            <button className="">
+              
+              
+            </button>
+          )}
+        </div>
+
+        {userPlan !== 'pro' && (
+          <>
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-sm font-medium text-gray-700">Storage Used</span>
+              <span className={`text-sm font-medium ${isOverLimit ? 'text-red-600' : isNearLimit ? 'text-yellow-600' : 'text-gray-700'}`}>
+                {storageUsed} MB / {getStorageLimitText()}
+              </span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className={`h-2 rounded-full transition-all duration-300 ${
+                  isOverLimit ? 'bg-red-500' : isNearLimit ? 'bg-yellow-500' : 'bg-green-500'
+                }`}
+                style={{ width: `${Math.min(percentage, 100)}%` }}
+              />
+            </div>
+            {isOverLimit && (
+              <p className="text-xs text-red-600 mt-2">
+                ⚠️ You've exceeded your storage limit. Upgrade to continue adding content.
+              </p>
+            )}
+          </>
+        )}
+      </div>
+    );
+  };
 
   // ✅ Fetch projects created by this admin only
   const fetchProjects = async () => {
@@ -75,6 +224,12 @@ export function Projects() {
   const handleSaveProject = async () => {
     if (!profileId) return;
 
+    // Check storage limit for new projects
+    if (!editingProject && !checkStorageLimit()) {
+      alert(`Storage limit exceeded! You can use up to ${getStorageLimitText()} on your ${userPlan} plan. Please upgrade to continue.`);
+      return;
+    }
+
     try {
       if (editingProject) {
         // Update existing project
@@ -91,6 +246,9 @@ export function Projects() {
           .insert([{ ...newProject, created_by: profileId }]);
 
         if (error) throw error;
+        
+        // Update storage usage
+        setStorageUsed(prev => prev + 10); // Estimate 10MB per project
       }
 
       setIsModalOpen(false);
@@ -104,6 +262,7 @@ export function Projects() {
         end_date: "",
       });
       fetchProjects();
+      fetchUserPlanAndStorage(profileId); // Refresh storage
     } catch (error: any) {
       console.error("Save project error:", error.message);
       alert("Error saving project: " + error.message);
@@ -864,15 +1023,21 @@ export function Projects() {
     doc.save(fileName);
   };
 
-  // Generate share link
+  // ✅ FIXED: Generate share link with proper share_options handling
   const generateShareLink = async (project: any, type: 'public' | 'private', password?: string) => {
     try {
-      console.log('🔍 generateShareLink called with:', { project: project?.name, type, hasPassword: !!password });
+      console.log('🔍 generateShareLink called with:', { 
+        project: project?.name, 
+        type, 
+        hasPassword: !!password,
+        shareOptions 
+      });
       
       const shareId = crypto.randomUUID();
       const expiresAt = new Date();
       expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours from now
 
+      // ✅ CRITICAL FIX: Ensure share_options is properly structured
       const shareData = {
         id: shareId,
         project_id: project.id,
@@ -880,7 +1045,8 @@ export function Projects() {
         share_type: type,
         password: password || null,
         expires_at: expiresAt.toISOString(),
-        created_at: new Date().toISOString()
+        share_options: shareOptions, // This should be a JSON object
+        is_active: true
       };
 
       console.log('🔍 Inserting share data:', shareData);
@@ -888,7 +1054,10 @@ export function Projects() {
         .from('project_shares')
         .insert([shareData]);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Database error:', error);
+        throw error;
+      }
 
       const baseUrl = window.location.origin;
       const shareUrl = `${baseUrl}/shared/${shareId}`;
@@ -912,6 +1081,15 @@ export function Projects() {
     setSharePassword('');
     setGeneratedLink('');
     setLinkCopied(false);
+    // Reset share options to default (all selected)
+    setShareOptions({
+      expenseDetails: true,
+      phaseDetails: true,
+      materialsDetails: true,
+      incomeDetails: true,
+      phasePhotos: true,
+      teamMembers: true
+    });
   };
 
   // Handle share type selection
@@ -959,6 +1137,41 @@ export function Projects() {
     }
   };
 
+  // Handle share option changes
+  const handleShareOptionChange = (option: keyof typeof shareOptions) => {
+    setShareOptions(prev => ({
+      ...prev,
+      [option]: !prev[option]
+    }));
+  };
+
+  // Select all share options
+  const selectAllOptions = () => {
+    setShareOptions({
+      expenseDetails: true,
+      phaseDetails: true,
+      materialsDetails: true,
+      incomeDetails: true,
+      phasePhotos: true,
+      teamMembers: true
+    });
+  };
+
+  // Deselect all share options
+  const selectNoneOptions = () => {
+    setShareOptions({
+      expenseDetails: false,
+      phaseDetails: false,
+      materialsDetails: false,
+      incomeDetails: false,
+      phasePhotos: false,
+      teamMembers: false
+    });
+  };
+
+  // Check if any options are selected
+  const hasSelectedOptions = Object.values(shareOptions).some(option => option);
+
   // ✅ Apply search + filter
   const filteredProjects = projects.filter((p) => {
     const matchesSearch =
@@ -969,9 +1182,19 @@ export function Projects() {
     return matchesSearch && matchesFilter;
   });
 
+  // Handle modal click outside to close
+  const handleModalClick = (e: React.MouseEvent, closeModal: () => void) => {
+    if (e.target === e.currentTarget) {
+      closeModal();
+    }
+  };
+
   return (
     <Layout title="Projects">
       <div className="space-y-6">
+        {/* Storage Bar */}
+        <StorageBar />
+
         {/* Search + Add + Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
@@ -1000,6 +1223,10 @@ export function Projects() {
 
           <button
             onClick={() => {
+              if (!checkStorageLimit()) {
+                alert(`Storage limit exceeded! You can use up to ${getStorageLimitText()} on your ${userPlan} plan. Please upgrade to continue.`);
+                return;
+              }
               setEditingProject(null);
               setNewProject({
                 name: "",
@@ -1011,7 +1238,7 @@ export function Projects() {
               });
               setIsModalOpen(true);
             }}
-            className="mt-2 sm:mt-0 inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white"
+            className="mt-2 sm:mt-0 inline-flex items-center px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
           >
             <Plus className="h-4 w-4 mr-2" />
             New Project
@@ -1044,21 +1271,21 @@ export function Projects() {
                 <div className="flex gap-2 pt-3 flex-wrap">
                   <button
                     onClick={() => handleViewProject(project)}
-                    className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded-lg"
+                    className="flex items-center px-3 py-1 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors"
                   >
                     <Eye className="h-4 w-4 mr-1" />
                     View
                   </button>
                   <button
                     onClick={() => handleDownloadReport(project)}
-                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg"
+                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <Download className="h-4 w-4 mr-1" />
                     Download
                   </button>
                   <button
                     onClick={() => handleShare(project)}
-                    className="flex items-center px-3 py-1 bg-purple-600 text-white text-sm rounded-lg"
+                    className="flex items-center px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
                   >
                     <Share2 className="h-4 w-4 mr-1" />
                     Share
@@ -1076,7 +1303,7 @@ export function Projects() {
                       });
                       setIsModalOpen(true);
                     }}
-                    className="flex items-center px-3 py-1 bg-yellow-500 text-white text-sm rounded-lg"
+                    className="flex items-center px-3 py-1 bg-yellow-500 text-white text-sm rounded-lg hover:bg-yellow-600 transition-colors"
                   >
                     <Edit className="h-4 w-4 mr-1" />
                     Edit
@@ -1094,7 +1321,10 @@ export function Projects() {
 
       {/* ✅ Modal for Add/Edit */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          onClick={(e) => handleModalClick(e, () => setIsModalOpen(false))}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">
@@ -1182,13 +1412,13 @@ export function Projects() {
             <div className="mt-4 flex justify-end space-x-2">
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="px-4 py-2 rounded-lg border"
+                className="px-4 py-2 rounded-lg border hover:bg-gray-50 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveProject}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white"
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
               >
                 Save
               </button>
@@ -1199,7 +1429,10 @@ export function Projects() {
 
       {/* ✅ View Project Modal */}
       {viewingProject && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          onClick={(e) => handleModalClick(e, () => setViewingProject(null))}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-4xl shadow-lg max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Project Details</h2>
@@ -1254,7 +1487,7 @@ export function Projects() {
                 <p className="text-gray-500">No phase photos</p>
               )}
 
-              {/* Separate Expenses Section */}
+              {/* ✅ FIXED: Separate Expenses Section */}
               <h2 className="text-xl font-bold text-red-600">Expenses</h2>
               {expenses.length > 0 ? (
                 <>
@@ -1310,7 +1543,7 @@ export function Projects() {
                 <p className="text-gray-500">No expenses</p>
               )}
 
-              {/* Separate Income Section */}
+              {/* ✅ FIXED: Separate Income Section */}
               <h2 className="text-xl font-bold text-green-600">Income</h2>
               {income.length > 0 ? (
                 <>
@@ -1404,10 +1637,13 @@ export function Projects() {
         </div>
       )}
 
-      {/* Share Modal */}
+      {/* ✅ FIXED: Share Modal */}
       {shareModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+          onClick={(e) => handleModalClick(e, () => setShareModalOpen(false))}
+        >
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-lg max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">Share Project</h2>
               <button onClick={() => setShareModalOpen(false)}>
@@ -1415,39 +1651,162 @@ export function Projects() {
               </button>
             </div>
 
+            {/* Share Options Selection */}
             {!shareType && (
               <div className="space-y-4">
                 <h3 className="text-md font-semibold text-gray-800">
+                  Select details to include in shared link:
+                </h3>
+                
+                {/* Share Options Checkboxes */}
+                <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
+                  <div className="flex justify-between items-center mb-3">
+                    <span className="text-sm font-medium text-gray-700">Share Options:</span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={selectAllOptions}
+                        className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        Select All
+                      </button>
+                      <button
+                        onClick={selectNoneOptions}
+                        className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200 transition-colors"
+                      >
+                        Select None
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-2">
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.phaseDetails}
+                        onChange={() => handleShareOptionChange('phaseDetails')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Phase Details</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.expenseDetails}
+                        onChange={() => handleShareOptionChange('expenseDetails')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Expense Details</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.incomeDetails}
+                        onChange={() => handleShareOptionChange('incomeDetails')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Income Details</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.materialsDetails}
+                        onChange={() => handleShareOptionChange('materialsDetails')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Materials Details</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.phasePhotos}
+                        onChange={() => handleShareOptionChange('phasePhotos')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Phase Photos</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.teamMembers}
+                        onChange={() => handleShareOptionChange('teamMembers')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Team Members</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Warning if no options selected */}
+                {!hasSelectedOptions && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p className="text-sm text-yellow-800">
+                      ⚠️ Please select at least one detail to include in the shared link.
+                    </p>
+                  </div>
+                )}
+
+                <h3 className="text-md font-semibold text-gray-800 mt-6">
                   How would you like to share "{sharingProject?.name}"?
                 </h3>
                 
                 <div className="space-y-3">
                   <button
                     onClick={() => handleShareTypeSelect('public')}
-                    className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-left"
+                    disabled={!hasSelectedOptions}
+                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${
+                      hasSelectedOptions 
+                        ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50' 
+                        : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
+                    }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-green-100 rounded-lg">
-                        <Globe className="h-6 w-6 text-green-600" />
+                      <div className={`p-2 rounded-lg ${
+                        hasSelectedOptions ? 'bg-green-100' : 'bg-gray-100'
+                      }`}>
+                        <Globe className={`h-6 w-6 ${
+                          hasSelectedOptions ? 'text-green-600' : 'text-gray-400'
+                        }`} />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-800">Public Link</h4>
-                        <p className="text-sm text-gray-600">Anyone with the link can view (24h expiry)</p>
+                        <h4 className={`font-semibold ${
+                          hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
+                        }`}>Public Link</h4>
+                        <p className={`text-sm ${
+                          hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
+                        }`}>Anyone with the link can view (24h expiry)</p>
                       </div>
                     </div>
                   </button>
 
                   <button
                     onClick={() => handleShareTypeSelect('private')}
-                    className="w-full p-4 border-2 border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-left"
+                    disabled={!hasSelectedOptions}
+                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${
+                      hasSelectedOptions 
+                        ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50' 
+                        : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
+                    }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="p-2 bg-orange-100 rounded-lg">
-                        <Lock className="h-6 w-6 text-orange-600" />
+                      <div className={`p-2 rounded-lg ${
+                        hasSelectedOptions ? 'bg-orange-100' : 'bg-gray-100'
+                      }`}>
+                        <Lock className={`h-6 w-6 ${
+                          hasSelectedOptions ? 'text-orange-600' : 'text-gray-400'
+                        }`} />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-gray-800">Private Link</h4>
-                        <p className="text-sm text-gray-600">Password protected (24h expiry)</p>
+                        <h4 className={`font-semibold ${
+                          hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
+                        }`}>Private Link</h4>
+                        <p className={`text-sm ${
+                          hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
+                        }`}>Password protected (24h expiry)</p>
                       </div>
                     </div>
                   </button>
@@ -1468,13 +1827,13 @@ export function Projects() {
                 <div className="flex space-x-2">
                   <button
                     onClick={() => setShareType(null)}
-                    className="flex-1 px-4 py-2 rounded-lg border"
+                    className="flex-1 px-4 py-2 rounded-lg border hover:bg-gray-50 transition-colors"
                   >
                     Back
                   </button>
                   <button
                     onClick={handlePrivateShare}
-                    className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white"
+                    className="flex-1 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                   >
                     Generate Link
                   </button>
@@ -1487,6 +1846,31 @@ export function Projects() {
                 <h3 className="text-md font-semibold text-gray-800">
                   {shareType === 'public' ? 'Public' : 'Private'} Link Generated
                 </h3>
+                
+                {/* Show selected options */}
+                <div className="bg-blue-50 rounded-lg p-3">
+                  <p className="text-sm text-blue-800 font-medium mb-2">Included Details:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {shareOptions.phaseDetails && (
+                      <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">Phase Details</span>
+                    )}
+                    {shareOptions.expenseDetails && (
+                      <span className="text-xs bg-red-200 text-red-800 px-2 py-1 rounded">Expenses</span>
+                    )}
+                    {shareOptions.incomeDetails && (
+                      <span className="text-xs bg-green-200 text-green-800 px-2 py-1 rounded">Income</span>
+                    )}
+                    {shareOptions.materialsDetails && (
+                      <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded">Materials</span>
+                    )}
+                    {shareOptions.phasePhotos && (
+                      <span className="text-xs bg-purple-200 text-purple-800 px-2 py-1 rounded">Photos</span>
+                    )}
+                    {shareOptions.teamMembers && (
+                      <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-1 rounded">Team</span>
+                    )}
+                  </div>
+                </div>
                 
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm text-gray-600 break-all">{generatedLink}</p>
@@ -1523,8 +1907,6 @@ export function Projects() {
                     Open Link
                   </button>
                 </div>
-
-                
               </div>
             )}
           </div>
