@@ -21,7 +21,7 @@ import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import Support from "./pages/Support";
 import { SharedProject } from './pages/SharedProject';
-import Settings from './pages/Settings';
+import Settings from './pages/settings';
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
