@@ -12,12 +12,19 @@ import {
   Building2,
   Wallet,
   Star,
-  Info
+  Info,
+  AlertCircle
 } from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 
 type PaymentMethod = "upi" | "card" | "wallet" | "netbanking";
+
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
 
 export const AdminPayment = () => {
   const location = useLocation();
@@ -29,6 +36,8 @@ export const AdminPayment = () => {
 
   const [selected, setSelected] = useState<PaymentMethod>("upi");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [paymentSuccess, setPaymentSuccess] = useState(false);
 
   // ✅ Amount based on plan
   const getPlanAmount = (plan: string) => {
@@ -43,39 +52,56 @@ export const AdminPayment = () => {
   };
 
   const amount = getPlanAmount(planName);
-  const razorpayKey = "rzp_test_XXXXXXXXXXXXXX"; // Replace with your Razorpay key
+  const razorpayKey = import.meta.env.VITE_RAZORPAY_KEY_ID;
 
   useEffect(() => {
     const loadScript = async () => {
-      const script = document.createElement("script");
-      script.src = "https://checkout.razorpay.com/v1/checkout.js";
-      script.async = true;
-      document.body.appendChild(script);
+      return new Promise((resolve) => {
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+      });
     };
     loadScript();
   }, []);
 
-  const handlePaymentSuccess = async () => {
+  // ✅ Handle payment success with verification
+  const handlePaymentSuccess = async (paymentResponse: any) => {
     if (!user) return;
     setIsProcessing(true);
+    setError(null);
+    
     try {
-      const startDate = new Date();
-      const endDate = new Date();
-      endDate.setMonth(endDate.getMonth() + 1);
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          subscription_type: planName,
-          plan_id: planId,
-          subscription_start: startDate.toISOString().split("T")[0],
-          subscription_end: endDate.toISOString().split("T")[0],
-        })
-        .eq("id", user.id);
-
-      if (error) throw error;
+      console.log('Payment response:', paymentResponse);
       
-      // Show success message
+      // Verify payment with backend
+      const { data, error: functionError } = await supabase.functions.invoke('verify-razorpay-payment', {
+        body: {
+          razorpay_order_id: paymentResponse.razorpay_order_id,
+          razorpay_payment_id: paymentResponse.razorpay_payment_id,
+          razorpay_signature: paymentResponse.razorpay_signature,
+          user_id: user.id,
+          plan_name: planName,
+          plan_id: planId
+        }
+      });
+
+      if (functionError) {
+        console.error('Function error:', functionError);
+        throw new Error(functionError.message || "Payment verification failed");
+      }
+
+      if (!data?.success) {
+        throw new Error(data?.error || "Payment verification failed");
+      }
+
+      // Show success state
+      setPaymentSuccess(true);
+      setIsProcessing(false);
+
+      // Redirect after showing success
       setTimeout(() => {
         navigate("/dashboard", { 
           state: { 
@@ -83,32 +109,60 @@ export const AdminPayment = () => {
             type: "success"
           }
         });
-      }, 2000);
+      }, 3000);
     } catch (err: any) {
-      console.error(err.message);
-      alert("Something went wrong while updating subscription.");
+      console.error("Payment verification error:", err);
+      setError("Payment completed but verification failed. Please contact support if your subscription is not activated.");
       setIsProcessing(false);
     }
   };
 
+  // ✅ Handle payment failure
+  const handlePaymentFailure = (error: any) => {
+    console.error('Payment failed:', error);
+    setError("Payment failed. Please try again.");
+    setIsProcessing(false);
+  };
+
+  // ✅ Use Supabase Edge Function for order creation
   const initiatePayment = async (paymentMethod: string, params: any = {}) => {
+    if (!user) {
+      setError("Please login to continue");
+      return;
+    }
+
+    if (!razorpayKey) {
+      setError("Razorpay is not configured. Please contact support.");
+      return;
+    }
+
     setIsProcessing(true);
+    setError(null);
+    
     try {
-      const response = await fetch("/api/create-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      console.log('Creating order for:', { amount, planName, userId: user.id });
+      
+      // Use Supabase Edge Function
+      const { data, error: functionError } = await supabase.functions.invoke('create-razorpay-order', {
+        body: {
           amount,
           currency: "INR",
           receipt: `sub_${planId}_${Date.now()}`,
           notes: { plan: planName, userId: user.id },
-        }),
+        }
       });
 
-      if (!response.ok) throw new Error("Failed to create order");
+      if (functionError) {
+        console.error('Function error:', functionError);
+        throw new Error(functionError.message || "Failed to create order");
+      }
 
-      const data = await response.json();
+      if (!data?.success) {
+        throw new Error(data?.error || "Failed to create order");
+      }
+
       const order = data.order;
+      console.log('Order created:', order);
 
       const options = {
         key: razorpayKey,
@@ -117,29 +171,49 @@ export const AdminPayment = () => {
         name: "ConstructPro",
         description: `${planName} Plan Subscription`,
         order_id: order.id,
-        handler: async () => handlePaymentSuccess(),
+        handler: handlePaymentSuccess,
         prefill: {
-          name: user?.user_metadata?.full_name || "User",
-          email: user?.email || "user@example.com",
+          name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || "User",
+          email: user?.email || "",
           contact: user?.phone || "9999999999",
         },
         theme: { color: "#2563eb" },
-        method: paymentMethod,
+        method: {
+          [paymentMethod]: true
+        },
         modal: {
-          ondismiss: () => setIsProcessing(false)
+          ondismiss: () => {
+            setIsProcessing(false);
+            setError("Payment cancelled by user");
+          }
         }
       };
 
-      if (paymentMethod === "upi" && params.vpa) options.vpa = params.vpa;
-      if (paymentMethod === "wallet" && params.wallet) options.wallet = params.wallet;
-      if (paymentMethod === "netbanking" && params.bank) options.bank = params.bank;
+      // Add method-specific options
+      if (paymentMethod === "upi" && params.vpa) {
+        options.method = { upi: true };
+      }
+      if (paymentMethod === "wallet" && params.wallet) {
+        options.method = { wallet: { [params.wallet]: true } };
+      }
+      if (paymentMethod === "netbanking" && params.bank) {
+        options.method = { netbanking: { [params.bank]: true } };
+      }
 
-      // @ts-ignore
+      console.log('Razorpay options:', options);
+
+      if (!window.Razorpay) {
+        throw new Error("Razorpay SDK not loaded");
+      }
+
       const rzp = new window.Razorpay(options);
+      
+      rzp.on('payment.failed', handlePaymentFailure);
+      
       rzp.open();
-    } catch (error) {
-      console.error(error);
-      alert("Failed to initiate payment. Please try again.");
+    } catch (error: any) {
+      console.error('Payment initiation error:', error);
+      setError(error.message || "Failed to initiate payment. Please try again.");
       setIsProcessing(false);
     }
   };
@@ -172,6 +246,37 @@ export const AdminPayment = () => {
     },
   ];
 
+  // Payment Success Screen
+  if (paymentSuccess) {
+    return (
+      <Layout>
+        <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-100 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 text-center max-w-md w-full">
+            <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <CheckCircle className="w-8 h-8 text-green-600" />
+            </div>
+            <h3 className="text-2xl font-bold text-gray-800 mb-2">Payment Successful!</h3>
+            <p className="text-gray-600 mb-4">
+              Your {planName} plan subscription has been activated successfully.
+            </p>
+            <div className="bg-green-50 rounded-lg p-4 mb-6">
+              <p className="text-green-800 text-sm">
+                You will be redirected to your dashboard in a few seconds...
+              </p>
+            </div>
+            <button
+              onClick={() => navigate("/dashboard")}
+              className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Go to Dashboard
+            </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Processing Screen
   if (isProcessing) {
     return (
       <Layout>
@@ -204,6 +309,19 @@ export const AdminPayment = () => {
               <p className="text-gray-600">Secure checkout powered by Razorpay</p>
             </div>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="mb-6 max-w-2xl mx-auto">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start space-x-3">
+                <AlertCircle className="h-5 w-5 text-red-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h3 className="text-red-800 font-medium">Payment Error</h3>
+                  <p className="text-red-700 text-sm mt-1">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Payment Methods */}
@@ -389,10 +507,7 @@ const UPIPayment = ({ initiatePayment }: { initiatePayment: (method: string, par
           {upiApps.map((app) => (
             <button
               key={app.name}
-              onClick={() => {
-                setUpiApp(app.name);
-                setStep("enterUpi");
-              }}
+              onClick={() => initiatePayment("upi")}
               className="relative p-4 border border-gray-200 rounded-xl hover:border-blue-300 hover:bg-blue-50 transition-all duration-200 text-left"
             >
               {app.popular && (
@@ -461,131 +576,31 @@ const UPIPayment = ({ initiatePayment }: { initiatePayment: (method: string, par
 };
 
 const CardPayment = ({ initiatePayment }: { initiatePayment: (method: string, params?: any) => void }) => {
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardholderName, setCardholderName] = useState("");
-  const [expiry, setExpiry] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-
-  const formatCardNumber = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    const matches = v.match(/\d{4,16}/g);
-    const match = matches && matches[0] || '';
-    const parts = [];
-    for (let i = 0, len = match.length; i < len; i += 4) {
-      parts.push(match.substring(i, i + 4));
-    }
-    if (parts.length) {
-      return parts.join(' ');
-    } else {
-      return v;
-    }
-  };
-
-  const formatExpiry = (value: string) => {
-    const v = value.replace(/\s+/g, '').replace(/[^0-9]/gi, '');
-    if (v.length >= 2) {
-      return v.substring(0, 2) + '/' + v.substring(2, 4);
-    }
-    return v;
-  };
-
-  const validateForm = () => {
-    const newErrors: { [key: string]: string } = {};
-    const cleanCardNumber = cardNumber.replace(/\s/g, "");
-    
-    if (!cleanCardNumber || !/^\d{13,19}$/.test(cleanCardNumber))
-      newErrors.cardNumber = "Enter a valid card number";
-    if (!cardholderName.trim()) 
-      newErrors.cardholderName = "Cardholder name is required";
-    if (!expiry || !/^(0[1-9]|1[0-2])\/\d{2}$/.test(expiry))
-      newErrors.expiry = "Enter valid expiry (MM/YY)";
-    if (!cvv || !/^\d{3,4}$/.test(cvv)) 
-      newErrors.cvv = "Enter valid CVV";
-    
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handlePay = () => {
-    if (validateForm()) {
-      initiatePayment("card");
-    }
-  };
-
   return (
     <div>
-      <h3 className="text-lg font-semibold text-gray-800 mb-4">Card Details</h3>
+      <h3 className="text-lg font-semibold text-gray-800 mb-4">Card Payment</h3>
       <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Card Number</label>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="1234 5678 9012 3456"
-              value={cardNumber}
-              onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-              maxLength={19}
-              className="w-full p-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-            />
-            <CreditCard className="absolute left-3 top-3.5 h-5 w-5 text-gray-400" />
-          </div>
-          {errors.cardNumber && <p className="text-red-500 text-sm mt-1">{errors.cardNumber}</p>}
+        <div className="bg-blue-50 rounded-lg p-4">
+          <p className="text-blue-800 text-sm">
+            You will be redirected to a secure payment page to enter your card details.
+          </p>
         </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Cardholder Name</label>
-          <input
-            type="text"
-            placeholder="John Doe"
-            value={cardholderName}
-            onChange={(e) => setCardholderName(e.target.value.toUpperCase())}
-            className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-          />
-          {errors.cardholderName && (
-            <p className="text-red-500 text-sm mt-1">{errors.cardholderName}</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Expiry Date</label>
-            <input
-              type="text"
-              placeholder="MM/YY"
-              value={expiry}
-              onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-              maxLength={5}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-            />
-            {errors.expiry && <p className="text-red-500 text-sm mt-1">{errors.expiry}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">CVV</label>
-            <input
-              type="password"
-              placeholder="123"
-              value={cvv}
-              onChange={(e) => setCvv(e.target.value.replace(/\D/g, ''))}
-              maxLength={4}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
-            />
-            {errors.cvv && <p className="text-red-500 text-sm mt-1">{errors.cvv}</p>}
-          </div>
-        </div>
-
+        
         <button
-          onClick={handlePay}
+          onClick={() => initiatePayment("card")}
           className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold flex items-center justify-center space-x-2 hover:bg-blue-700 transition-colors"
         >
           <Lock className="h-5 w-5" />
-          <span>Pay Securely</span>
+          <span>Pay with Card</span>
         </button>
 
         <div className="flex items-center justify-center space-x-4 pt-2">
-          <img src="https://via.placeholder.com/40x25/1a73e8/ffffff?text=VISA" alt="Visa" className="h-6" />
-          <img src="https://via.placeholder.com/40x25/eb001b/ffffff?text=MC" alt="Mastercard" className="h-6" />
-          <img src="https://via.placeholder.com/40x25/006fcf/ffffff?text=AMEX" alt="American Express" className="h-6" />
+          <div className="text-xs text-gray-500">Accepted cards:</div>
+          <div className="flex space-x-2">
+            <div className="w-8 h-5 bg-blue-600 rounded text-white text-xs flex items-center justify-center">VISA</div>
+            <div className="w-8 h-5 bg-red-600 rounded text-white text-xs flex items-center justify-center">MC</div>
+            <div className="w-8 h-5 bg-blue-800 rounded text-white text-xs flex items-center justify-center">AMEX</div>
+          </div>
         </div>
       </div>
     </div>
@@ -596,23 +611,14 @@ const WalletPayment = ({ initiatePayment }: { initiatePayment: (method: string, 
   const [selectedWallet, setSelectedWallet] = useState<string | null>(null);
 
   const wallets = [
-    { name: "Paytm Wallet", logo: "🔵", popular: true },
-    { name: "PhonePe Wallet", logo: "🟣", popular: true },
-    { name: "Amazon Pay", logo: "🟠", popular: false },
-    { name: "Mobikwik", logo: "🔴", popular: false },
+    { name: "Paytm Wallet", logo: "🔵", popular: true, code: "paytm" },
+    { name: "PhonePe Wallet", logo: "🟣", popular: true, code: "phonepe" },
+    { name: "Amazon Pay", logo: "🟠", popular: false, code: "amazonpay" },
+    { name: "Mobikwik", logo: "🔴", popular: false, code: "mobikwik" },
   ];
 
-  const mapWalletToCode = (name: string) => {
-    switch (name) {
-      case "Paytm Wallet": return "paytm";
-      case "PhonePe Wallet": return "phonepewallet";
-      case "Amazon Pay": return "amazonpay";
-      case "Mobikwik": return "mobikwik";
-      default: return "";
-    }
-  };
-
   if (selectedWallet) {
+    const wallet = wallets.find(w => w.name === selectedWallet);
     return (
       <div>
         <button
@@ -632,7 +638,7 @@ const WalletPayment = ({ initiatePayment }: { initiatePayment: (method: string, 
           </div>
           
           <button
-            onClick={() => initiatePayment("wallet", { wallet: mapWalletToCode(selectedWallet) })}
+            onClick={() => initiatePayment("wallet", { wallet: wallet?.code })}
             className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold flex items-center justify-center space-x-2 hover:bg-blue-700 transition-colors"
           >
             <Lock className="h-5 w-5" />
@@ -673,27 +679,16 @@ const NetBankingPayment = ({ initiatePayment }: { initiatePayment: (method: stri
   const [selectedBank, setSelectedBank] = useState<string | null>(null);
 
   const banks = [
-    { name: "HDFC Bank", logo: "🏦", popular: true },
-    { name: "ICICI Bank", logo: "🏦", popular: true },
-    { name: "State Bank of India", logo: "🏦", popular: true },
-    { name: "Axis Bank", logo: "🏦", popular: false },
-    { name: "Kotak Bank", logo: "🏦", popular: false },
-    { name: "Yes Bank", logo: "🏦", popular: false },
+    { name: "HDFC Bank", logo: "🏦", popular: true, code: "HDFC" },
+    { name: "ICICI Bank", logo: "🏦", popular: true, code: "ICIC" },
+    { name: "State Bank of India", logo: "🏦", popular: true, code: "SBIN" },
+    { name: "Axis Bank", logo: "🏦", popular: false, code: "UTIB" },
+    { name: "Kotak Bank", logo: "🏦", popular: false, code: "KKBK" },
+    { name: "Yes Bank", logo: "🏦", popular: false, code: "YESB" },
   ];
 
-  const mapBankToCode = (name: string) => {
-    switch (name) {
-      case "HDFC Bank": return "HDFC";
-      case "ICICI Bank": return "ICIC";
-      case "State Bank of India": return "SBIN";
-      case "Axis Bank": return "UTIB";
-      case "Kotak Bank": return "KKBK";
-      case "Yes Bank": return "YESB";
-      default: return "";
-    }
-  };
-
   if (selectedBank) {
+    const bank = banks.find(b => b.name === selectedBank);
     return (
       <div>
         <button
@@ -713,7 +708,7 @@ const NetBankingPayment = ({ initiatePayment }: { initiatePayment: (method: stri
           </div>
           
           <button
-            onClick={() => initiatePayment("netbanking", { bank: mapBankToCode(selectedBank) })}
+            onClick={() => initiatePayment("netbanking", { bank: bank?.code })}
             className="w-full py-3 bg-blue-600 text-white rounded-lg font-semibold flex items-center justify-center space-x-2 hover:bg-blue-700 transition-colors"
           >
             <Lock className="h-5 w-5" />

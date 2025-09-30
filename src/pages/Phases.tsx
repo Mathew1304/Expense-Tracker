@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Edit2, Trash2, X, AlertTriangle } from "lucide-react";
+import { Plus, CreditCard as Edit2, Trash2, X, AlertTriangle, Calendar, MapPin, User, File, Camera, DollarSign, TrendingUp, TrendingDown } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -337,6 +337,16 @@ export function Phases() {
     }
   };
 
+  // Get status color
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Completed': return 'bg-green-100 text-green-800';
+      case 'In Progress': return 'bg-blue-100 text-blue-800';
+      case 'Not Started': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
       <div className="p-6">
@@ -513,294 +523,320 @@ export function Phases() {
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40"
             onClick={(e) => handleModalClick(e, () => setViewPhase(null))}
           >
-            <div className="bg-white p-6 rounded-lg w-full max-w-2xl overflow-y-auto max-h-[90vh] z-40">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">{viewPhase.name}</h2>
-                <button onClick={() => setViewPhase(null)}>
-                  <X className="w-6 h-6" />
+            <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto z-40">
+              {/* Header */}
+              <div className="flex justify-between items-center p-6 border-b">
+                <h2 className="text-2xl font-bold text-gray-900">Phase Details</h2>
+                <button 
+                  onClick={() => setViewPhase(null)}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+                >
+                  <X className="w-6 h-6 text-gray-500" />
                 </button>
               </div>
 
-              <p>
-                <strong>Project:</strong> {viewPhase.project_name}
-              </p>
-              <p>
-                <strong>Start Date:</strong> {viewPhase.start_date}
-              </p>
-              <p>
-                <strong>End Date:</strong> {viewPhase.end_date}
-              </p>
-              <p>
-                <strong>Status:</strong> {viewPhase.status}
-              </p>
-              <p>
-                <strong>Estimated Cost:</strong> ₹
-                {viewPhase.estimated_cost?.toLocaleString()}
-              </p>
-              <p>
-                <strong>Contractor:</strong> {viewPhase.contractor_name}
-              </p>
-
-              <div className="my-3">
-                <div className="w-full bg-gray-200 rounded h-2">
-                  <div
-                    className={`h-2 rounded ${getBudgetUsage(viewPhase) > 100 ? 'bg-red-600' : 'bg-green-600'}`}
-                    style={{ width: `${Math.min(getBudgetUsage(viewPhase), 100)}%` }}
-                  />
-                </div>
-                <p className={getBudgetUsage(viewPhase) > 100 ? 'text-red-600 font-semibold' : ''}>
-                  {getBudgetUsage(viewPhase)}% of budget used
-                </p>
-              </div>
-
-              {/* Financial Summary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                {/* Expenses Section */}
-                <div>
-                  <h3 className="font-semibold text-red-600 mb-3 flex items-center">
-                    <span className="w-3 h-3 bg-red-600 rounded-full mr-2"></span>
-                    Expenses
-                  </h3>
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-red-50">
-                          <th className="p-2 border-b text-left text-sm">Category</th>
-                          <th className="p-2 border-b text-right text-sm">Amount</th>
-                          <th className="p-2 border-b text-center text-sm">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {expenses[viewPhase.id]?.length > 0 ? (
-                          expenses[viewPhase.id].map((e) => (
-                            <tr key={e.id} className="hover:bg-gray-50">
-                              <td className="p-2 border-b text-sm">{e.category}</td>
-                              <td className="p-2 border-b text-right text-sm text-red-600 font-medium">
-                                -₹{e.amount.toLocaleString()}
-                              </td>
-                              <td className="p-2 border-b text-center text-sm">{e.date}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-gray-500 text-sm">
-                              No expenses recorded
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                    {expenses[viewPhase.id]?.length > 0 && (
-                      <div className="bg-red-50 p-2 border-t">
-                        <div className="text-right font-semibold text-red-600">
-                          Total Expenses: ₹{expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
-                        </div>
-                      </div>
-                    )}
+              <div className="p-6 space-y-6">
+                {/* Phase Title and Project */}
+                <div className="text-center">
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">{viewPhase.name}</h1>
+                  <div className="flex items-center justify-center text-gray-600 mb-4">
+                    <File className="w-5 h-5 mr-2" />
+                    <span>Project: {viewPhase.project_name}</span>
                   </div>
                 </div>
 
-                {/* Income Section */}
-                <div>
-                  <h3 className="font-semibold text-green-600 mb-3 flex items-center">
-                    <span className="w-3 h-3 bg-green-600 rounded-full mr-2"></span>
-                    Income
-                  </h3>
-                  <div className="border rounded-lg overflow-hidden">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="bg-green-50">
-                          <th className="p-2 border-b text-left text-sm">Category</th>
-                          <th className="p-2 border-b text-right text-sm">Amount</th>
-                          <th className="p-2 border-b text-center text-sm">Date</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {incomes[viewPhase.id]?.length > 0 ? (
-                          incomes[viewPhase.id].map((e) => (
-                            <tr key={e.id} className="hover:bg-gray-50">
-                              <td className="p-2 border-b text-sm">{e.category}</td>
-                              <td className="p-2 border-b text-right text-sm text-green-600 font-medium">
-                                +₹{e.amount.toLocaleString()}
-                              </td>
-                              <td className="p-2 border-b text-center text-sm">{e.date}</td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan={3} className="p-4 text-center text-gray-500 text-sm">
-                              No income recorded
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                    {incomes[viewPhase.id]?.length > 0 && (
-                      <div className="bg-green-50 p-2 border-t">
-                        <div className="text-right font-semibold text-green-600">
-                          Total Income: ₹{incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0).toLocaleString()}
-                        </div>
+                {/* Status, Dates, and Basic Info */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <div className="p-2 bg-blue-100 rounded-lg">
+                        <AlertTriangle className="w-6 h-6 text-blue-600" />
                       </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Net Financial Summary */}
-              <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-                <div className="flex justify-between items-center">
-                  <span className="font-semibold">Net Amount:</span>
-                  <span className={`font-bold text-lg ${
-                    (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                    (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) > 0 
-                      ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    {(expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                     (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) > 0 ? '-' : '+'}
-                    ₹{Math.abs(
-                      (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                      (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
-                    ).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              {/* Budget vs Actual Comparison */}
-              {viewPhase.estimated_cost && (
-                <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-semibold mb-2">Budget Analysis</h4>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span>Estimated Budget:</span>
-                      <span className="font-medium">₹{viewPhase.estimated_cost.toLocaleString()}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Net Spent:</span>
-                      <span className="font-medium">
+                    <h3 className="font-semibold text-gray-700 mb-1">Status</h3>
+                    <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(viewPhase.status)}`}>
+                      {viewPhase.status}
+                    </span>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <div className="p-2 bg-green-100 rounded-lg">
+                        <Calendar className="w-6 h-6 text-green-600" />
+                      </div>
+                    </div>
+                    <h3 className="font-semibold text-gray-700 mb-1">Start Date</h3>
+                    <p className="text-gray-900 font-medium">
+                      {viewPhase.start_date ? new Date(viewPhase.start_date).toLocaleDateString() : 'Not set'}
+                    </p>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="flex items-center justify-center mb-2">
+                      <div className="p-2 bg-red-100 rounded-lg">
+                        <Calendar className="w-6 h-6 text-red-600" />
+                      </div>
+                    </div>
+                    <h3 className="font-semibold text-gray-700 mb-1">End Date</h3>
+                    <p className="text-gray-900 font-medium">
+                      {viewPhase.end_date ? new Date(viewPhase.end_date).toLocaleDateString() : 'Not set'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Budget Overview Section */}
+                <div className="bg-blue-50 rounded-lg p-6">
+                  <div className="flex items-center mb-4">
+                    <DollarSign className="w-6 h-6 text-blue-600 mr-2" />
+                    <h3 className="text-xl font-bold text-gray-900">Budget Overview</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-4">
+                    <div className="text-center">
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Total Budget</h4>
+                      <p className="text-2xl font-bold text-gray-900">
+                        ₹{viewPhase.estimated_cost?.toLocaleString() || '0'}
+                      </p>
+                    </div>
+
+                    <div className="text-center">
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Budget Used</h4>
+                      <p className="text-2xl font-bold text-blue-600">
                         ₹{Math.abs(
                           (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
                           (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
                         ).toLocaleString()}
-                      </span>
+                      </p>
                     </div>
-                    <div className="flex justify-between border-t pt-2">
-                      <span>Remaining Budget:</span>
-                      <span className={`font-bold ${
-                        viewPhase.estimated_cost - 
-                        ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                         (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)) < 0 
-                          ? 'text-red-600' : 'text-green-600'
+
+                    <div className="text-center">
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Remaining</h4>
+                      <p className={`text-2xl font-bold ${
+                        viewPhase.estimated_cost && 
+                        (viewPhase.estimated_cost - 
+                         ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                          (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0))) >= 0
+                          ? 'text-green-600' : 'text-red-600'
                       }`}>
-                        ₹{(viewPhase.estimated_cost - 
-                          ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                           (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0))
-                        ).toLocaleString()}
-                      </span>
+                        ₹{viewPhase.estimated_cost ? 
+                          (viewPhase.estimated_cost - 
+                           ((expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                            (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0))
+                          ).toLocaleString() : '0'}
+                      </p>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* Photos */}
-              <h3 className="font-semibold mt-6">Phase Photos</h3>
-              {canManage && (
-                <div className="flex gap-2 mt-2">
-                  <input
-                    type="file"
-                    onChange={async (e) => {
-                      if (!e.target.files || !user) return;
-                      const file = e.target.files[0];
-                      const compressed = await imageCompression(file, { maxSizeMB: 1 });
-                      const filePath = `phase-photos/${viewPhase.id}/${Date.now()}-${file.name}`;
-                      const { error } = await supabase.storage
-                        .from("phase-photos")
-                        .upload(filePath, compressed);
-                      if (error) return alert(error.message);
-                      const { data } = supabase.storage.from("phase-photos").getPublicUrl(filePath);
-                      await supabase.from("phase_photos").insert([
-                        { phase_id: viewPhase.id, project_id: viewPhase.project_id, uploaded_by: user.id, photo_url: data.publicUrl }
-                      ]);
-                      fetchPhasePhotos(viewPhase.id);
-                    }}
-                  />
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4 mt-4">
-                {phasePhotos.map((p) => (
-                  <div
-                    key={p.id}
-                    className="rounded shadow p-2 bg-white cursor-pointer"
-                    onClick={() => setFullScreenImage(p.photo_url)}
-                  >
-                    <img
-                      src={p.photo_url}
-                      alt="Phase"
-                      className="w-full h-40 object-cover rounded"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Comments */}
-              <h3 className="font-semibold mt-6">Comments</h3>
-              <div className="space-y-2 mt-2">
-                {comments.map((c) => (
-                  <div key={c.id} className="border p-2 rounded flex justify-between items-center">
-                    <div>
-                      <strong>{c.user_name}:</strong>{" "}
-                      <input
-                        type="text"
-                        value={c.comment}
-                        onChange={(e) => updateComment(c.id, e.target.value)}
-                        className="border p-1 rounded w-full"
+                  <div className="mb-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-600">Progress</span>
+                      <span className="text-sm font-medium text-gray-900">{getBudgetUsage(viewPhase)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div
+                        className={`h-3 rounded-full transition-all ${
+                          getBudgetUsage(viewPhase) > 100 ? 'bg-red-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${Math.min(getBudgetUsage(viewPhase), 100)}%` }}
                       />
                     </div>
-                    {user?.id === c.user_id && (
-                      <button
-                        onClick={() => removeComment(c.id)}
-                        className="text-red-600 ml-2"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                  </div>
+                </div>
+
+                {/* Financial Overview Section */}
+                <div className="bg-green-50 rounded-lg p-6">
+                  <div className="flex items-center mb-4">
+                    <DollarSign className="w-6 h-6 text-green-600 mr-2" />
+                    <h3 className="text-xl font-bold text-gray-900">Financial Overview</h3>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="bg-white rounded-lg p-4 text-center border border-green-200">
+                      <div className="flex items-center justify-center mb-2">
+                        <TrendingUp className="w-6 h-6 text-green-600" />
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Total Income</h4>
+                      <p className="text-2xl font-bold text-green-600">
+                        ₹{(incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {incomes[viewPhase.id]?.length || 0} transactions
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 text-center border border-red-200">
+                      <div className="flex items-center justify-center mb-2">
+                        <TrendingDown className="w-6 h-6 text-red-600" />
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Total Expenses</h4>
+                      <p className="text-2xl font-bold text-red-600">
+                        ₹{(expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {expenses[viewPhase.id]?.length || 0} transactions
+                      </p>
+                    </div>
+
+                    <div className="bg-white rounded-lg p-4 text-center border border-gray-200">
+                      <div className="flex items-center justify-center mb-2">
+                        <DollarSign className="w-6 h-6 text-gray-600" />
+                      </div>
+                      <h4 className="text-sm font-medium text-gray-600 mb-1">Net Amount</h4>
+                      <p className={`text-2xl font-bold ${
+                        (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                        (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) >= 0 
+                          ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {(incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                         (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) >= 0 ? '+' : '-'}
+                        ₹{Math.abs(
+                          (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                          (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
+                        ).toLocaleString()}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {(incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
+                         (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) >= 0 ? 'Profit' : 'Loss'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Details */}
+                {viewPhase.contractor_name && (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <div className="flex items-center">
+                      <User className="w-5 h-5 text-gray-600 mr-2" />
+                      <span className="font-medium text-gray-700">Contractor:</span>
+                      <span className="ml-2 text-gray-900">{viewPhase.contractor_name}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Photos Section */}
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center">
+                      <Camera className="w-6 h-6 text-gray-600 mr-2" />
+                      <h3 className="text-xl font-bold text-gray-900">Phase Photos</h3>
+                    </div>
+                    {canManage && (
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={async (e) => {
+                          if (!e.target.files || !user) return;
+                          const file = e.target.files[0];
+                          const compressed = await imageCompression(file, { maxSizeMB: 1 });
+                          const filePath = `phase-photos/${viewPhase.id}/${Date.now()}-${file.name}`;
+                          const { error } = await supabase.storage
+                            .from("phase-photos")
+                            .upload(filePath, compressed);
+                          if (error) return alert(error.message);
+                          const { data } = supabase.storage.from("phase-photos").getPublicUrl(filePath);
+                          await supabase.from("phase_photos").insert([
+                            { phase_id: viewPhase.id, project_id: viewPhase.project_id, uploaded_by: user.id, photo_url: data.publicUrl }
+                          ]);
+                          fetchPhasePhotos(viewPhase.id);
+                        }}
+                        className="text-sm text-blue-600 hover:text-blue-700 cursor-pointer"
+                      />
                     )}
                   </div>
-                ))}
+                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                    {phasePhotos.map((p) => (
+                      <div
+                        key={p.id}
+                        className="rounded-lg shadow-sm bg-white cursor-pointer hover:shadow-md transition-shadow"
+                        onClick={() => setFullScreenImage(p.photo_url)}
+                      >
+                        <img
+                          src={p.photo_url}
+                          alt="Phase"
+                          className="w-full h-32 object-cover rounded-lg"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  {phasePhotos.length === 0 && (
+                    <p className="text-gray-500 text-center py-8">No photos uploaded yet</p>
+                  )}
+                </div>
+
+                {/* Comments Section */}
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-4">Comments</h3>
+                  <div className="space-y-3 mb-4">
+                    {comments.map((c) => (
+                      <div key={c.id} className="bg-gray-50 rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="flex-1">
+                            <div className="flex items-center mb-2">
+                              <User className="w-4 h-4 text-gray-500 mr-2" />
+                              <span className="font-medium text-gray-900">{c.user_name}</span>
+                              <span className="text-xs text-gray-500 ml-2">
+                                {new Date(c.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                            <input
+                              type="text"
+                              value={c.comment}
+                              onChange={(e) => updateComment(c.id, e.target.value)}
+                              className="w-full bg-transparent border-none p-0 text-gray-700 focus:outline-none focus:ring-0"
+                              readOnly={user?.id !== c.user_id}
+                            />
+                          </div>
+                          {user?.id === c.user_id && (
+                            <button
+                              onClick={() => removeComment(c.id)}
+                              className="text-red-600 hover:text-red-700 ml-2"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {canManage && (
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Add a comment..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        className="flex-1 border rounded-lg p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      />
+                      <button
+                        onClick={addComment}
+                        className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
                 {canManage && (
-                  <div className="flex gap-2 mt-2">
-                    <input
-                      type="text"
-                      placeholder="Add comment"
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      className="border p-2 rounded w-full"
-                    />
+                  <div className="flex gap-3 pt-6 border-t">
                     <button
-                      onClick={addComment}
-                      className="bg-blue-600 text-white px-3 py-1 rounded"
+                      onClick={() => editPhase(viewPhase)}
+                      className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                     >
-                      Add
+                      <Edit2 className="w-4 h-4 mr-2" />
+                      Edit Phase
+                    </button>
+                    <button
+                      onClick={() => handleDeleteClick({} as React.MouseEvent, viewPhase)}
+                      className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Delete Phase
                     </button>
                   </div>
                 )}
               </div>
-
-              {/* Edit & Delete Phase buttons */}
-              {canManage && (
-                <div className="flex gap-2 mt-6">
-                  <button
-                    onClick={() => editPhase(viewPhase)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded"
-                  >
-                    Edit Phase
-                  </button>
-                  <button
-                    onClick={() => handleDeleteClick({} as React.MouseEvent, viewPhase)}
-                    className="bg-red-600 text-white px-3 py-1 rounded hover:bg-red-700 transition-colors"
-                  >
-                    Delete Phase
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
