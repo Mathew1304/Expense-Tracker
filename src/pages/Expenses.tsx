@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Upload, Download, Link as LinkIcon, FileText, Calculator } from "lucide-react";
+import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CheckCircle, Clock, XCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
@@ -52,14 +52,20 @@ interface ChartData {
 
 interface PaymentLink {
   id: string;
+  business_name: string;
   product_name: string;
   amount: number;
   quantity: number;
   description: string;
+  gst_number: string;
+  gst_rate: number;
   razorpay_link_id: string;
   razorpay_link_url: string;
+  razorpay_qr_code?: string;
   status: 'active' | 'inactive';
+  payment_status: 'pending' | 'paid' | 'failed';
   created_at: string;
+  updated_at: string;
 }
 
 const EXPENSE_CATEGORY_OPTIONS = [
@@ -94,7 +100,7 @@ const INCOME_CATEGORY_OPTIONS = [
 
 const PAYMENT_OPTIONS = ["Cash", "UPI", "Card", "Bank Transfer", "Cheque"];
 
-// Razorpay configuration - Add your keys here
+// Razorpay configuration
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = import.meta.env.VITE_RAZORPAY_KEY_SECRET;
 
@@ -110,8 +116,8 @@ export function Expenses() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showPaymentLinkForm, setShowPaymentLinkForm] = useState(false);
+  const [showPaymentLinksTable, setShowPaymentLinksTable] = useState(false);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showGstModal, setShowGstModal] = useState(false);
@@ -137,10 +143,11 @@ export function Expenses() {
     gstRate: "18",
     includeGst: false,
   });
-  const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [creatingPaymentLink, setCreatingPaymentLink] = useState(false);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -235,7 +242,7 @@ export function Expenses() {
     }
   }
 
-  // CSV Export functionality
+  // CSV Export functionality with fixed date formatting
   const exportToCSV = () => {
     const csvData = filteredTransactions.map(t => ({
       'Type': t.type === 'income' ? 'Income' : 'Expense',
@@ -246,7 +253,7 @@ export function Expenses() {
       'GST Amount': t.gst_amount || 0,
       'Total Amount': t.amount + (t.gst_amount || 0),
       'Payment Method': t.payment_method,
-      'Date': format(new Date(t.date), "dd-MM-yyyy"),
+      'Date': format(new Date(t.date), "dd/MM/yyyy"),
       'Bill': t.bill_path ? 'Yes' : 'No'
     }));
 
@@ -255,141 +262,83 @@ export function Expenses() {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `expenses_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.setAttribute('download', `expenses_${format(new Date(), 'dd-MM-yyyy')}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // Bulk upload functionality
-  const handleBulkUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      setBulkFile(file);
-    }
-  };
-
-  const processBulkUpload = () => {
-    if (!bulkFile) return;
-
-    Papa.parse(bulkFile, {
-      header: true,
-      complete: async (results) => {
-        const validRows = results.data.filter((row: any) => 
-          row.project_name && row.phase_name && row.category && row.amount
-        );
-
-        let successCount = 0;
-        let failCount = 0;
-
-        for (const row of validRows) {
-          try {
-            // Find project and phase IDs
-            const project = projects.find(p => p.name.toLowerCase() === row.project_name.toLowerCase());
-            const phase = phases.find(p => 
-              p.name.toLowerCase() === row.phase_name.toLowerCase() && 
-              p.project_id === project?.id
-            );
-
-            if (project && phase) {
-              const payload = {
-                project_id: project.id,
-                phase_id: phase.id,
-                category: row.category,
-                amount: parseFloat(row.amount),
-                gst_amount: row.gst_amount ? parseFloat(row.gst_amount) : null,
-                date: row.date || format(new Date(), 'yyyy-MM-dd'),
-                payment_method: row.payment_method || 'Cash',
-                type: row.type?.toLowerCase() || 'expense',
-                created_by: user?.id,
-              };
-
-              const { error } = await supabase.from("expenses").insert([payload]);
-              if (error) {
-                console.error('Error inserting row:', error);
-                failCount++;
-              } else {
-                successCount++;
-              }
-            } else {
-              console.error('Project or Phase not found for row:', row);
-              failCount++;
-            }
-          } catch (error) {
-            console.error('Error processing row:', error);
-            failCount++;
-          }
-        }
-
-        fetchTransactions();
-        setShowBulkUpload(false);
-        setBulkFile(null);
-        
-        if (successCount > 0) {
-          setSuccessMessage(`Successfully uploaded ${successCount} transactions!${failCount > 0 ? ` ${failCount} failed.` : ''}`);
-        } else {
-          setSuccessMessage(`Failed to upload transactions. Please check the format and try again.`);
-        }
-        setTimeout(() => setSuccessMessage(null), 5000);
-      },
-      error: (error) => {
-        console.error('CSV parsing error:', error);
-        setSuccessMessage('Error parsing CSV file. Please check the format.');
-        setTimeout(() => setSuccessMessage(null), 5000);
-      }
-    });
-  };
-
-  // Payment link functionality
-  const createPaymentLink = async () => {
+  // Create a simple payment link without Razorpay API (for testing)
+  const createSimplePaymentLink = async () => {
+    setCreatingPaymentLink(true);
     try {
       const baseAmount = parseFloat(paymentLinkData.amount);
       const quantity = parseInt(paymentLinkData.quantity);
       const gstRate = parseFloat(paymentLinkData.gstRate);
       const gstAmount = paymentLinkData.includeGst ? baseAmount * quantity * (gstRate / 100) : 0;
-      const totalAmount = (baseAmount * quantity + gstAmount) * 100; // Convert to paise
+      const totalAmount = baseAmount * quantity + gstAmount;
 
-      // Mock API call - replace with actual Razorpay integration
-      const mockResponse = {
-        success: true,
-        data: {
-          id: `link_${Date.now()}`,
-          short_url: `https://rzp.io/mock_${Date.now()}`,
-        }
-      };
+      // Generate a simple payment link ID and URL
+      const linkId = `pl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const paymentUrl = `${window.location.origin}/payment/${linkId}`;
+      
+      // Generate QR Code URL
+      const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentUrl)}`;
 
-      if (mockResponse.success) {
-        // Save to database
-        const { error } = await supabase.from('payment_links').insert([{
-          business_name: paymentLinkData.businessName,
-          product_name: paymentLinkData.productName,
-          amount: baseAmount,
-          quantity: quantity,
-          description: paymentLinkData.description,
-          gst_number: paymentLinkData.gstNumber,
-          gst_rate: paymentLinkData.gstRate,
-          razorpay_link_id: mockResponse.data.id,
-          razorpay_link_url: mockResponse.data.short_url,
-          status: 'active',
-          created_by: user?.id,
-        }]);
+      // Save to database
+      const { error } = await supabase.from('payment_links').insert([{
+        business_name: paymentLinkData.businessName,
+        product_name: paymentLinkData.productName,
+        amount: baseAmount,
+        quantity: quantity,
+        description: paymentLinkData.description,
+        gst_number: paymentLinkData.gstNumber,
+        gst_rate: parseFloat(paymentLinkData.gstRate),
+        razorpay_link_id: linkId,
+        razorpay_link_url: paymentUrl,
+        razorpay_qr_code: qrCodeUrl,
+        status: 'active',
+        payment_status: 'pending',
+        created_by: user?.id,
+      }]);
 
-        if (!error) {
-          fetchPaymentLinks();
-          setShowPaymentLinkForm(false);
-          resetPaymentLinkForm();
-          setSuccessMessage('Payment link created successfully!');
-          setTimeout(() => setSuccessMessage(null), 5000);
-        }
-      } else {
-        setSuccessMessage('Failed to create payment link');
+      if (!error) {
+        fetchPaymentLinks();
+        setShowPaymentLinkForm(false);
+        resetPaymentLinkForm();
+        setSuccessMessage('Payment link created successfully!');
         setTimeout(() => setSuccessMessage(null), 5000);
+      } else {
+        throw new Error('Failed to save payment link to database');
       }
     } catch (error) {
       console.error('Error creating payment link:', error);
-      setSuccessMessage('Error creating payment link. Please try again.');
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setErrorMessage('Error creating payment link. Please try again.');
+      setTimeout(() => setErrorMessage(null), 5000);
+    } finally {
+      setCreatingPaymentLink(false);
+    }
+  };
+
+  // Test payment function
+  const testPayment = async (linkId: string) => {
+    try {
+      // Simulate payment success
+      const { error } = await supabase
+        .from('payment_links')
+        .update({ payment_status: 'paid', updated_at: new Date().toISOString() })
+        .eq('razorpay_link_id', linkId);
+
+      if (!error) {
+        fetchPaymentLinks();
+        setSuccessMessage('Payment marked as successful!');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      }
+    } catch (error) {
+      console.error('Error updating payment status:', error);
+      setErrorMessage('Error updating payment status');
+      setTimeout(() => setErrorMessage(null), 3000);
     }
   };
 
@@ -474,7 +423,7 @@ export function Expenses() {
     }
 
     // Generate table
-    doc.autoTable({
+    (doc as any).autoTable({
       startY: 145,
       head: [headers],
       body: tableData,
@@ -554,8 +503,8 @@ export function Expenses() {
   // Handle GST modal confirm
   const handleGstConfirm = () => {
     if (!gstAmount || parseFloat(gstAmount) < 0) {
-      setSuccessMessage("Please enter a valid GST amount");
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setErrorMessage("Please enter a valid GST amount");
+      setTimeout(() => setErrorMessage(null), 5000);
       return;
     }
     setFormData(prev => ({ 
@@ -572,8 +521,8 @@ export function Expenses() {
     const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount } = formData;
 
     if (!phaseId || !projectId || !category || !paymentMethod) {
-      setSuccessMessage("Please fill all required fields.");
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setErrorMessage("Please fill all required fields.");
+      setTimeout(() => setErrorMessage(null), 5000);
       return;
     }
 
@@ -587,8 +536,8 @@ export function Expenses() {
 
       if (uploadError) {
         console.error("Error uploading file:", uploadError);
-        setSuccessMessage("Failed to upload bill.");
-        setTimeout(() => setSuccessMessage(null), 5000);
+        setErrorMessage("Failed to upload bill.");
+        setTimeout(() => setErrorMessage(null), 5000);
         return;
       }
       bill_path = fileName;
@@ -613,8 +562,8 @@ export function Expenses() {
 
     if (error) {
       console.error("Error saving transaction:", error);
-      setSuccessMessage(`Failed to save transaction: ${error.message}`);
-      setTimeout(() => setSuccessMessage(null), 5000);
+      setErrorMessage(`Failed to save transaction: ${error.message}`);
+      setTimeout(() => setErrorMessage(null), 5000);
     } else {
       fetchTransactions();
       setShowForm(false);
@@ -665,8 +614,8 @@ export function Expenses() {
         setSuccessMessage("Transaction deleted successfully!");
         setTimeout(() => setSuccessMessage(null), 5000);
       } else {
-        setSuccessMessage("Failed to delete transaction.");
-        setTimeout(() => setSuccessMessage(null), 5000);
+        setErrorMessage("Failed to delete transaction.");
+        setTimeout(() => setErrorMessage(null), 5000);
       }
     }
   };
@@ -785,9 +734,21 @@ export function Expenses() {
   const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>) => {
     if (e.target === e.currentTarget) {
       setShowForm(false);
-      setShowBulkUpload(false);
       setShowPaymentLinkForm(false);
       setShowGstModal(false);
+      setShowPaymentLinksTable(false);
+    }
+  };
+
+  // Get payment status icon and color
+  const getPaymentStatusDisplay = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return { icon: CheckCircle, color: 'text-green-600', bg: 'bg-green-50', text: 'Paid' };
+      case 'failed':
+        return { icon: XCircle, color: 'text-red-600', bg: 'bg-red-50', text: 'Failed' };
+      default:
+        return { icon: Clock, color: 'text-yellow-600', bg: 'bg-yellow-50', text: 'Pending' };
     }
   };
 
@@ -795,12 +756,18 @@ export function Expenses() {
     <div className="h-screen flex flex-col">
       <Layout title="Financial Transactions" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Success Message Notification */}
+          {/* Success/Error Message Notifications */}
           {successMessage && (
             <div className="mb-4 p-4 bg-green-100 text-green-800 rounded-lg shadow">
               {successMessage}
             </div>
           )}
+          {errorMessage && (
+            <div className="mb-4 p-4 bg-red-100 text-red-800 rounded-lg shadow">
+              {errorMessage}
+            </div>
+          )}
+
           {/* Charts Section */}
           <div className="mb-6 bg-white rounded-lg shadow p-6">
             <div className="flex justify-between items-center mb-4">
@@ -846,7 +813,7 @@ export function Expenses() {
                     dataKey="expense" 
                     stroke="#ef4444" 
                     strokeWidth={2}
-                    name=""
+                    name="Expenses"
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -857,22 +824,22 @@ export function Expenses() {
           <div className="flex justify-between items-center mb-6 gap-3 flex-wrap">
             <div className="flex gap-3">
               <button
-                onClick={() => setShowBulkUpload(true)}
-                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Upload className="mr-2" size={18} /> Bulk Upload
-              </button>
-              <button
                 onClick={exportToCSV}
                 className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
               >
-                <Download className="mr-2" size={18} /> Export
+                <Download className="mr-2" size={18} /> Export CSV
               </button>
               <button
                 onClick={() => setShowPaymentLinkForm(true)}
                 className="flex items-center bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
               >
                 <LinkIcon className="mr-2" size={18} /> Payment Link
+              </button>
+              <button
+                onClick={() => setShowPaymentLinksTable(true)}
+                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Eye className="mr-2" size={18} /> View Links ({paymentLinks.length})
               </button>
             </div>
             <div className="flex gap-3">
@@ -1039,7 +1006,7 @@ export function Expenses() {
                           )}
                         </td>
                         <td className="p-3 text-gray-900">
-                          {format(new Date(t.date), "dd-MM-yyyy")}
+                          {format(new Date(t.date), "dd/MM/yyyy")}
                         </td>
                         <td className="p-3">
                           <div className="flex gap-2">
@@ -1349,80 +1316,14 @@ export function Expenses() {
         </div>
       )}
 
-      {/* Bulk Upload Modal */}
-      {showBulkUpload && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">Bulk Upload Transactions</h2>
-              <button 
-                onClick={() => setShowBulkUpload(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block font-medium text-gray-700 mb-2">
-                  Upload CSV File
-                </label>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={handleBulkUpload}
-                  className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-              <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-2">CSV Format Requirements:</h4>
-                <ul className="text-sm text-gray-600 space-y-1">
-                  <li>• <strong>project_name</strong> (required)</li>
-                  <li>• <strong>phase_name</strong> (required)</li>
-                  <li>• <strong>category</strong> (required)</li>
-                  <li>• <strong>amount</strong> (required)</li>
-                  <li>• <strong>gst_amount</strong> (optional)</li>
-                  <li>• <strong>type</strong> (expense/income, optional - defaults to expense)</li>
-                  <li>• <strong>payment_method</strong> (optional - defaults to Cash)</li>
-                  <li>• <strong>date</strong> (YYYY-MM-DD format, optional - defaults to today)</li>
-                </ul>
-              </div>
-              <div className="bg-blue-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-2">Sample CSV Data:</h4>
-                <div className="text-xs text-gray-600 font-mono">
-                  project_name,phase_name,category,amount,gst_amount,type,payment_method,date<br/>
-                  Villa Project,Foundation,Materials,50000,9000,expense,Bank Transfer,2025-01-15<br/>
-                  Office Building,Payment,Client Payment,200000,36000,income,Bank Transfer,2025-01-15
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setShowBulkUpload(false)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={processBulkUpload}
-                  disabled={!bulkFile}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Upload
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Payment Link Modal */}
+      {/* Payment Link Creation Modal */}
       {showPaymentLinkForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-purple-600" />
-                <h2 className="text-xl font-bold text-gray-900">Create GST Payment Link</h2>
+                <h2 className="text-xl font-bold text-gray-900">Create Payment Link</h2>
               </div>
               <button 
                 onClick={() => setShowPaymentLinkForm(false)}
@@ -1548,7 +1449,7 @@ export function Expenses() {
 
               {/* Payment Summary */}
               <div className="bg-gray-50 p-4 rounded-lg">
-                <h4 className="font-medium text-gray-700 mb-3">Tax Invoice Preview</h4>
+                <h4 className="font-medium text-gray-700 mb-3">Payment Summary</h4>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-gray-600">Product/Service:</span>
@@ -1591,9 +1492,6 @@ export function Expenses() {
                     <span className="text-purple-600">₹{((parseFloat(paymentLinkData.amount || '0') * parseInt(paymentLinkData.quantity || '1')) * (paymentLinkData.includeGst ? (1 + parseFloat(paymentLinkData.gstRate) / 100) : 1)).toFixed(2)}</span>
                   </div>
                 </div>
-                <div className="mt-2 text-xs text-yellow-600 bg-yellow-50 p-2 rounded-lg">
-                  Note: GST will be collected as per Indian tax regulations. A GST-compliant tax invoice will be generated upon successful payment.
-                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-4">
@@ -1604,18 +1502,26 @@ export function Expenses() {
                   Cancel
                 </button>
                 <button
-                  onClick={createPaymentLink}
-                  disabled={!paymentLinkData.productName || !paymentLinkData.amount}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  Generate GST Payment Link
-                </button>
-                <button
                   onClick={generateInvoice}
                   disabled={!paymentLinkData.productName || !paymentLinkData.amount}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
+                  <FileText className="mr-2 inline" size={16} />
                   Generate Invoice
+                </button>
+                <button
+                  onClick={createSimplePaymentLink}
+                  disabled={!paymentLinkData.productName || !paymentLinkData.amount || creatingPaymentLink}
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {creatingPaymentLink ? (
+                    <>Creating...</>
+                  ) : (
+                    <>
+                      <QrCode className="mr-2 inline" size={16} />
+                      Create Payment Link
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -1623,27 +1529,129 @@ export function Expenses() {
         </div>
       )}
 
-      {/* Payment Links List */}
-      {paymentLinks.length > 0 && (
-        <div className="fixed bottom-4 right-4 bg-white rounded-lg shadow-lg p-4 max-w-sm">
-          <h4 className="font-medium text-gray-900 mb-2 flex items-center gap-2">
-            <LinkIcon className="w-4 h-4" />
-            Recent Payment Links
-          </h4>
-          <div className="space-y-2 max-h-32 overflow-y-auto">
-            {paymentLinks.slice(0, 3).map((link) => (
-              <div key={link.id} className="flex justify-between items-center text-sm p-2 bg-gray-50 rounded">
-                <span className="text-gray-600 truncate">{link.product_name}</span>
-                <a
-                  href={link.razorpay_link_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-purple-600 hover:text-purple-800 underline ml-2"
-                >
-                  View
-                </a>
+      {/* Payment Links Table Modal */}
+      {showPaymentLinksTable && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2">
+                <LinkIcon className="w-5 h-5 text-purple-600" />
+                <h2 className="text-xl font-bold text-gray-900">Payment Links ({paymentLinks.length})</h2>
               </div>
-            ))}
+              <button 
+                onClick={() => setShowPaymentLinksTable(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            {paymentLinks.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Product/Service</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Business Name</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Amount</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">GST Number</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Payment Status</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Created</th>
+                      <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentLinks.map((link) => {
+                      const statusDisplay = getPaymentStatusDisplay(link.payment_status);
+                      const StatusIcon = statusDisplay.icon;
+                      const totalAmount = link.amount * link.quantity * (link.gst_rate ? (1 + link.gst_rate / 100) : 1);
+                      
+                      return (
+                        <tr key={link.id} className="border-b hover:bg-gray-50">
+                          <td className="p-3">
+                            <div>
+                              <div className="font-medium text-gray-900">{link.product_name}</div>
+                              {link.description && (
+                                <div className="text-sm text-gray-500 truncate max-w-xs">{link.description}</div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 text-gray-900">{link.business_name || 'Not specified'}</td>
+                          <td className="p-3">
+                            <div className="text-gray-900 font-medium">₹{totalAmount.toFixed(2)}</div>
+                            <div className="text-sm text-gray-500">
+                              {link.quantity} × ₹{link.amount.toFixed(2)}
+                              {link.gst_rate > 0 && ` + ${link.gst_rate}% GST`}
+                            </div>
+                          </td>
+                          <td className="p-3 text-gray-900">{link.gst_number || 'Not provided'}</td>
+                          <td className="p-3">
+                            <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm font-medium ${statusDisplay.bg} ${statusDisplay.color}`}>
+                              <StatusIcon size={16} />
+                              {statusDisplay.text}
+                            </div>
+                          </td>
+                          <td className="p-3 text-gray-900">
+                            {format(new Date(link.created_at), "dd/MM/yyyy")}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex gap-2">
+                              <a
+                                href={link.razorpay_link_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-purple-600 hover:text-purple-800 p-1 rounded transition-colors"
+                                title="Open Payment Link"
+                              >
+                                <LinkIcon size={16} />
+                              </a>
+                              {link.razorpay_qr_code && (
+                                <a
+                                  href={link.razorpay_qr_code}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                                  title="View QR Code"
+                                >
+                                  <QrCode size={16} />
+                                </a>
+                              )}
+                              {link.payment_status === 'pending' && (
+                                <button
+                                  onClick={() => testPayment(link.razorpay_link_id)}
+                                  className="text-green-600 hover:text-green-800 p-1 rounded transition-colors"
+                                  title="Test Payment (Mark as Paid)"
+                                >
+                                  <CheckCircle size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <LinkIcon className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No payment links</h3>
+                <p className="mt-1 text-sm text-gray-500">Get started by creating a new payment link.</p>
+                <div className="mt-6">
+                  <button
+                    onClick={() => {
+                      setShowPaymentLinksTable(false);
+                      setShowPaymentLinkForm(true);
+                    }}
+                    className="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700"
+                  >
+                    <Plus className="mr-2" size={16} />
+                    Create Payment Link
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
