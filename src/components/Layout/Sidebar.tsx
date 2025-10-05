@@ -1,21 +1,7 @@
 // src/components/Layout/Sidebar.tsx
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
-import {
-  Home,
-  FolderOpen,
-  DollarSign,
-  Package,
-  FileText,
-  Users,
-  Archive,
-  Settings,
-  User,
-  IndianRupee,
-  Layers,
-  ShieldCheck,
-  Hammer, // ✅ for future use (Renovations, etc.)
-} from "lucide-react";
+import { Chrome as Home, FolderOpen, DollarSign, Package, FileText, Users, Archive, Settings, User, IndianRupee, Layers, ShieldCheck, Hammer, Calendar } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 
 export function Sidebar() {
@@ -59,6 +45,12 @@ export function Sidebar() {
       href: "/reports",
       icon: FileText,
       allowedRoles: ["Admin", "Project Manager"],
+    },
+    {
+      name: "Calendar",
+      href: "/calendar",
+      icon: Calendar,
+      allowedRoles: ["Admin", "Project Manager", "Site Engineer", "Client"],
     },
     {
       name: "Document Archive",

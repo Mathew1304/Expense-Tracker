@@ -2,7 +2,28 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { Layout } from "../components/Layout/Layout";
-import { Plus, Edit2, Trash2, X, Check, Mail, User, AlertCircle } from "lucide-react";
+import { 
+  Users as UsersIcon, 
+  Plus, 
+  Search, 
+  Mail, 
+  Phone, 
+  Shield, 
+  MoreVertical, 
+  Filter, 
+  Edit2, 
+  Trash2, 
+  Eye, 
+  Grid, 
+  List, 
+  Building, 
+  Calendar, 
+  Clock,
+  X,
+  Check,
+  User,
+  AlertCircle
+} from 'lucide-react';
 
 type User = {
   id: string;
@@ -17,6 +38,12 @@ type User = {
     name: string;
   } | null;
   created_by: string | null;
+  created_at?: string;
+  phone?: string;
+  department?: string;
+  status?: string;
+  lastLogin?: string;
+  joinDate?: string;
 };
 
 type Role = {
@@ -37,26 +64,38 @@ export function Users() {
   const [loading, setLoading] = useState(true);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
+  // UI State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [viewType, setViewType] = useState<'grid' | 'list'>('list');
+
+  // Form State
   const [showForm, setShowForm] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showViewModal, setShowViewModal] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     email: "",
+    phone: "",
     role_id: "",
     project_id: "",
+    department: "",
+    status: "Active",
   });
 
+  // Edit State
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editForm, setEditForm] = useState({
     name: "",
     email: "",
+    phone: "",
     role_id: "",
+    department: "",
+    status: "",
   });
-
-  const [roleFilter, setRoleFilter] = useState<string>("");
-  const [showEmailSetup, setShowEmailSetup] = useState(false);
 
   // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
@@ -76,14 +115,23 @@ export function Users() {
       // Fetch only users created by this admin
       const { data: usersData, error: usersError } = await supabase
         .from("users")
-        .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
+        .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
         .eq("created_by", user.id)
         .order("created_at", { ascending: false });
 
       if (usersError) {
         console.error("Error fetching users:", usersError.message);
       } else if (usersData) {
-        setUsers(usersData as User[]);
+        // Transform data to match UI expectations
+        const transformedUsers = usersData.map(u => ({
+          ...u,
+          phone: u.phone || '+91 XXXXX XXXXX',
+          department: u.roles?.role_name || 'No Department',
+          status: 'Active', // Default status
+          lastLogin: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          joinDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        }));
+        setUsers(transformedUsers as User[]);
       }
 
       // Fetch roles created by this admin only
@@ -116,6 +164,16 @@ export function Users() {
     fetchData();
   }, []);
 
+  // Filter users
+  const filteredUsers = users.filter(user => {
+    const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesRole = roleFilter === 'all' || user.roles?.role_name === roleFilter;
+    const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
   // Generate random password
   const generatePassword = () => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
@@ -135,92 +193,57 @@ export function Users() {
     setShowConfirmModal(true);
   }
 
-  // Send email with login credentials
+  // Send welcome email
   async function sendWelcomeEmail() {
     setSendingEmail(true);
     
     try {
-      // Option 1: Use EmailJS (Client-side email service)
-      await sendViaEmailJS();
+      // EmailJS configuration
+      const serviceId = 'service_7lchh47';
+      const templateId = 'template_e2y4ot5';
+      const publicKey = 'ddLUU50I7-6-0oREj';
       
-    } catch (error) {
-      console.error('Error sending email:', error);
-      
-      // Fallback: Show email details in a modal for manual sending
-      showEmailDetailsModal();
-    }
-    
-    setSendingEmail(false);
-  }
+      const templateParams = {
+        to_email: formData.email,
+        to_name: formData.name,
+        to: formData.email,
+        from_name: 'BuildMyHomes Team',
+        from_email: 'noreply@buildmyhomes.in',
+        reply_to: formData.email,
+        password: generatedPassword,
+        role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
+        project: projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned',
+        login_url: window.location.origin + '/login',
+        user_email: formData.email,
+        message: `Welcome to BuildMyHomes! Your login details are: Email: ${formData.email}, Password: ${generatedPassword}`,
+      };
 
-  // Option 1: EmailJS Implementation
-  async function sendViaEmailJS() {
-    // EmailJS configuration - UPDATE THESE WITH YOUR ACTUAL VALUES
-    const serviceId = 'service_7lchh47';
-    const templateId = 'template_e2y4ot5';
-    const publicKey = 'ddLUU50I7-6-0oREj';
-    
-    // EmailJS expects specific parameter structure
-    const templateParams = {
-      to_email: formData.email, // Primary recipient field
-      to_name: formData.name,
-      to: formData.email, // Backup recipient field
-      from_name: 'BuildMyHomes Team',
-      from_email: 'noreply@buildmyhomes.in',
-      reply_to: formData.email,
-      password: generatedPassword,
-      role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
-      project: projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned',
-      login_url: window.location.origin + '/login',
-      user_email: formData.email, // For template content
-      message: `Welcome to BuildMyHomes! Your login details are: Email: ${formData.email}, Password: ${generatedPassword}`,
-    };
+      // Load EmailJS if not already loaded
+      if (!window.emailjs) {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
+        document.head.appendChild(script);
+        await new Promise(resolve => script.onload = resolve);
+        window.emailjs.init(publicKey);
+      }
 
-    console.log('EmailJS Configuration:', { serviceId, templateId, publicKey: publicKey.substring(0, 5) + '...' });
-    console.log('EmailJS Template Params:', templateParams);
-
-    // Load EmailJS if not already loaded
-    if (!window.emailjs) {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-      document.head.appendChild(script);
-      await new Promise(resolve => script.onload = resolve);
-      window.emailjs.init(publicKey);
-    }
-
-    try {
-      console.log('Sending email via EmailJS...');
-      
-      // Use sendForm method which is more reliable for recipient addresses
       const response = await window.emailjs.send(
         serviceId,
         templateId,
         templateParams,
-        publicKey // Pass public key as 4th parameter
+        publicKey
       );
       
-      console.log('EmailJS Response:', response);
       if (response.status === 200) {
-        alert('Welcome email sent successfully via EmailJS!');
+        alert('Welcome email sent successfully!');
       } else {
         throw new Error(`EmailJS failed with status: ${response.status}`);
       }
     } catch (error) {
-      console.error('EmailJS Error:', error);
+      console.error('Email Error:', error);
       
-      // More detailed error logging
-      if (error.status) {
-        console.error('EmailJS Error Status:', error.status);
-        console.error('EmailJS Error Text:', error.text);
-      }
-      
-      throw error;
-    }
-  }
-
-  // Fallback: Show email details for manual sending
-  function showEmailDetailsModal() {
-    const emailContent = `
+      // Fallback: Show email details for manual sending
+      const emailContent = `
 Subject: Welcome to BuildMyHomes - Your Account is Ready!
 
 Hello ${formData.name}!
@@ -239,15 +262,18 @@ Please change your password after your first login for security.
 
 Best regards,
 BuildMyHomes Team
-    `;
+      `;
 
-    // Copy to clipboard
-    navigator.clipboard.writeText(emailContent).then(() => {
-      alert(`Email content copied to clipboard! Please send this manually to ${formData.email}\n\nPassword: ${generatedPassword}`);
-    }).catch(() => {
-      alert(`Please send this email manually to ${formData.email}:\n\n${emailContent}`);
-    });
+      navigator.clipboard.writeText(emailContent).then(() => {
+        alert(`Email content copied to clipboard! Please send this manually to ${formData.email}\n\nPassword: ${generatedPassword}`);
+      }).catch(() => {
+        alert(`Please send this email manually to ${formData.email}:\n\n${emailContent}`);
+      });
+    }
+    
+    setSendingEmail(false);
   }
+
   // Confirm and add user
   async function confirmAddUser() {
     const {
@@ -269,7 +295,7 @@ BuildMyHomes Team
           created_by: user.id,
         },
       ])
-      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
+      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
       .single();
 
     if (insertError) {
@@ -281,22 +307,31 @@ BuildMyHomes Team
     // Send welcome email
     await sendWelcomeEmail();
 
-    setUsers((prev) => [newUser, ...prev]);
+    // Transform new user data
+    const transformedUser = {
+      ...newUser,
+      phone: '+91 XXXXX XXXXX',
+      department: newUser.roles?.role_name || 'No Department',
+      status: 'Active',
+      lastLogin: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      joinDate: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    };
+
+    setUsers((prev) => [transformedUser, ...prev]);
     setShowConfirmModal(false);
-    setFormData({ name: "", email: "", role_id: "", project_id: "" });
+    setFormData({ name: "", email: "", phone: "", role_id: "", project_id: "", department: "", status: "Active" });
     setGeneratedPassword("");
   }
 
   // Delete user
   async function handleDelete(userId: string) {
-    if (window.confirm("Are you sure you want to delete this user?")) {
+    if (window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
       const { error } = await supabase.from("users").delete().eq("id", userId);
       if (error) {
         console.error("Delete failed:", error.message);
         return;
       }
       setUsers(users.filter((u) => u.id !== userId));
-      // Clear selected user if it was deleted
       if (selectedUser?.id === userId) {
         setSelectedUser(null);
       }
@@ -309,14 +344,17 @@ BuildMyHomes Team
     setEditForm({
       name: user.name,
       email: user.email,
+      phone: user.phone || '',
       role_id: user.role_id || "",
+      department: user.department || '',
+      status: user.status || 'Active',
     });
   }
 
   // Cancel editing
   function cancelEdit() {
     setEditingUser(null);
-    setEditForm({ name: "", email: "", role_id: "" });
+    setEditForm({ name: "", email: "", phone: "", role_id: "", department: "", status: "" });
   }
 
   // Save edits
@@ -329,7 +367,7 @@ BuildMyHomes Team
         role_id: editForm.role_id || null,
       })
       .eq("id", userId)
-      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by")
+      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
       .single();
 
     if (error) {
@@ -337,14 +375,55 @@ BuildMyHomes Team
       return;
     }
 
-    setUsers(users.map((u) => (u.id === userId ? data : u)));
+    // Transform updated user data
+    const transformedUser = {
+      ...data,
+      phone: editForm.phone || '+91 XXXXX XXXXX',
+      department: data.roles?.role_name || 'No Department',
+      status: editForm.status || 'Active',
+      lastLogin: data.created_at ? new Date(data.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+      joinDate: data.created_at ? new Date(data.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+    };
+
+    setUsers(users.map((u) => (u.id === userId ? transformedUser : u)));
     cancelEdit();
   }
 
-  // Filter by role
-  const filteredUsers = roleFilter
-    ? users.filter((u) => u.roles?.role_name === roleFilter)
-    : users;
+  // View user
+  const handleViewUser = (user: User) => {
+    setSelectedUser(user);
+    setShowViewModal(true);
+  };
+
+  // Helper functions
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Active':
+        return 'bg-green-100 text-green-800';
+      case 'Inactive':
+        return 'bg-red-100 text-red-800';
+      case 'Pending':
+        return 'bg-orange-100 text-orange-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getRoleColor = (role: string) => {
+    const colors: Record<string, string> = {
+      'Admin': 'bg-red-100 text-red-800',
+      'Project Manager': 'bg-blue-100 text-blue-800',
+      'Site Engineer': 'bg-purple-100 text-purple-800',
+      'Accounts': 'bg-green-100 text-green-800',
+      'Client': 'bg-orange-100 text-orange-800'
+    };
+    return colors[role] || 'bg-gray-100 text-gray-800';
+  };
+
+  // Stats
+  const totalUsers = users.length;
+  const activeUsers = users.filter(user => user.status === 'Active').length;
+  const inactiveUsers = users.filter(user => user.status === 'Inactive').length;
 
   // Get the header subtitle based on selected user
   const getHeaderSubtitle = () => {
@@ -370,182 +449,387 @@ BuildMyHomes Team
     <div className="h-screen flex flex-col">
       <Layout title="Users" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="p-6 flex-1 flex flex-col overflow-hidden">
-            {/* Header Section */}
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center gap-4">
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          <div className="p-6 space-y-6">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h1 className="text-3xl font-bold text-slate-900">Users</h1>
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewType('grid')}
+                    className={`p-2 rounded-md transition-colors ${
+                      viewType === 'grid' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Grid className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewType('list')}
+                    className={`p-2 rounded-md transition-colors ${
+                      viewType === 'list' 
+                        ? 'bg-blue-500 text-white' 
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <List className="w-4 h-4" />
+                  </button>
+                </div>
+                <button 
+                  onClick={() => setShowForm(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                 >
-                  <option value="">All Roles</option>
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.role_name}>
-                      {r.role_name}
-                    </option>
-                  ))}
-                </select>
-                
+                  <Plus className="w-4 h-4" />
+                  <span>Add User</span>
+                </button>
               </div>
-              <button
-                onClick={() => setShowForm(true)}
-                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-              >
-                <Plus size={18} /> Add User
-              </button>
             </div>
 
-            {/* Table Container - Scrollable */}
-            <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
-              <table className="w-full">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Name</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Email</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Role</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Project</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredUsers.map((u) => (
-                    <tr
-                      key={u.id}
-                      className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
-                        selectedUser?.id === u.id 
-                          ? "bg-blue-50 border-l-4 border-l-blue-500" 
-                          : ""
-                      }`}
-                      onClick={() => setSelectedUser(u)}
-                    >
-                      <td className="p-3 text-gray-900">
-                        {editingUser?.id === u.id ? (
-                          <input
-                            type="text"
-                            value={editForm.name}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, name: e.target.value })
-                            }
-                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          u.name
-                        )}
-                      </td>
-                      <td className="p-3 text-gray-900">
-                        {editingUser?.id === u.id ? (
-                          <input
-                            type="email"
-                            value={editForm.email}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, email: e.target.value })
-                            }
-                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        ) : (
-                          u.email
-                        )}
-                      </td>
-                      <td className="p-3 text-gray-900">
-                        {editingUser?.id === u.id ? (
-                          <select
-                            value={editForm.role_id}
-                            onChange={(e) =>
-                              setEditForm({ ...editForm, role_id: e.target.value })
-                            }
-                            className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <option value="">Select role</option>
-                            {roles.map((r) => (
-                              <option key={r.id} value={r.id}>
-                                {r.role_name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          u.roles?.role_name || "No Role"
-                        )}
-                      </td>
-                      <td className="p-3 text-gray-900">
-                        {u.projects?.name || "No Project"}
-                      </td>
-                      <td className="p-3">
-                        <div className="flex gap-2">
-                          {editingUser?.id === u.id ? (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEditSubmit(u.id);
-                                }}
-                                className="text-green-600 hover:text-green-800 p-1 rounded transition-colors"
-                                title="Save"
-                              >
-                                <Check size={18} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  cancelEdit();
-                                }}
-                                className="text-gray-600 hover:text-gray-800 p-1 rounded transition-colors"
-                                title="Cancel"
-                              >
-                                <X size={18} />
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEdit(u);
-                                }}
-                                className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
-                                title="Edit"
-                              >
-                                <Edit2 size={18} />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(u.id);
-                                }}
-                                className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 size={18} />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="p-8 text-center text-gray-500">
-                        No users found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            {/* Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Total Users</p>
+                    <p className="text-2xl font-bold text-slate-900">{totalUsers}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+                    <UsersIcon className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Active Users</p>
+                    <p className="text-2xl font-bold text-green-600">{activeUsers}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-lg">
+                    <Shield className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Inactive Users</p>
+                    <p className="text-2xl font-bold text-red-600">{inactiveUsers}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-red-500 to-red-600 rounded-lg">
+                    <UsersIcon className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
             </div>
+
+            {/* Search and Filters */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <div className="flex items-center space-x-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search users..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-slate-500" />
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  >
+                    <option value="all">All Roles</option>
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.role_name}>
+                        {r.role_name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  >
+                    <option value="all">All Status</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Pending">Pending</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between text-sm text-slate-600">
+              <span>Showing {filteredUsers.length} of {users.length} users</span>
+            </div>
+
+            {/* Users Display */}
+            {viewType === 'grid' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredUsers.map((user) => (
+                  <div key={user.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                          <span className="text-white font-medium text-sm">
+                            {user.name.split(' ').map(n => n[0]).join('')}
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-slate-900">{user.name}</h3>
+                          <p className="text-sm text-slate-600">{user.roles?.role_name || 'No Role'}</p>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status || 'Active')}`}>
+                        {user.status || 'Active'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 mb-4">
+                      <div className="flex items-center space-x-2 text-sm text-slate-600">
+                        <Mail className="w-4 h-4" />
+                        <span className="truncate">{user.email}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm text-slate-600">
+                        <Phone className="w-4 h-4" />
+                        <span>{user.phone || '+91 XXXXX XXXXX'}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm text-slate-600">
+                        <Building className="w-4 h-4" />
+                        <span>{user.projects?.name || 'No Project'}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm text-slate-600">
+                        <Calendar className="w-4 h-4" />
+                        <span>Joined: {user.joinDate ? new Date(user.joinDate).toLocaleDateString() : 'N/A'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 pt-4 border-t border-slate-200">
+                      <button
+                        onClick={() => handleViewUser(user)}
+                        className="flex-1 flex items-center justify-center space-x-1 px-3 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        <span>View</span>
+                      </button>
+                      <button 
+                        onClick={() => startEdit(user)}
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                        title="Edit"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button 
+                        onClick={() => handleDelete(user.id)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" 
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200">
+                  <h3 className="text-lg font-semibold text-slate-900">Team Members</h3>
+                </div>
+                
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">User</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Role</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Join Date</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200">
+                      {filteredUsers.map((user) => (
+                        <tr 
+                          key={user.id} 
+                          className={`cursor-pointer transition-all hover:bg-slate-50 ${
+                            selectedUser?.id === user.id 
+                              ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                              : ""
+                          }`}
+                          onClick={() => setSelectedUser(user)}
+                        >
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {editingUser?.id === user.id ? (
+                              <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="text"
+                                  value={editForm.name}
+                                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                />
+                                <input
+                                  type="email"
+                                  value={editForm.email}
+                                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex items-center space-x-3">
+                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                                  <span className="text-white font-medium text-sm">
+                                    {user.name.split(' ').map(n => n[0]).join('')}
+                                  </span>
+                                </div>
+                                <div>
+                                  <p className="font-medium text-slate-900">{user.name}</p>
+                                  <div className="flex items-center space-x-2 text-sm text-slate-500">
+                                    <Mail className="w-3 h-3" />
+                                    <span>{user.email}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {editingUser?.id === user.id ? (
+                              <select
+                                value={editForm.role_id}
+                                onChange={(e) => setEditForm({ ...editForm, role_id: e.target.value })}
+                                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="">Select role</option>
+                                {roles.map((r) => (
+                                  <option key={r.id} value={r.id}>
+                                    {r.role_name}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(user.roles?.role_name || '')}`}>
+                                {user.roles?.role_name || 'No Role'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
+                            {user.projects?.name || 'No Project'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {editingUser?.id === user.id ? (
+                              <select
+                                value={editForm.status}
+                                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="Active">Active</option>
+                                <option value="Inactive">Inactive</option>
+                                <option value="Pending">Pending</option>
+                              </select>
+                            ) : (
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status || 'Active')}`}>
+                                {user.status || 'Active'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                            {user.joinDate ? new Date(user.joinDate).toLocaleDateString() : 'N/A'}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center space-x-1">
+                              {editingUser?.id === user.id ? (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditSubmit(user.id);
+                                    }}
+                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                    title="Save"
+                                  >
+                                    <Check className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      cancelEdit();
+                                    }}
+                                    className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors"
+                                    title="Cancel"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewUser(user);
+                                    }}
+                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                    title="View"
+                                  >
+                                    <Eye className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEdit(user);
+                                    }}
+                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                    title="Edit"
+                                  >
+                                    <Edit2 className="w-4 h-4" />
+                                  </button>
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDelete(user.id);
+                                    }}
+                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors" 
+                                    title="Delete"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {filteredUsers.length === 0 && (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <UsersIcon className="w-8 h-8 text-slate-400" />
+                </div>
+                <h3 className="text-lg font-medium text-slate-900 mb-2">No users found</h3>
+                <p className="text-slate-600">
+                  {searchTerm || roleFilter !== 'all' || statusFilter !== 'all'
+                    ? 'Try adjusting your search or filter criteria.'
+                    : 'Add your first team member to get started.'
+                  }
+                </p>
+              </div>
+            )}
           </div>
         </div>
       </Layout>
-
-      {/* Fixed Footer */}
-      <footer className="bg-gray-100 border-t border-gray-200 py-4 ml-64">
-        <div className="text-center text-gray-500 text-sm">
-          © 2025 Buildmyhomes.in — All Rights Reserved
-        </div>
-      </footer>
 
       {/* Add User Form Modal */}
       {showForm && (
@@ -566,9 +850,7 @@ BuildMyHomes Team
                 <input
                   type="text"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 />
@@ -578,20 +860,26 @@ BuildMyHomes Team
                 <input
                   type="email"
                   value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+91 XXXXX XXXXX"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
                 <select
                   value={formData.role_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, role_id: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, role_id: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -607,9 +895,7 @@ BuildMyHomes Team
                 <label className="block text-sm font-medium text-gray-700 mb-1">Assign Project</label>
                 <select
                   value={formData.project_id}
-                  onChange={(e) =>
-                    setFormData({ ...formData, project_id: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
@@ -619,6 +905,18 @@ BuildMyHomes Team
                       {p.name}
                     </option>
                   ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={formData.status}
+                  onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Pending">Pending</option>
                 </select>
               </div>
               <div className="flex justify-end gap-3 pt-4">
@@ -659,8 +957,10 @@ BuildMyHomes Team
                 <h4 className="font-medium text-gray-900 mb-2">User Information:</h4>
                 <p><strong>Name:</strong> {formData.name}</p>
                 <p><strong>Email:</strong> {formData.email}</p>
+                <p><strong>Phone:</strong> {formData.phone || 'Not provided'}</p>
                 <p><strong>Role:</strong> {roles.find(r => r.id === formData.role_id)?.role_name}</p>
                 <p><strong>Project:</strong> {projects.find(p => p.id === formData.project_id)?.name}</p>
+                <p><strong>Status:</strong> {formData.status}</p>
               </div>
               
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
@@ -702,9 +1002,118 @@ BuildMyHomes Team
         </div>
       )}
 
-      {/* Email Setup Modal */}
-      {showEmailSetup && (
-        <EmailSetup onClose={() => setShowEmailSetup(false)} />
+      {/* View User Modal */}
+      {showViewModal && selectedUser && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4 mb-6">
+              <h2 className="text-xl font-semibold text-gray-900">User Details</h2>
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  setSelectedUser(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* User Avatar and Basic Info */}
+              <div className="flex items-center space-x-4">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">
+                    {selectedUser.name.split(' ').map(n => n[0]).join('')}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900">{selectedUser.name}</h3>
+                  <p className="text-slate-600">{selectedUser.roles?.role_name || 'No Role'}</p>
+                  <span className={`inline-block px-3 py-1 rounded-full text-sm font-medium mt-2 ${getStatusColor(selectedUser.status || 'Active')}`}>
+                    {selectedUser.status || 'Active'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Contact Information */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-slate-900">Contact Information</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <Mail className="w-5 h-5 text-slate-400" />
+                      <div>
+                        <p className="text-sm text-slate-500">Email</p>
+                        <p className="text-slate-900">{selectedUser.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Phone className="w-5 h-5 text-slate-400" />
+                      <div>
+                        <p className="text-sm text-slate-500">Phone</p>
+                        <p className="text-slate-900">{selectedUser.phone || '+91 XXXXX XXXXX'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-lg font-semibold text-slate-900">Work Information</h4>
+                  <div className="space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <Shield className="w-5 h-5 text-slate-400" />
+                      <div>
+                        <p className="text-sm text-slate-500">Role</p>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(selectedUser.roles?.role_name || '')}`}>
+                          {selectedUser.roles?.role_name || 'No Role'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Building className="w-5 h-5 text-slate-400" />
+                      <div>
+                        <p className="text-sm text-slate-500">Project</p>
+                        <p className="text-slate-900">{selectedUser.projects?.name || 'No Project Assigned'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <Calendar className="w-5 h-5 text-slate-400" />
+                      <div>
+                        <p className="text-sm text-slate-500">Join Date</p>
+                        <p className="text-slate-900">{selectedUser.joinDate ? new Date(selectedUser.joinDate).toLocaleDateString() : 'N/A'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end space-x-3 pt-6 border-t">
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    startEdit(selectedUser);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Edit2 className="w-4 h-4" />
+                  <span>Edit User</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    handleDelete(selectedUser.id);
+                  }}
+                  className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete User</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

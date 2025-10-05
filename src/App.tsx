@@ -22,6 +22,7 @@ import Terms from "./pages/Terms";
 import Support from "./pages/Support";
 import { SharedProject } from './pages/SharedProject';
 import { Settings } from './pages/Settings';
+import { Calendar } from './pages/Calender';
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
@@ -139,6 +140,14 @@ function App() {
               element={
                 <ProtectedRoute allowedRoles={["Admin", "Project Manager"]}>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/calendar"
+              element={
+                <ProtectedRoute allowedRoles={["Admin", "Project Manager", "Site Engineer", "Client"]}>
+                  <Calendar />
                 </ProtectedRoute>
               }
             />

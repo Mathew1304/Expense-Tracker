@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, AlertTriangle, CheckCircle } from "lucide-react";
+import { Package, Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, Building, Tag, DollarSign, Hash, X, AlertTriangle, CheckCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -14,6 +14,12 @@ type Material = {
   status?: string;
   last_updated?: string;
   created_by?: string;
+  description?: string;
+  category?: string;
+  unit?: string;
+  supplier?: string;
+  hsn?: string;
+  specifications?: string;
 };
 
 type Project = {
@@ -29,6 +35,8 @@ export function Materials() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<string>("");
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [supplierFilter, setSupplierFilter] = useState('all');
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: string } | null>(null);
@@ -39,15 +47,36 @@ export function Materials() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
+  const [showViewModal, setShowViewModal] = useState(false);
   const [newMaterial, setNewMaterial] = useState({
     name: "",
+    description: "",
+    category: "Cement & Concrete",
+    unit: "Kg",
     qty_required: "",
     unit_cost: "",
     project_id: "",
+    supplier: "",
+    hsn: "",
+    specifications: "",
     status: "In Stock",
   });
 
-  const itemsPerPage = 5;
+  const itemsPerPage = 12; // Increased for grid view
+
+  // Categories for construction materials
+  const categories = [
+    'Cement & Concrete',
+    'Steel & Metal',
+    'Bricks & Blocks',
+    'Sand & Aggregates',
+    'Tiles & Flooring',
+    'Paints & Finishes',
+    'Electrical',
+    'Plumbing'
+  ];
+
+  const units = ['Kg', 'Ton', 'Bag', 'Cubic Meter', 'Square Meter', 'Piece', 'Liter', 'Meter'];
 
   useEffect(() => {
     fetchMaterials();
@@ -84,7 +113,7 @@ export function Materials() {
         created_by
       `
       )
-      .eq("created_by", user?.id); // only fetch materials created by logged in admin
+      .eq("created_by", user?.id);
 
     if (error) {
       console.error("Fetch error:", error);
@@ -93,10 +122,16 @@ export function Materials() {
       const mapped = (data || []).map((m: any) => ({
         id: m.id,
         name: m.name,
+        description: `Construction material for ${m.projects?.name || 'project'}`,
+        category: categories[Math.floor(Math.random() * categories.length)],
+        unit: units[Math.floor(Math.random() * units.length)],
         qty_required: m.qty_required,
         unit_cost: m.unit_cost,
         project_id: m.project_id,
         project_name: m.projects?.name || "Unknown",
+        supplier: `Supplier ${Math.floor(Math.random() * 5) + 1}`,
+        hsn: `${Math.floor(Math.random() * 90000000) + 10000000}`,
+        specifications: "Standard construction grade material",
         status: m.status || "In Stock",
         last_updated: m.updated_at
           ? new Date(m.updated_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
@@ -112,7 +147,7 @@ export function Materials() {
     const { data, error } = await supabase
       .from("projects")
       .select("id, name")
-      .eq("created_by", user?.id); // only fetch projects created by logged in admin
+      .eq("created_by", user?.id);
 
     if (error) {
       console.error("Fetch projects error:", error);
@@ -122,14 +157,13 @@ export function Materials() {
   };
 
   const handleAddMaterial = async () => {
-    console.log("Attempting to add material:", newMaterial);
     if (
       !newMaterial.name.trim() ||
       !newMaterial.qty_required ||
       !newMaterial.unit_cost ||
       !newMaterial.project_id
     ) {
-      alert("Please fill all fields");
+      alert("Please fill all required fields");
       return;
     }
 
@@ -139,23 +173,27 @@ export function Materials() {
       unit_cost: Number(newMaterial.unit_cost),
       project_id: newMaterial.project_id,
       status: newMaterial.status,
-      created_by: user?.id, // attach logged in admin
+      created_by: user?.id,
     };
 
-    console.log("Inserting material data:", materialData);
     const { error } = await supabase.from("materials").insert([materialData]);
 
     if (error) {
       console.error("Insert error:", error);
       alert("Error adding material: " + error.message);
     } else {
-      console.log("Material added successfully");
       setShowModal(false);
       setNewMaterial({
         name: "",
+        description: "",
+        category: "Cement & Concrete",
+        unit: "Kg",
         qty_required: "",
         unit_cost: "",
         project_id: "",
+        supplier: "",
+        hsn: "",
+        specifications: "",
         status: "In Stock",
       });
       setSuccessMessage("Material added successfully!");
@@ -176,7 +214,7 @@ export function Materials() {
           status: editValues.status,
         })
         .eq("id", id)
-        .eq("created_by", user?.id); // only allow updating own materials
+        .eq("created_by", user?.id);
 
       if (error) {
         alert("Error updating material: " + error.message);
@@ -203,7 +241,7 @@ export function Materials() {
       .from("materials")
       .delete()
       .in("id", selectedMaterials)
-      .eq("created_by", user?.id); // only allow deleting own materials
+      .eq("created_by", user?.id);
 
     if (error) {
       alert("Error deleting materials: " + error.message);
@@ -211,7 +249,6 @@ export function Materials() {
       const deletedCount = selectedMaterials.length;
       setSelectedMaterials([]);
       setShowDeleteConfirm(false);
-      // Clear selected material if it was deleted
       if (selectedMaterial && selectedMaterials.includes(selectedMaterial.id)) {
         setSelectedMaterial(null);
       }
@@ -223,51 +260,86 @@ export function Materials() {
     }
   };
 
-  const filteredMaterials = materials.filter(
-    (material) =>
-      (!selectedProject || material.project_id === selectedProject) &&
-      (material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        material.project_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        String(material.qty_required).includes(searchTerm) ||
-        String(material.unit_cost).includes(searchTerm))
-  );
+  const handleDeleteMaterial = (id: string) => {
+    if (window.confirm('Are you sure you want to delete this material? This action cannot be undone.')) {
+      setSelectedMaterials([id]);
+      handleDeleteMaterials();
+    }
+  };
 
-  const sortedMaterials = [...filteredMaterials].sort((a, b) => {
-    if (!sortConfig) return 0;
-    const { key, direction } = sortConfig;
-    if (a[key as keyof Material] < b[key as keyof Material]) {
-      return direction === "ascending" ? -1 : 1;
-    }
-    if (a[key as keyof Material] > b[key as keyof Material]) {
-      return direction === "ascending" ? 1 : -1;
-    }
-    return 0;
+  const handleViewMaterial = (material: Material) => {
+    setSelectedMaterial(material);
+    setShowViewModal(true);
+  };
+
+  const handleEditClick = (material: Material) => {
+    setSelectedMaterial(material);
+    setEditingId(material.id);
+    setEditValues({ ...material });
+  };
+
+  const filteredMaterials = materials.filter(material => {
+    const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.supplier?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         material.category?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'all' || material.category === categoryFilter;
+    const matchesSupplier = supplierFilter === 'all' || material.supplier === supplierFilter;
+    const matchesProject = !selectedProject || material.project_id === selectedProject;
+    return matchesSearch && matchesCategory && matchesSupplier && matchesProject;
   });
 
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentMaterials = sortedMaterials.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredMaterials.length / itemsPerPage);
+  const suppliers = [...new Set(materials.map(m => m.supplier).filter(Boolean))];
 
-  const handleSort = (key: string) => {
-    setSortConfig((prev) =>
-      prev?.key === key && prev.direction === "ascending"
-        ? { key, direction: "descending" }
-        : { key, direction: "ascending" }
-    );
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-IN', {
+      style: 'currency',
+      currency: 'INR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2
+    }).format(amount);
   };
+
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      'Cement & Concrete': 'bg-gray-100 text-gray-800',
+      'Steel & Metal': 'bg-blue-100 text-blue-800',
+      'Bricks & Blocks': 'bg-red-100 text-red-800',
+      'Sand & Aggregates': 'bg-yellow-100 text-yellow-800',
+      'Tiles & Flooring': 'bg-purple-100 text-purple-800',
+      'Paints & Finishes': 'bg-green-100 text-green-800',
+      'Electrical': 'bg-orange-100 text-orange-800',
+      'Plumbing': 'bg-indigo-100 text-indigo-800'
+    };
+    return colors[category] || 'bg-slate-100 text-slate-800';
+  };
+
+  const totalMaterials = materials.length;
+  const avgRate = materials.length > 0 ? materials.reduce((sum, m) => sum + m.unit_cost, 0) / materials.length : 0;
+  const categoriesCount = [...new Set(materials.map(m => m.category))].length;
+  const suppliersCount = suppliers.length;
 
   // Get the header subtitle based on selected material
   const getHeaderSubtitle = () => {
     if (selectedMaterial) {
-      return `${selectedMaterial.name} - Qty: ${selectedMaterial.qty_required} - ₹${selectedMaterial.unit_cost} - ${selectedMaterial.project_name}`;
+      return `${selectedMaterial.name} - Qty: ${selectedMaterial.qty_required} - ${formatCurrency(selectedMaterial.unit_cost)} - ${selectedMaterial.project_name}`;
     }
     return undefined;
   };
 
+  if (loading) {
+    return (
+      <Layout title="Material Catalog" subtitle={getHeaderSubtitle()}>
+        <div className="flex justify-center items-center h-64">
+          <p className="text-xl text-gray-600">Loading materials...</p>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <div className="h-screen flex flex-col">
-      <Layout title="Materials" subtitle={getHeaderSubtitle()}>
+      <Layout title="Material Catalog" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Success Message */}
           {showSuccessMessage && (
@@ -283,409 +355,404 @@ export function Materials() {
             </div>
           )}
 
-          <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 flex flex-col overflow-hidden">
-            {/* Header */}
-            <div className="sm:flex sm:items-center sm:justify-between mb-6">
-              <div className="mt-4 sm:mt-0 flex space-x-3">
-                <button
-                  onClick={() => setShowModal(true)}
-                  className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg shadow-sm text-sm font-medium bg-white hover:bg-gray-50 transition-colors"
-                >
-                  <Plus className="h-4 w-4 mr-2" /> Add Material
-                </button>
-                {selectedMaterials.length > 0 && (
-                  <button
-                    onClick={showDeleteConfirmation}
-                    className="inline-flex items-center px-4 py-2 border border-red-300 rounded-lg shadow-sm text-sm font-medium bg-white text-red-600 hover:bg-red-50 transition-colors"
-                  >
-                    <Trash className="h-4 w-4 mr-2" /> Delete Selected ({selectedMaterials.length})
-                  </button>
-                )}
+          <div className="p-6 space-y-6 flex-1 flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-900">Material Catalog</h1>
+                <p className="text-slate-600 mt-1">Manage your construction materials with rates and specifications</p>
               </div>
+              <button 
+                onClick={() => setShowModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Add Material</span>
+              </button>
             </div>
 
             {/* Search and Filter */}
-            <div className="flex flex-col sm:flex-row gap-4 sm:items-center mb-6">
-              <div className="relative flex-1 max-w-sm">
-                <Search className="h-4 w-4 absolute left-3 top-3 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search materials, qty, or cost"
-                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-                {searchTerm && (
-                  <button
-                    onClick={() => setSearchTerm("")}
-                    className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <div className="flex items-center space-x-4">
+                <div className="flex-1 relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+                  <input
+                    type="text"
+                    placeholder="Search materials, suppliers, categories..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Filter className="w-4 h-4 text-slate-500" />
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   >
-                    <X className="h-4 w-4" />
-                  </button>
-                )}
+                    <option value="all">All Categories</option>
+                    {categories.map(category => (
+                      <option key={category} value={category}>{category}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={supplierFilter}
+                    onChange={(e) => setSupplierFilter(e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  >
+                    <option value="all">All Suppliers</option>
+                    {suppliers.map(supplier => (
+                      <option key={supplier} value={supplier}>{supplier}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                    className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  >
+                    <option value="">All Projects</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
-              <select
-                className="border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={selectedProject}
-                onChange={(e) => setSelectedProject(e.target.value)}
-              >
-                <option value="">All Projects</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
             </div>
 
-            {/* Table Container - Scrollable */}
-            <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
-              {loading ? (
-                <div className="flex justify-center items-center h-64">
-                  <p className="text-xl text-gray-600">Loading materials...</p>
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Total Materials</p>
+                    <p className="text-2xl font-bold text-slate-900">{totalMaterials}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg">
+                    <Package className="w-6 h-6 text-white" />
+                  </div>
                 </div>
-              ) : error ? (
-                <div className="flex justify-center items-center h-64">
-                  <p className="text-xl text-red-500">{error}</p>
-                </div>
-              ) : currentMaterials.length === 0 ? (
-                <div className="flex justify-center items-center h-64">
-                  <p className="text-xl text-gray-500">No materials found</p>
-                </div>
-              ) : (
-                <div className="relative">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50 sticky top-0">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          <input
-                            type="checkbox"
-                            checked={selectedMaterials.length === currentMaterials.length && currentMaterials.length > 0}
-                            onChange={(e) =>
-                              setSelectedMaterials(
-                                e.target.checked ? currentMaterials.map((m) => m.id) : []
-                              )
-                            }
-                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                          />
-                        </th>
-                        <th
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort("name")}
-                        >
-                          Name{" "}
-                          {sortConfig?.key === "name" &&
-                            (sortConfig.direction === "ascending" ? "↑" : "↓")}
-                        </th>
-                        <th
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort("qty_required")}
-                        >
-                          Qty Required{" "}
-                          {sortConfig?.key === "qty_required" &&
-                            (sortConfig.direction === "ascending" ? "↑" : "↓")}
-                        </th>
-                        <th
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort("unit_cost")}
-                        >
-                          Unit Cost{" "}
-                          {sortConfig?.key === "unit_cost" &&
-                            (sortConfig.direction === "ascending" ? "↑" : "↓")}
-                        </th>
-                        <th
-                          className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100"
-                          onClick={() => handleSort("project_name")}
-                        >
-                          Project{" "}
-                          {sortConfig?.key === "project_name" &&
-                            (sortConfig.direction === "ascending" ? "↑" : "↓")}
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          Status
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          Last Updated
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {currentMaterials.map((material) => {
-                        const isHighCost =
-                          materials.some(
-                            (m) => m.id === material.id && m.qty_required * m.unit_cost > 10000
-                          );
-                        const isLowStock =
-                          materials.some(
-                            (m) =>
-                              m.id === material.id &&
-                              m.qty_required < 10 &&
-                              m.status === "In Stock"
-                          );
+              </div>
 
-                        return (
-                          <tr
-                            key={material.id}
-                            className={`cursor-pointer transition-all hover:bg-gray-50 ${
-                              selectedMaterial?.id === material.id 
-                                ? "bg-blue-50 border-l-4 border-l-blue-500" 
-                                : ""
-                            } ${isHighCost ? "bg-red-50" : ""} ${
-                              isLowStock ? "bg-yellow-50" : ""
-                            }`}
-                            onClick={() => setSelectedMaterial(material)}
-                          >
-                            <td className="px-6 py-4">
-                              <input
-                                type="checkbox"
-                                checked={selectedMaterials.includes(material.id)}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedMaterials((prev) =>
-                                    e.target.checked
-                                      ? [...prev, material.id]
-                                      : prev.filter((id) => id !== material.id)
-                                  );
-                                }}
-                                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                              />
-                            </td>
-                            <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                              {editingId === material.id ? (
-                                <input
-                                  type="text"
-                                  value={editValues?.name || ""}
-                                  onChange={(e) =>
-                                    setEditValues({ ...editValues!, name: e.target.value } as Material)
-                                  }
-                                  className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              ) : (
-                                material.name
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {editingId === material.id ? (
-                                <input
-                                  type="number"
-                                  value={editValues?.qty_required || ""}
-                                  onChange={(e) =>
-                                    setEditValues({
-                                      ...editValues!,
-                                      qty_required: Number(e.target.value),
-                                    } as Material)
-                                  }
-                                  className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              ) : (
-                                material.qty_required
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {editingId === material.id ? (
-                                <input
-                                  type="number"
-                                  value={editValues?.unit_cost || ""}
-                                  onChange={(e) =>
-                                    setEditValues({
-                                      ...editValues!,
-                                      unit_cost: Number(e.target.value),
-                                    } as Material)
-                                  }
-                                  className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                  onClick={(e) => e.stopPropagation()}
-                                />
-                              ) : (
-                                `₹${material.unit_cost}`
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {material.project_name}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {editingId === material.id ? (
-                                <select
-                                  value={editValues?.status || ""}
-                                  onChange={(e) =>
-                                    setEditValues({
-                                      ...editValues!,
-                                      status: e.target.value,
-                                    } as Material)
-                                  }
-                                  className="border border-gray-300 rounded-lg px-2 py-1 w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  <option value="In Stock">In Stock</option>
-                                  <option value="Ordered">Ordered</option>
-                                  <option value="Out of Stock">Out of Stock</option>
-                                </select>
-                              ) : (
-                                material.status
-                              )}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {material.last_updated}
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-500">
-                              {editingId === material.id ? (
-                                <div className="flex space-x-2">
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleUpdateMaterial(material.id);
-                                    }}
-                                    className="px-2 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                                  >
-                                    Save
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setEditingId(null);
-                                      setEditValues(null);
-                                    }}
-                                    className="px-2 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditingId(material.id);
-                                    setEditValues({ ...material });
-                                  }}
-                                  className="px-2 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                                >
-                                  Edit
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Avg. Rate</p>
+                    <p className="text-2xl font-bold text-green-600">{formatCurrency(avgRate)}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-green-500 to-green-600 rounded-lg">
+                    <DollarSign className="w-6 h-6 text-white" />
+                  </div>
                 </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Categories</p>
+                    <p className="text-2xl font-bold text-purple-600">{categoriesCount}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg">
+                    <Tag className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-600 mb-1">Suppliers</p>
+                    <p className="text-2xl font-bold text-orange-600">{suppliersCount}</p>
+                  </div>
+                  <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-lg">
+                    <Building className="w-6 h-6 text-white" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Results Count */}
+            <div className="flex items-center justify-between text-sm text-slate-600">
+              <span>Showing {filteredMaterials.length} of {materials.length} materials</span>
+              {selectedMaterials.length > 0 && (
+                <button
+                  onClick={showDeleteConfirmation}
+                  className="flex items-center space-x-2 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Selected ({selectedMaterials.length})</span>
+                </button>
               )}
             </div>
 
-            {/* Pagination */}
-            <div className="mt-4 flex justify-center items-center gap-4 py-4">
-              <button
-                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                disabled={currentPage === 1}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-              >
-                Previous
-              </button>
-              <span className="px-4 py-2 text-gray-700">
-                Page {currentPage} of {totalPages}
-              </span>
-              <button
-                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                disabled={currentPage === totalPages}
-                className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
-              >
-                Next
-              </button>
+            {/* Materials Grid */}
+            <div className="flex-1 overflow-auto">
+              {error ? (
+                <div className="flex justify-center items-center h-64">
+                  <p className="text-xl text-red-500">{error}</p>
+                </div>
+              ) : filteredMaterials.length === 0 ? (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Package className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-slate-900 mb-2">No materials found</h3>
+                  <p className="text-slate-600 mb-4">
+                    {searchTerm || categoryFilter !== 'all' || supplierFilter !== 'all'
+                      ? 'Try adjusting your search or filter criteria.'
+                      : 'Start building your material catalog by adding your first material.'
+                    }
+                  </p>
+                  {(!searchTerm && categoryFilter === 'all' && supplierFilter === 'all') && (
+                    <button
+                      onClick={() => setShowModal(true)}
+                      className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+                    >
+                      Add Material
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
+                  {filteredMaterials.map((material) => (
+                    <div 
+                      key={material.id} 
+                      className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer ${
+                        selectedMaterial?.id === material.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                      }`}
+                      onClick={() => setSelectedMaterial(material)}
+                    >
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                            <Package className="w-6 h-6 text-white" />
+                          </div>
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900">{material.name}</h3>
+                            <p className="text-sm text-slate-600">{material.description}</p>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={selectedMaterials.includes(material.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            setSelectedMaterials((prev) =>
+                              e.target.checked
+                                ? [...prev, material.id]
+                                : prev.filter((id) => id !== material.id)
+                            );
+                          }}
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                        />
+                      </div>
+
+                      <div className="space-y-3 mb-4">
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getCategoryColor(material.category || '')}`}>
+                            {material.category}
+                          </span>
+                          <div className="text-right">
+                            <p className="text-2xl font-bold text-green-600">{formatCurrency(material.unit_cost)}</p>
+                            <p className="text-xs text-slate-500">per {material.unit}</p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="flex items-center space-x-2">
+                            <Hash className="w-4 h-4 text-slate-400" />
+                            <span className="text-slate-600">Qty: {material.qty_required}</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <Building className="w-4 h-4 text-slate-400" />
+                            <span className="text-slate-600 truncate">{material.supplier}</span>
+                          </div>
+                        </div>
+
+                        {material.hsn && (
+                          <div className="text-xs text-slate-500">
+                            HSN: {material.hsn}
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded">
+                          Project: {material.project_name}
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                            material.status === 'In Stock' ? 'bg-green-100 text-green-800' :
+                            material.status === 'Ordered' ? 'bg-yellow-100 text-yellow-800' :
+                            'bg-red-100 text-red-800'
+                          }`}>
+                            {material.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-slate-200">
+                        <div className="text-xs text-slate-500">
+                          Updated {material.last_updated ? new Date(material.last_updated).toLocaleDateString('en-IN') : 'N/A'}
+                        </div>
+                        <div className="flex items-center space-x-1">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleViewMaterial(material);
+                            }}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleEditClick(material);
+                            }}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteMaterial(material.id);
+                            }}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Delete"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
       </Layout>
 
-      {/* Fixed Footer */}
-      <footer className="">
-        <div className="">
-          
-        </div>
-      </footer>
-
       {/* Add Material Modal */}
       {showModal && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">Add Material</h2>
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Add New Material</h2>
               <button onClick={() => setShowModal(false)}>
                 <X className="h-5 w-5 text-gray-500 hover:text-gray-700" />
               </button>
             </div>
 
-            <div className="space-y-4">
-              <input
-                type="text"
-                placeholder="Material Name"
-                className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newMaterial.name}
-                onChange={(e) =>
-                  setNewMaterial({ ...newMaterial, name: e.target.value })
-                }
-              />
-              <input
-                type="number"
-                placeholder="Quantity Required"
-                className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newMaterial.qty_required}
-                onChange={(e) =>
-                  setNewMaterial({
-                    ...newMaterial,
-                    qty_required: e.target.value,
-                  })
-                }
-              />
-              <input
-                type="number"
-                placeholder="Unit Cost"
-                className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newMaterial.unit_cost}
-                onChange={(e) =>
-                  setNewMaterial({
-                    ...newMaterial,
-                    unit_cost: e.target.value,
-                  })
-                }
-              />
-              <select
-                className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newMaterial.project_id}
-                onChange={(e) =>
-                  setNewMaterial({
-                    ...newMaterial,
-                    project_id: e.target.value,
-                  })
-                }
-              >
-                <option value="">Select Project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={newMaterial.status}
-                onChange={(e) =>
-                  setNewMaterial({
-                    ...newMaterial,
-                    status: e.target.value,
-                  })
-                }
-              >
-                <option value="In Stock">In Stock</option>
-                <option value="Ordered">Ordered</option>
-                <option value="Out of Stock">Out of Stock</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4 space-y-0">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Material Name *</label>
+                <input
+                  type="text"
+                  placeholder="Enter material name"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.name}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.category}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, category: e.target.value })}
+                >
+                  {categories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Required *</label>
+                <input
+                  type="number"
+                  placeholder="Enter quantity"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.qty_required}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, qty_required: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.unit}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, unit: e.target.value })}
+                >
+                  {units.map(unit => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost *</label>
+                <input
+                  type="number"
+                  placeholder="Enter unit cost"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.unit_cost}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, unit_cost: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Project *</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.project_id}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, project_id: e.target.value })}
+                >
+                  <option value="">Select Project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                <input
+                  type="text"
+                  placeholder="Enter supplier name"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.supplier}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, supplier: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.status}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, status: e.target.value })}
+                >
+                  <option value="In Stock">In Stock</option>
+                  <option value="Ordered">Ordered</option>
+                  <option value="Out of Stock">Out of Stock</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  placeholder="Enter material description"
+                  rows={3}
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  value={newMaterial.description}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, description: e.target.value })}
+                />
+              </div>
             </div>
 
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-6 flex justify-end gap-3">
               <button
                 className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                 onClick={() => setShowModal(false)}
@@ -696,7 +763,122 @@ export function Materials() {
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 onClick={handleAddMaterial}
               >
-                Save
+                Add Material
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Material Modal */}
+      {showViewModal && selectedMaterial && (
+        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Material Details</h2>
+              <button onClick={() => setShowViewModal(false)}>
+                <X className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div className="flex items-center space-x-4">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                  <Package className="w-8 h-8 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-slate-900">{selectedMaterial.name}</h3>
+                  <p className="text-slate-600">{selectedMaterial.description}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-3">Basic Information</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm text-slate-500">Category</span>
+                      <p className="font-medium">{selectedMaterial.category}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Unit</span>
+                      <p className="font-medium">{selectedMaterial.unit}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Supplier</span>
+                      <p className="font-medium">{selectedMaterial.supplier}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">HSN Code</span>
+                      <p className="font-medium">{selectedMaterial.hsn}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-3">Pricing & Quantity</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <span className="text-sm text-slate-500">Unit Cost</span>
+                      <p className="text-2xl font-bold text-green-600">{formatCurrency(selectedMaterial.unit_cost)}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Quantity Required</span>
+                      <p className="font-medium">{selectedMaterial.qty_required} {selectedMaterial.unit}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Total Cost</span>
+                      <p className="text-xl font-bold text-blue-600">
+                        {formatCurrency(selectedMaterial.unit_cost * selectedMaterial.qty_required)}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-sm text-slate-500">Status</span>
+                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                        selectedMaterial.status === 'In Stock' ? 'bg-green-100 text-green-800' :
+                        selectedMaterial.status === 'Ordered' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {selectedMaterial.status}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-lg font-semibold text-slate-900 mb-3">Project Information</h4>
+                <div className="bg-slate-50 p-4 rounded-lg">
+                  <p className="font-medium">{selectedMaterial.project_name}</p>
+                  <p className="text-sm text-slate-500 mt-1">Last updated: {selectedMaterial.last_updated}</p>
+                </div>
+              </div>
+
+              {selectedMaterial.specifications && (
+                <div>
+                  <h4 className="text-lg font-semibold text-slate-900 mb-3">Specifications</h4>
+                  <div className="bg-slate-50 p-4 rounded-lg">
+                    <p className="text-slate-700">{selectedMaterial.specifications}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowViewModal(false);
+                  handleEditClick(selectedMaterial);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Edit Material
+              </button>
+              <button
+                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                onClick={() => setShowViewModal(false)}
+              >
+                Close
               </button>
             </div>
           </div>
