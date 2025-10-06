@@ -1,29 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { sendUserCredentialsEmail, sendCredentialsEmailFallback } from "../lib/emailService";
 import { Layout } from "../components/Layout/Layout";
-import { 
-  Users as UsersIcon, 
-  Plus, 
-  Search, 
-  Mail, 
-  Phone, 
-  Shield, 
-  MoreVertical, 
-  Filter, 
-  Edit2, 
-  Trash2, 
-  Eye, 
-  Grid, 
-  List, 
-  Building, 
-  Calendar, 
-  Clock,
-  X,
-  Check,
-  User,
-  AlertCircle
-} from 'lucide-react';
+import { Users as UsersIcon, Plus, Search, Mail, Phone, Shield, MoveVertical as MoreVertical, ListFilter as Filter, CreditCard as Edit2, Trash2, Eye, Grid2x2 as Grid, List, Building, Calendar, Clock, X, Check, User, AlertCircle as AlertCircle } from 'lucide-react';
 
 type User = {
   id: string;
@@ -193,84 +173,40 @@ export function Users() {
     setShowConfirmModal(true);
   }
 
-  // Send welcome email
   async function sendWelcomeEmail() {
     setSendingEmail(true);
-    
+
     try {
-      // EmailJS configuration
-      const serviceId = 'service_7lchh47';
-      const templateId = 'template_e2y4ot5';
-      const publicKey = 'ddLUU50I7-6-0oREj';
-      
-      const templateParams = {
+      const emailParams = {
         to_email: formData.email,
         to_name: formData.name,
-        to: formData.email,
-        from_name: 'BuildMyHomes Team',
-        from_email: 'noreply@buildmyhomes.in',
-        reply_to: formData.email,
         password: generatedPassword,
         role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
-        project: projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned',
-        login_url: window.location.origin + '/login',
-        user_email: formData.email,
-        message: `Welcome to BuildMyHomes! Your login details are: Email: ${formData.email}, Password: ${generatedPassword}`,
+        project: projects.find(p => p.id === formData.project_id)?.name,
       };
 
-      // Load EmailJS if not already loaded
-      if (!window.emailjs) {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
-        document.head.appendChild(script);
-        await new Promise(resolve => script.onload = resolve);
-        window.emailjs.init(publicKey);
-      }
+      const result = await sendUserCredentialsEmail(emailParams);
 
-      const response = await window.emailjs.send(
-        serviceId,
-        templateId,
-        templateParams,
-        publicKey
-      );
-      
-      if (response.status === 200) {
+      if (result.success) {
         alert('Welcome email sent successfully!');
       } else {
-        throw new Error(`EmailJS failed with status: ${response.status}`);
+        throw new Error(result.error || 'Failed to send email');
       }
     } catch (error) {
       console.error('Email Error:', error);
-      
-      // Fallback: Show email details for manual sending
-      const emailContent = `
-Subject: Welcome to BuildMyHomes - Your Account is Ready!
 
-Hello ${formData.name}!
+      const emailParams = {
+        to_email: formData.email,
+        to_name: formData.name,
+        password: generatedPassword,
+        role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
+        project: projects.find(p => p.id === formData.project_id)?.name,
+      };
 
-Welcome to BuildMyHomes! Your account has been created successfully.
-
-Login Details:
-Email: ${formData.email}
-Password: ${generatedPassword}
-Role: ${roles.find(r => r.id === formData.role_id)?.role_name || 'User'}
-Project: ${projects.find(p => p.id === formData.project_id)?.name || 'Not Assigned'}
-
-Login URL: ${window.location.origin}/login
-
-Please change your password after your first login for security.
-
-Best regards,
-BuildMyHomes Team
-      `;
-
-      navigator.clipboard.writeText(emailContent).then(() => {
-        alert(`Email content copied to clipboard! Please send this manually to ${formData.email}\n\nPassword: ${generatedPassword}`);
-      }).catch(() => {
-        alert(`Please send this email manually to ${formData.email}:\n\n${emailContent}`);
-      });
+      const fallbackMessage = await sendCredentialsEmailFallback(emailParams);
+      alert(`Email service unavailable. ${fallbackMessage}\n\nPassword: ${generatedPassword}`);
     }
-    
+
     setSendingEmail(false);
   }
 
@@ -395,6 +331,13 @@ BuildMyHomes Team
     setShowViewModal(true);
   };
 
+  // Handle modal backdrop click
+  const handleModalBackdropClick = (e: React.MouseEvent, closeFunction: () => void) => {
+    if (e.target === e.currentTarget) {
+      closeFunction();
+    }
+  };
+
   // Helper functions
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -413,8 +356,8 @@ BuildMyHomes Team
     const colors: Record<string, string> = {
       'Admin': 'bg-red-100 text-red-800',
       'Project Manager': 'bg-blue-100 text-blue-800',
-      'Site Engineer': 'bg-purple-100 text-purple-800',
-      'Accounts': 'bg-green-100 text-green-800',
+      'Site Engineer': 'bg-green-100 text-green-800',
+      'Accounts': 'bg-emerald-100 text-emerald-800',
       'Client': 'bg-orange-100 text-orange-800'
     };
     return colors[role] || 'bg-gray-100 text-gray-800';
@@ -458,8 +401,8 @@ BuildMyHomes Team
                   <button
                     onClick={() => setViewType('grid')}
                     className={`p-2 rounded-md transition-colors ${
-                      viewType === 'grid' 
-                        ? 'bg-blue-500 text-white' 
+                      viewType === 'grid'
+                        ? 'bg-blue-500 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -468,15 +411,15 @@ BuildMyHomes Team
                   <button
                     onClick={() => setViewType('list')}
                     className={`p-2 rounded-md transition-colors ${
-                      viewType === 'list' 
-                        ? 'bg-blue-500 text-white' 
+                      viewType === 'list'
+                        ? 'bg-blue-500 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
                     <List className="w-4 h-4" />
                   </button>
                 </div>
-                <button 
+                <button
                   onClick={() => setShowForm(true)}
                   className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200 transform hover:scale-105"
                 >
@@ -577,7 +520,7 @@ BuildMyHomes Team
                   <div key={user.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
                           <span className="text-white font-medium text-sm">
                             {user.name.split(' ').map(n => n[0]).join('')}
                           </span>
@@ -619,16 +562,16 @@ BuildMyHomes Team
                         <Eye className="w-4 h-4" />
                         <span>View</span>
                       </button>
-                      <button 
+                      <button
                         onClick={() => startEdit(user)}
-                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
                         title="Edit"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleDelete(user.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors" 
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -642,7 +585,7 @@ BuildMyHomes Team
                 <div className="px-6 py-4 border-b border-slate-200">
                   <h3 className="text-lg font-semibold text-slate-900">Team Members</h3>
                 </div>
-                
+
                 <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-slate-50">
@@ -657,11 +600,11 @@ BuildMyHomes Team
                     </thead>
                     <tbody className="divide-y divide-slate-200">
                       {filteredUsers.map((user) => (
-                        <tr 
-                          key={user.id} 
+                        <tr
+                          key={user.id}
                           className={`cursor-pointer transition-all hover:bg-slate-50 ${
-                            selectedUser?.id === user.id 
-                              ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                            selectedUser?.id === user.id
+                              ? "bg-blue-50 border-l-4 border-l-blue-500"
                               : ""
                           }`}
                           onClick={() => setSelectedUser(user)}
@@ -684,7 +627,7 @@ BuildMyHomes Team
                               </div>
                             ) : (
                               <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
                                   <span className="text-white font-medium text-sm">
                                     {user.name.split(' ').map(n => n[0]).join('')}
                                   </span>
@@ -791,12 +734,12 @@ BuildMyHomes Team
                                   >
                                     <Edit2 className="w-4 h-4" />
                                   </button>
-                                  <button 
+                                  <button
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleDelete(user.id);
                                     }}
-                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors" 
+                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
                                     title="Delete"
                                   >
                                     <Trash2 className="w-4 h-4" />
@@ -812,7 +755,7 @@ BuildMyHomes Team
                 </div>
               </div>
             )}
-            
+
             {filteredUsers.length === 0 && (
               <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-12 text-center">
                 <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -833,7 +776,10 @@ BuildMyHomes Team
 
       {/* Add User Form Modal */}
       {showForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, () => setShowForm(false))}
+        >
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-4 mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Add New User</h2>
@@ -941,7 +887,10 @@ BuildMyHomes Team
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, () => setShowConfirmModal(false))}
+        >
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
             <div className="flex items-center mb-4">
               <div className="flex-shrink-0">
@@ -962,7 +911,7 @@ BuildMyHomes Team
                 <p><strong>Project:</strong> {projects.find(p => p.id === formData.project_id)?.name}</p>
                 <p><strong>Status:</strong> {formData.status}</p>
               </div>
-              
+
               <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
                 <div className="flex items-start">
                   <AlertCircle className="h-5 w-5 text-blue-600 mt-0.5 mr-2" />
@@ -1004,7 +953,13 @@ BuildMyHomes Team
 
       {/* View User Modal */}
       {showViewModal && selectedUser && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, () => {
+            setShowViewModal(false);
+            setSelectedUser(null);
+          })}
+        >
           <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center border-b pb-4 mb-6">
               <h2 className="text-xl font-semibold text-gray-900">User Details</h2>
@@ -1022,7 +977,7 @@ BuildMyHomes Team
             <div className="space-y-6">
               {/* User Avatar and Basic Info */}
               <div className="flex items-center space-x-4">
-                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
                   <span className="text-white font-bold text-xl">
                     {selectedUser.name.split(' ').map(n => n[0]).join('')}
                   </span>

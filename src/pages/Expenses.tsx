@@ -118,6 +118,8 @@ export function Expenses() {
   const [showForm, setShowForm] = useState(false);
   const [showPaymentLinkForm, setShowPaymentLinkForm] = useState(false);
   const [showPaymentLinksTable, setShowPaymentLinksTable] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsTransaction, setDetailsTransaction] = useState<Transaction | null>(null);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showGstModal, setShowGstModal] = useState(false);
@@ -282,7 +284,7 @@ export function Expenses() {
       // Generate a simple payment link ID and URL
       const linkId = `pl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       const paymentUrl = `${window.location.origin}/payment/${linkId}`;
-      
+
       // Generate QR Code URL
       const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(paymentUrl)}`;
 
@@ -370,7 +372,7 @@ export function Expenses() {
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
     doc.text(paymentLinkData.businessName || 'Your Business Name', 20, 25);
-    
+
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text('Email: info@yourbusiness.com | Phone: +91 XXXXX XXXXX', 20, 35);
@@ -380,7 +382,7 @@ export function Expenses() {
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
     doc.text('TAX INVOICE', 20, 60);
-    
+
     // Invoice details
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -399,7 +401,7 @@ export function Expenses() {
     // Table for items
     const tableData = [];
     const headers = ['Description', 'Unit Price', 'Qty', 'Amount'];
-    
+
     if (paymentLinkData.includeGst) {
       headers.push('CGST', 'SGST', 'Total');
       tableData.push([
@@ -428,13 +430,13 @@ export function Expenses() {
       head: [headers],
       body: tableData,
       theme: 'grid',
-      headStyles: { 
+      headStyles: {
         fillColor: [41, 128, 185],
         textColor: 255,
         fontSize: 10,
         fontStyle: 'bold'
       },
-      bodyStyles: { 
+      bodyStyles: {
         fontSize: 9,
         cellPadding: 5
       },
@@ -451,20 +453,20 @@ export function Expenses() {
 
     // Summary section
     const finalY = (doc as any).lastAutoTable.finalY + 15;
-    
+
     // Totals
     doc.setFont('helvetica', 'normal');
     doc.text(`Subtotal: ₹${subtotal.toFixed(2)}`, 140, finalY);
-    
+
     if (paymentLinkData.includeGst) {
       doc.text(`CGST (${(gstRate / 2)}%): ₹${(gstAmount / 2).toFixed(2)}`, 140, finalY + 8);
       doc.text(`SGST (${(gstRate / 2)}%): ₹${(gstAmount / 2).toFixed(2)}`, 140, finalY + 16);
       doc.text(`Total GST: ₹${gstAmount.toFixed(2)}`, 140, finalY + 24);
     }
-    
+
     // Draw line
     doc.line(140, finalY + (paymentLinkData.includeGst ? 30 : 10), 190, finalY + (paymentLinkData.includeGst ? 30 : 10));
-    
+
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(12);
     doc.text(`Total Amount: ₹${totalAmount.toFixed(2)}`, 140, finalY + (paymentLinkData.includeGst ? 40 : 20));
@@ -507,10 +509,10 @@ export function Expenses() {
       setTimeout(() => setErrorMessage(null), 5000);
       return;
     }
-    setFormData(prev => ({ 
-      ...prev, 
-      includeGst: true, 
-      gstAmount: gstAmount 
+    setFormData(prev => ({
+      ...prev,
+      includeGst: true,
+      gstAmount: gstAmount
     }));
     setShowGstModal(false);
     setGstAmount("");
@@ -653,7 +655,7 @@ export function Expenses() {
       t.phase_name.toLowerCase().includes(search.toLowerCase()) ||
       t.category.toLowerCase().includes(search.toLowerCase()) ||
       t.payment_method.toLowerCase().includes(search.toLowerCase());
-    
+
     // Date range filtering
     let matchesDateRange = true;
     if (fromDate && toDate) {
@@ -670,7 +672,7 @@ export function Expenses() {
       const to = new Date(toDate);
       matchesDateRange = transactionDate <= to;
     }
-    
+
     return matchesProject && matchesSearch && matchesDateRange;
   });
 
@@ -680,12 +682,12 @@ export function Expenses() {
   );
 
   const totalPages = Math.ceil(filteredTransactions.length / itemsPerPage);
-  
+
   // Calculate totals including GST
   const totalExpenses = filteredTransactions
     .filter(t => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount + (t.gst_amount || 0), 0);
-  
+
   const totalIncome = filteredTransactions
     .filter(t => t.type === 'income')
     .reduce((sum, t) => sum + t.amount + (t.gst_amount || 0), 0);
@@ -693,7 +695,7 @@ export function Expenses() {
   // Prepare chart data
   const getChartData = (): ChartData[] => {
     const dataMap = new Map<string, { expense: number; income: number }>();
-    
+
     filteredTransactions.forEach((t) => {
       const date = format(new Date(t.date), "MMM dd");
       if (!dataMap.has(date)) {
@@ -737,6 +739,7 @@ export function Expenses() {
       setShowPaymentLinkForm(false);
       setShowGstModal(false);
       setShowPaymentLinksTable(false);
+      setShowDetailsModal(false);
     }
   };
 
@@ -794,24 +797,24 @@ export function Expenses() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="date" />
                   <YAxis />
-                  <Tooltip 
+                  <Tooltip
                     formatter={(value: number, name: string) => [
-                      `₹${value.toFixed(2)}`, 
+                      `₹${value.toFixed(2)}`,
                       name === 'expense' ? 'Expenses' : 'Income'
                     ]}
                   />
                   <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="income" 
-                    stroke="#10b981" 
+                  <Line
+                    type="monotone"
+                    dataKey="income"
+                    stroke="#10b981"
                     strokeWidth={2}
                     name="Income"
                   />
-                  <Line 
-                    type="monotone" 
-                    dataKey="expense" 
-                    stroke="#ef4444" 
+                  <Line
+                    type="monotone"
+                    dataKey="expense"
+                    stroke="#ef4444"
                     strokeWidth={2}
                     name="Expenses"
                   />
@@ -885,7 +888,7 @@ export function Expenses() {
                 </option>
               ))}
             </select>
-            
+
             {/* Date Range Filters */}
             <div className="flex items-center gap-2">
               <Calendar size={18} className="text-gray-400" />
@@ -949,19 +952,19 @@ export function Expenses() {
                     const totalAmount = t.amount + (t.gst_amount || 0);
                     const hasGst = (t.gst_amount || 0) > 0;
                     return (
-                      <tr 
+                      <tr
                         key={t.id}
                         className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
-                          selectedTransaction?.id === t.id 
-                            ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                          selectedTransaction?.id === t.id
+                            ? "bg-blue-50 border-l-4 border-l-blue-500"
                             : ""
                         } ${t.type === 'expense' ? 'bg-red-50' : 'bg-green-50'}`}
                         onClick={() => setSelectedTransaction(t)}
                       >
                         <td className="p-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            t.type === 'income' 
-                              ? 'bg-green-100 text-green-800' 
+                            t.type === 'income'
+                              ? 'bg-green-100 text-green-800'
                               : 'bg-red-100 text-red-800'
                           }`}>
                             {t.type === 'income' ? 'Income' : 'Expense'}
@@ -1010,7 +1013,18 @@ export function Expenses() {
                         </td>
                         <td className="p-3">
                           <div className="flex gap-2">
-                            <button 
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                setDetailsTransaction(t);
+                                setShowDetailsModal(true);
+                              }}
+                              className="text-purple-600 hover:text-purple-800 p-1 rounded transition-colors"
+                              title="View Details"
+                            >
+                              <Eye size={18} />
+                            </button>
+                            <button
                               onClick={(event) => {
                                 event.stopPropagation();
                                 handleEdit(t);
@@ -1020,7 +1034,7 @@ export function Expenses() {
                             >
                               <Edit2 size={18} />
                             </button>
-                            <button 
+                            <button
                               onClick={(event) => {
                                 event.stopPropagation();
                                 handleDelete(t.id);
@@ -1070,18 +1084,182 @@ export function Expenses() {
         </div>
       </Layout>
 
+      {/* Transaction Details Modal */}
+      {showDetailsModal && detailsTransaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
+                <div className={`p-3 rounded-lg ${
+                  detailsTransaction.type === 'income'
+                    ? 'bg-green-100 text-green-600'
+                    : 'bg-red-100 text-red-600'
+                }`}>
+                  {detailsTransaction.type === 'income' ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    {detailsTransaction.type === 'income' ? 'Income' : 'Expense'} Details
+                  </h2>
+                  <p className="text-sm text-gray-500">Transaction ID: {detailsTransaction.id.slice(0, 8)}...</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDetailsModal(false);
+                  setDetailsTransaction(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Category Badge */}
+              <div className="flex items-center justify-between bg-gray-50 p-4 rounded-lg">
+                <div>
+                  <p className="text-sm text-gray-500 mb-1">Category</p>
+                  <p className="text-lg font-semibold text-gray-900">{detailsTransaction.category}</p>
+                </div>
+                <div className={`px-4 py-2 rounded-full text-sm font-medium ${
+                  detailsTransaction.type === 'income'
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {detailsTransaction.type === 'income' ? 'Income' : 'Expense'}
+                </div>
+              </div>
+
+              {/* Project and Phase Info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Project</p>
+                  <p className="text-base font-semibold text-gray-900">{detailsTransaction.project_name}</p>
+                </div>
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Phase</p>
+                  <p className="text-base font-semibold text-gray-900">{detailsTransaction.phase_name}</p>
+                </div>
+              </div>
+
+              {/* Amount Details */}
+              <div className="border-2 border-gray-200 rounded-lg p-6 space-y-3">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Amount Breakdown</h3>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-600">Base Amount:</span>
+                  <span className={`text-xl font-bold ${
+                    detailsTransaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {detailsTransaction.type === 'income' ? '+' : '-'}₹{detailsTransaction.amount.toFixed(2)}
+                  </span>
+                </div>
+                {(detailsTransaction.gst_amount || 0) > 0 && (
+                  <>
+                    <div className="flex justify-between items-center text-blue-600">
+                      <span className="text-gray-600">GST Amount:</span>
+                      <span className="text-lg font-semibold">+₹{(detailsTransaction.gst_amount || 0).toFixed(2)}</span>
+                    </div>
+                    <div className="border-t border-gray-200 pt-3 mt-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-gray-900 font-semibold">Total Amount:</span>
+                        <span className={`text-2xl font-bold ${
+                          detailsTransaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {detailsTransaction.type === 'income' ? '+' : '-'}₹{(detailsTransaction.amount + (detailsTransaction.gst_amount || 0)).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Payment Method and Date */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Payment Method</p>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+                      <span className="text-blue-600 font-semibold text-xs">
+                        {detailsTransaction.payment_method.charAt(0)}
+                      </span>
+                    </div>
+                    <p className="text-base font-semibold text-gray-900">{detailsTransaction.payment_method}</p>
+                  </div>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Date</p>
+                  <div className="flex items-center gap-2">
+                    <Calendar size={18} className="text-gray-500" />
+                    <p className="text-base font-semibold text-gray-900">
+                      {format(new Date(detailsTransaction.date), "dd MMMM yyyy")}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bill/Receipt */}
+              <div className="bg-yellow-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600 mb-2">
+                  {detailsTransaction.type === 'income' ? 'Receipt' : 'Bill'} Attachment
+                </p>
+                {detailsTransaction.bill_path ? (
+                  <a
+                    href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${detailsTransaction.bill_path}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <FileText size={18} />
+                    View {detailsTransaction.type === 'income' ? 'Receipt' : 'Bill'}
+                  </a>
+                ) : (
+                  <div className="flex items-center gap-2 text-gray-500">
+                    <FileText size={18} />
+                    <span>No {detailsTransaction.type === 'income' ? 'receipt' : 'bill'} attached</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    setDetailsTransaction(null);
+                  }}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={() => {
+                    setShowDetailsModal(false);
+                    handleEdit(detailsTransaction);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                >
+                  <Edit2 size={18} />
+                  Edit Transaction
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Add/Edit Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
           <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-gray-900">
-                {editingId 
-                  ? `Edit ${formType === 'income' ? 'Income' : 'Expense'}` 
+                {editingId
+                  ? `Edit ${formType === 'income' ? 'Income' : 'Expense'}`
                   : `Add ${formType === 'income' ? 'Income' : 'Expense'}`
                 }
               </h2>
-              <button 
+              <button
                 onClick={() => setShowForm(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -1240,8 +1418,8 @@ export function Expenses() {
                 <button
                   type="submit"
                   className={`px-4 py-2 text-white rounded-lg transition-colors ${
-                    formType === 'income' 
-                      ? 'bg-green-600 hover:bg-green-700' 
+                    formType === 'income'
+                      ? 'bg-green-600 hover:bg-green-700'
                       : 'bg-red-600 hover:bg-red-700'
                   }`}
                 >
@@ -1262,7 +1440,7 @@ export function Expenses() {
                 <Calculator className="w-5 h-5 text-blue-600" />
                 <h3 className="text-lg font-bold text-gray-900">Enter GST Amount</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowGstModal(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -1325,7 +1503,7 @@ export function Expenses() {
                 <LinkIcon className="w-5 h-5 text-purple-600" />
                 <h2 className="text-xl font-bold text-gray-900">Create Payment Link</h2>
               </div>
-              <button 
+              <button
                 onClick={() => setShowPaymentLinkForm(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -1358,7 +1536,7 @@ export function Expenses() {
                   </div>
                 </div>
               </div>
-              
+
               <div>
                 <label className="block font-medium text-gray-700 mb-1">
                   Product/Service Name <span className="text-red-500">*</span>
@@ -1372,7 +1550,7 @@ export function Expenses() {
                   required
                 />
               </div>
-              
+
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <label className="block font-medium text-gray-700 mb-1">Unit Price (₹) <span className="text-red-500">*</span></label>
@@ -1411,7 +1589,7 @@ export function Expenses() {
                   </select>
                 </div>
               </div>
-              
+
               <div className="bg-yellow-50 p-4 rounded-lg">
                 <h3 className="font-medium text-gray-700 mb-2">GST Configuration</h3>
                 <div className="flex items-center gap-2 mb-2">
@@ -1433,7 +1611,7 @@ export function Expenses() {
                   </div>
                 )}
               </div>
-              
+
               <div>
                 <label className="block font-medium text-gray-700 mb-1">
                   Description (Optional)
@@ -1538,14 +1716,14 @@ export function Expenses() {
                 <LinkIcon className="w-5 h-5 text-purple-600" />
                 <h2 className="text-xl font-bold text-gray-900">Payment Links ({paymentLinks.length})</h2>
               </div>
-              <button 
+              <button
                 onClick={() => setShowPaymentLinksTable(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <X size={20} />
               </button>
             </div>
-            
+
             {paymentLinks.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full border-collapse">
@@ -1565,7 +1743,7 @@ export function Expenses() {
                       const statusDisplay = getPaymentStatusDisplay(link.payment_status);
                       const StatusIcon = statusDisplay.icon;
                       const totalAmount = link.amount * link.quantity * (link.gst_rate ? (1 + link.gst_rate / 100) : 1);
-                      
+
                       return (
                         <tr key={link.id} className="border-b hover:bg-gray-50">
                           <td className="p-3">

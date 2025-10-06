@@ -51,8 +51,11 @@ export function LoginForm() {
         if (error) throw error;
 
         if (data?.user?.id) {
-          setMessage('Sign-up successful. Please check your email to confirm your account.');
-          navigate('/login', { replace: true });
+          setMessage('Sign-up successful! Redirecting to dashboard...');
+
+          setTimeout(() => {
+            navigate('/', { replace: true });
+          }, 1500);
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({

@@ -62,9 +62,8 @@ export function Materials() {
     status: "In Stock",
   });
 
-  const itemsPerPage = 12; // Increased for grid view
+  const itemsPerPage = 12;
 
-  // Categories for construction materials
   const categories = [
     'Cement & Concrete',
     'Steel & Metal',
@@ -83,7 +82,6 @@ export function Materials() {
     fetchProjects();
   }, []);
 
-  // Auto-hide success message after 3 seconds
   useEffect(() => {
     if (showSuccessMessage) {
       const timer = setTimeout(() => {
@@ -278,6 +276,12 @@ export function Materials() {
     setEditValues({ ...material });
   };
 
+  const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>, closeModal: () => void) => {
+    if (e.target === e.currentTarget) {
+      closeModal();
+    }
+  };
+
   const filteredMaterials = materials.filter(material => {
     const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          material.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -319,7 +323,6 @@ export function Materials() {
   const categoriesCount = [...new Set(materials.map(m => m.category))].length;
   const suppliersCount = suppliers.length;
 
-  // Get the header subtitle based on selected material
   const getHeaderSubtitle = () => {
     if (selectedMaterial) {
       return `${selectedMaterial.name} - Qty: ${selectedMaterial.qty_required} - ${formatCurrency(selectedMaterial.unit_cost)} - ${selectedMaterial.project_name}`;
@@ -341,7 +344,6 @@ export function Materials() {
     <div className="h-screen flex flex-col">
       <Layout title="Material Catalog" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Success Message */}
           {showSuccessMessage && (
             <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2">
               <CheckCircle className="h-5 w-5" />
@@ -361,7 +363,7 @@ export function Materials() {
                 <h1 className="text-3xl font-bold text-slate-900">Material Catalog</h1>
                 <p className="text-slate-600 mt-1">Manage your construction materials with rates and specifications</p>
               </div>
-              <button 
+              <button
                 onClick={() => setShowModal(true)}
                 className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
               >
@@ -370,7 +372,6 @@ export function Materials() {
               </button>
             </div>
 
-            {/* Search and Filter */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <div className="flex items-center space-x-4">
                 <div className="flex-1 relative">
@@ -421,7 +422,6 @@ export function Materials() {
               </div>
             </div>
 
-            {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex items-center justify-between">
@@ -472,7 +472,6 @@ export function Materials() {
               </div>
             </div>
 
-            {/* Results Count */}
             <div className="flex items-center justify-between text-sm text-slate-600">
               <span>Showing {filteredMaterials.length} of {materials.length} materials</span>
               {selectedMaterials.length > 0 && (
@@ -486,7 +485,6 @@ export function Materials() {
               )}
             </div>
 
-            {/* Materials Grid */}
             <div className="flex-1 overflow-auto">
               {error ? (
                 <div className="flex justify-center items-center h-64">
@@ -516,8 +514,8 @@ export function Materials() {
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                   {filteredMaterials.map((material) => (
-                    <div 
-                      key={material.id} 
+                    <div
+                      key={material.id}
                       className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer ${
                         selectedMaterial?.id === material.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                       }`}
@@ -637,9 +635,11 @@ export function Materials() {
         </div>
       </Layout>
 
-      {/* Add Material Modal */}
       {showModal && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+          onClick={(e) => handleClickOutside(e, () => setShowModal(false))}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-gray-900">Add New Material</h2>
@@ -770,9 +770,11 @@ export function Materials() {
         </div>
       )}
 
-      {/* View Material Modal */}
       {showViewModal && selectedMaterial && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+          onClick={(e) => handleClickOutside(e, () => setShowViewModal(false))}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-gray-900">Material Details</h2>
@@ -885,9 +887,11 @@ export function Materials() {
         </div>
       )}
 
-      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+          onClick={(e) => handleClickOutside(e, () => setShowDeleteConfirm(false))}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex items-center mb-4">
               <div className="flex-shrink-0">
@@ -900,7 +904,7 @@ export function Materials() {
 
             <div className="mb-4">
               <p className="text-sm text-gray-500">
-                Are you sure you want to delete {selectedMaterials.length} selected material{selectedMaterials.length > 1 ? 's' : ''}? 
+                Are you sure you want to delete {selectedMaterials.length} selected material{selectedMaterials.length > 1 ? 's' : ''}?
                 This action cannot be undone.
               </p>
             </div>

@@ -294,6 +294,13 @@ export function Documents() {
     return sum + sizeInKB;
   }, 0);
 
+  // Handle modal backdrop click
+  const handleModalBackdropClick = (e: React.MouseEvent, closeFunction: () => void) => {
+    if (e.target === e.currentTarget) {
+      closeFunction();
+    }
+  };
+
   const filteredDocuments = documents.filter((doc) => {
     const matchesSearch = doc.name?.toLowerCase().includes(search.toLowerCase()) ||
                          doc.project?.toLowerCase().includes(search.toLowerCase()) ||
@@ -523,10 +530,17 @@ export function Documents() {
         </div>
       </Layout>
 
-     
+      <footer className="bg-slate-100 border-t border-slate-200 py-4 ml-64">
+        <div className="text-center text-slate-500 text-sm">
+          © 2025 Buildmyhomes.in — All Rights Reserved
+        </div>
+      </footer>
 
       {showUploadForm && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50">
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+          onClick={(e) => handleModalBackdropClick(e, () => setShowUploadForm(false))}
+        >
           <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 relative max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Upload Document</h2>
@@ -597,7 +611,13 @@ export function Documents() {
       )}
 
       {showDeleteConfirm && documentToDelete && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, () => {
+            setShowDeleteConfirm(false);
+            setDocumentToDelete(null);
+          })}
+        >
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex items-center mb-4">
               <div className="flex-shrink-0">
