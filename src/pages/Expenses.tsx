@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CircleCheck as CheckCircle, Clock, Circle as XCircle, Upload, FileDown, CircleAlert as AlertCircle } from "lucide-react";
+import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CheckCircle, Clock, XCircle, Upload, FileDown, AlertCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
@@ -830,19 +830,24 @@ export function Expenses() {
 
   return (
     <div className="h-screen flex flex-col">
+      {/* Success/Error Message Notifications - Fixed at top center */}
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col gap-2">
+        {successMessage && (
+          <div className="px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 bg-green-500 text-white">
+            <CheckCircle className="w-5 h-5" />
+            <span className="font-medium">{successMessage}</span>
+          </div>
+        )}
+        {errorMessage && (
+          <div className="px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 bg-red-500 text-white">
+            <XCircle className="w-5 h-5" />
+            <span className="font-medium">{errorMessage}</span>
+          </div>
+        )}
+      </div>
+
       <Layout title="Financial Transactions" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Success/Error Message Notifications */}
-          {successMessage && (
-            <div className="mb-4 p-4 bg-green-100 text-green-800 rounded-lg shadow">
-              {successMessage}
-            </div>
-          )}
-          {errorMessage && (
-            <div className="mb-4 p-4 bg-red-100 text-red-800 rounded-lg shadow">
-              {errorMessage}
-            </div>
-          )}
 
           {/* Charts Section */}
           <div className="mb-6 bg-white rounded-lg shadow p-6">

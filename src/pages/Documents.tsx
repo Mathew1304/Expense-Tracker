@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Search, Download, Eye, Upload, X, Trash2, AlertTriangle, FileText, Filter, Folder, Grid2x2 as Grid, List as ListIcon } from "lucide-react";
+import { Search, Download, Eye, Upload, X, Trash2, AlertTriangle, FileText, Filter, Folder, Grid2x2 as Grid, List as ListIcon, CheckCircle, XCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -29,6 +29,12 @@ type User = {
   id: string;
   full_name?: string;
   email?: string;
+};
+
+type Notification = {
+  id: string;
+  type: 'success' | 'error';
+  message: string;
 };
 
 const constructionCategories = [
@@ -61,12 +67,21 @@ export function Documents() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [category, setCategory] = useState("");
   const [project, setProject] = useState("");
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
   useEffect(() => {
     fetchDocuments();
     fetchProjects();
     fetchUsers();
   }, [user?.id]);
+
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    const id = Date.now().toString();
+    setNotifications(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  };
 
   async function fetchDocuments() {
     if (!user?.id) return;
@@ -114,17 +129,17 @@ export function Documents() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      alert("Please select a file first");
+      showNotification('error', 'Please select a file first');
       return;
     }
     if (!category || !project) {
-      alert("Please select both a category and project");
+      showNotification('error', 'Please select both a category and project');
       return;
     }
 
     const userId = user?.id;
     if (!userId) {
-      alert("You must be logged in to upload documents");
+      showNotification('error', 'You must be logged in to upload documents');
       return;
     }
 
@@ -149,7 +164,7 @@ export function Documents() {
 
       if (uploadError) {
         console.error("Error uploading file:", uploadError.message);
-        alert("Upload failed");
+        showNotification('error', 'Upload failed');
         return;
       }
 
@@ -167,9 +182,9 @@ export function Documents() {
 
       if (insertError) {
         console.error("Failed to save document metadata:", insertError.message);
-        alert("Failed to save document metadata");
+        showNotification('error', 'Failed to save document metadata');
       } else {
-        alert("Document uploaded successfully!");
+        showNotification('success', 'Document uploaded successfully!');
         setSelectedFile(null);
         setCategory("");
         setProject("");
@@ -178,7 +193,7 @@ export function Documents() {
       }
     } catch (err) {
       console.error("Compression/Upload error:", err);
-      alert("Something went wrong during upload");
+      showNotification('error', 'Something went wrong during upload');
     }
   }
 
@@ -207,7 +222,7 @@ export function Documents() {
 
   async function deleteDocument(document: DocRecord) {
     if (!user?.id) {
-      alert("You must be logged in to delete documents");
+      showNotification('error', 'You must be logged in to delete documents');
       return;
     }
 
@@ -236,7 +251,7 @@ export function Documents() {
 
       if (dbError) {
         console.error("Database delete error:", dbError);
-        alert(`Failed to delete document: ${dbError.message}`);
+        showNotification('error', `Failed to delete document: ${dbError.message}`);
         return;
       }
 
@@ -251,11 +266,11 @@ export function Documents() {
       setShowDeleteConfirm(false);
       setDocumentToDelete(null);
 
-      alert("Document deleted successfully!");
+      showNotification('success', 'Document deleted successfully!');
 
     } catch (error: any) {
       console.error("Error deleting document:", error);
-      alert(`An error occurred while deleting the document: ${error.message}`);
+      showNotification('error', `An error occurred while deleting the document: ${error.message}`);
     }
   }
 
@@ -312,6 +327,26 @@ export function Documents() {
 
   return (
     <div className="h-screen flex flex-col">
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col gap-2">
+        {notifications.map(notification => (
+          <div
+            key={notification.id}
+            className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 ${
+              notification.type === 'success'
+                ? 'bg-green-500 text-white'
+                : 'bg-red-500 text-white'
+            }`}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5" />
+            ) : (
+              <XCircle className="w-5 h-5" />
+            )}
+            <span className="font-medium">{notification.message}</span>
+          </div>
+        ))}
+      </div>
+
       <Layout title="Document Archive" subtitle={getHeaderSubtitle()}>
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -530,11 +565,7 @@ export function Documents() {
         </div>
       </Layout>
 
-      <footer className="bg-slate-100 border-t border-slate-200 py-4 ml-64">
-        <div className="text-center text-slate-500 text-sm">
-          © 2025 Buildmyhomes.in — All Rights Reserved
-        </div>
-      </footer>
+      
 
       {showUploadForm && (
         <div

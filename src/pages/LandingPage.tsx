@@ -134,9 +134,12 @@ export const LandingPage: React.FC = () => {
           <div className="flex justify-between items-center">
             <motion.div
               whileHover={{ scale: 1.05 }}
-              className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent"
+              className="flex items-center gap-2"
             >
-              BuildMyHomes.in
+              <img src="/logo.png" alt="BuildMyHomes Logo" className="w-8 h-8 object-contain" />
+              <span className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-orange-500 bg-clip-text text-transparent">
+                BuildMyHomes.in
+              </span>
             </motion.div>
             <nav className="hidden md:flex gap-8">
               {["Features", "Pricing", "Reviews"].map((item, index) => (
@@ -535,10 +538,11 @@ export const LandingPage: React.FC = () => {
           transition={{ duration: 0.8 }}
         >
           <motion.div
-            className="text-3xl font-bold mb-8"
+            className="flex items-center justify-center gap-3 mb-8"
             whileHover={{ scale: 1.05 }}
           >
-            BuildMyHomes.in
+            <img src="/logo.png" alt="BuildMyHomes Logo" className="w-10 h-10 object-contain" />
+            <span className="text-3xl font-bold">BuildMyHomes.in</span>
           </motion.div>
           <motion.p
             className="text-lg mb-8"
