@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CircleCheck as CheckCircle, Clock, Circle as XCircle, Upload, FileDown, CircleAlert as AlertCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
 import { useAuth } from "../contexts/AuthContext";
 import Papa from "papaparse";
+import { downloadCSVTemplate, parseCSVFile, validateCSVData, mapCSVRowsToExpenses, ValidationError } from "../lib/csvUtils";
 import {
   LineChart,
   Line,
@@ -150,6 +151,11 @@ export function Expenses() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [creatingPaymentLink, setCreatingPaymentLink] = useState(false);
+  const [showBulkUploadModal, setShowBulkUploadModal] = useState(false);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
+  const [validRowCount, setValidRowCount] = useState(0);
   const itemsPerPage = 10;
 
   useEffect(() => {
@@ -269,6 +275,73 @@ export function Expenses() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleCSVFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      setErrorMessage('Please upload a CSV file');
+      return;
+    }
+
+    setCsvFile(file);
+    setValidationErrors([]);
+    setValidRowCount(0);
+
+    try {
+      const rows = await parseCSVFile(file);
+      const validation = validateCSVData(rows, projects, phases);
+
+      setValidationErrors(validation.errors);
+      setValidRowCount(validation.validRows);
+
+      if (validation.isValid) {
+        setSuccessMessage(`CSV file is valid! ${validation.validRows} rows ready to upload.`);
+      } else {
+        setErrorMessage(`CSV validation failed. ${validation.errors.length} errors found. Please fix them before uploading.`);
+      }
+    } catch (error) {
+      console.error('Error parsing CSV:', error);
+      setErrorMessage('Failed to parse CSV file. Please check the file format.');
+    }
+  };
+
+  const handleBulkUpload = async () => {
+    if (!csvFile || validationErrors.length > 0) {
+      setErrorMessage('Please fix all validation errors before uploading');
+      return;
+    }
+
+    setUploadingFile(true);
+
+    try {
+      const rows = await parseCSVFile(csvFile);
+      const expenseData = mapCSVRowsToExpenses(rows, projects, phases, user?.id || '');
+
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert(expenseData)
+        .select();
+
+      if (error) throw error;
+
+      setSuccessMessage(`Successfully uploaded ${data.length} transactions!`);
+      setCsvFile(null);
+      setValidationErrors([]);
+      setValidRowCount(0);
+      setShowBulkUploadModal(false);
+
+      await fetchTransactions();
+
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error) {
+      console.error('Error uploading expenses:', error);
+      setErrorMessage('Failed to upload expenses. Please try again.');
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   // Create a simple payment link without Razorpay API (for testing)
@@ -816,7 +889,7 @@ export function Expenses() {
                     dataKey="expense"
                     stroke="#ef4444"
                     strokeWidth={2}
-                    name="Expenses"
+                    name=""
                   />
                 </LineChart>
               </ResponsiveContainer>
@@ -826,6 +899,18 @@ export function Expenses() {
           {/* Header Section with New Buttons */}
           <div className="flex justify-between items-center mb-6 gap-3 flex-wrap">
             <div className="flex gap-3">
+              <button
+                onClick={downloadCSVTemplate}
+                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <FileDown className="mr-2" size={18} /> Download Template
+              </button>
+              <button
+                onClick={() => setShowBulkUploadModal(true)}
+                className="flex items-center bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+              >
+                <Upload className="mr-2" size={18} /> Bulk Upload
+              </button>
               <button
                 onClick={exportToCSV}
                 className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
@@ -1830,6 +1915,211 @@ export function Expenses() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Upload Modal */}
+      {showBulkUploadModal && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={handleClickOutside}
+        >
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[90vh] overflow-hidden">
+            <div className="flex justify-between items-center p-6 border-b">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900">Bulk Upload Expenses</h2>
+                <p className="text-sm text-gray-600 mt-1">Upload a CSV file to add multiple expenses at once</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowBulkUploadModal(false);
+                  setCsvFile(null);
+                  setValidationErrors([]);
+                  setValidRowCount(0);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-160px)]">
+              {/* Instructions */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div className="flex items-start">
+                  <AlertCircle className="w-5 h-5 text-blue-600 mt-0.5 mr-3 flex-shrink-0" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-2">Instructions:</p>
+                    <ol className="list-decimal list-inside space-y-1">
+                      <li>Download the CSV template using the "Download Template" button</li>
+                      <li>Fill in your expense data following the example format</li>
+                      <li>Ensure project names and phase names match exactly with existing data</li>
+                      <li>Use the format DD-MM-YYYY for dates (e.g., 07-10-2025)</li>
+                      <li>Upload the completed CSV file</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+
+              {/* File Upload */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select CSV File
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="file"
+                    accept=".csv"
+                    onChange={handleCSVFileSelect}
+                    className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none"
+                  />
+                  {csvFile && (
+                    <button
+                      onClick={() => {
+                        setCsvFile(null);
+                        setValidationErrors([]);
+                        setValidRowCount(0);
+                      }}
+                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Remove file"
+                    >
+                      <X size={20} />
+                    </button>
+                  )}
+                </div>
+                {csvFile && (
+                  <p className="text-sm text-gray-600 mt-2">
+                    Selected: {csvFile.name} ({(csvFile.size / 1024).toFixed(2)} KB)
+                  </p>
+                )}
+              </div>
+
+              {/* Validation Summary */}
+              {csvFile && (
+                <div className="mb-6">
+                  <div className={`rounded-lg p-4 ${validationErrors.length === 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div className="flex items-start">
+                      {validationErrors.length === 0 ? (
+                        <CheckCircle className="w-5 h-5 text-green-600 mt-0.5 mr-3 flex-shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 mr-3 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <p className={`font-medium ${validationErrors.length === 0 ? 'text-green-800' : 'text-red-800'}`}>
+                          {validationErrors.length === 0
+                            ? `Validation Passed! ${validRowCount} rows ready to upload.`
+                            : `Validation Failed: ${validationErrors.length} error(s) found`
+                          }
+                        </p>
+                        {validRowCount > 0 && validationErrors.length > 0 && (
+                          <p className="text-sm text-gray-700 mt-1">
+                            {validRowCount} valid row(s) out of {validRowCount + validationErrors.length} total rows
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Validation Errors */}
+              {validationErrors.length > 0 && (
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-900 mb-3">Validation Errors:</h3>
+                  <div className="bg-white border border-gray-200 rounded-lg max-h-60 overflow-y-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Row</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Field</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Error</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {validationErrors.slice(0, 50).map((error, index) => (
+                          <tr key={index} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-sm text-gray-900">{error.row}</td>
+                            <td className="px-4 py-2 text-sm text-gray-900">{error.field}</td>
+                            <td className="px-4 py-2 text-sm text-red-600">{error.message}</td>
+                            <td className="px-4 py-2 text-sm text-gray-600 truncate max-w-xs">
+                              {error.value !== undefined ? String(error.value) : '-'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {validationErrors.length > 50 && (
+                      <div className="p-3 text-center text-sm text-gray-600 bg-gray-50">
+                        ... and {validationErrors.length - 50} more errors
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Valid Columns Reference */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-3">CSV Column Reference:</h3>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="font-medium text-gray-700">Required Columns:</p>
+                    <ul className="list-disc list-inside text-gray-600 mt-1 space-y-1">
+                      <li>project_name</li>
+                      <li>phase_name</li>
+                      <li>category</li>
+                      <li>amount</li>
+                      <li>date (DD-MM-YYYY)</li>
+                      <li>payment_method</li>
+                      <li>type (expense/income)</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <p className="font-medium text-gray-700">Optional Columns:</p>
+                    <ul className="list-disc list-inside text-gray-600 mt-1 space-y-1">
+                      <li>gst_amount</li>
+                      <li>source</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowBulkUploadModal(false);
+                  setCsvFile(null);
+                  setValidationErrors([]);
+                  setValidRowCount(0);
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleBulkUpload}
+                disabled={!csvFile || validationErrors.length > 0 || uploadingFile}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {uploadingFile ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload size={18} />
+                    Upload {validRowCount > 0 ? `${validRowCount} Rows` : ''}
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

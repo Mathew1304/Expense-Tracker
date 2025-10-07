@@ -427,7 +427,7 @@ export function Dashboard() {
                       stroke="#10B981"
                       fill="#10B981"
                       fillOpacity={0.6}
-                      name="Income"
+                      name=""
                     />
                     <Area
                       type="monotone"
@@ -436,14 +436,14 @@ export function Dashboard() {
                       stroke="#EF4444"
                       fill="#EF4444"
                       fillOpacity={0.6}
-                      name="Expenses"
+                      name=""
                     />
                     <Line
                       type="monotone"
                       dataKey="profit"
                       stroke="#3B82F6"
                       strokeWidth={3}
-                      name="Net Profit"
+                      name=""
                     />
                   </AreaChart>
                 </ResponsiveContainer>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Package, Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, Building, Tag, DollarSign, Hash, X, AlertTriangle, CheckCircle } from "lucide-react";
+import { Package, Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, Building, Tag, DollarSign, Hash, X, AlertTriangle, CheckCircle, FileText } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -12,7 +12,7 @@ type Material = {
   project_id: string;
   project_name?: string;
   status?: string;
-  last_updated?: string;
+  updated_at?: string;
   created_by?: string;
   description?: string;
   category?: string;
@@ -39,11 +39,8 @@ export function Materials() {
   const [supplierFilter, setSupplierFilter] = useState('all');
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null);
-  const [sortConfig, setSortConfig] = useState<{ key: string; direction: string } | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<Material | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
@@ -61,8 +58,19 @@ export function Materials() {
     specifications: "",
     status: "In Stock",
   });
-
-  const itemsPerPage = 12;
+  const [editMaterial, setEditMaterial] = useState({
+    name: "",
+    description: "",
+    category: "Cement & Concrete",
+    unit: "Kg",
+    qty_required: "",
+    unit_cost: "",
+    project_id: "",
+    supplier: "",
+    hsn: "",
+    specifications: "",
+    status: "In Stock",
+  });
 
   const categories = [
     'Cement & Concrete',
@@ -80,7 +88,7 @@ export function Materials() {
   useEffect(() => {
     fetchMaterials();
     fetchProjects();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (showSuccessMessage) {
@@ -93,25 +101,32 @@ export function Materials() {
   }, [showSuccessMessage]);
 
   const fetchMaterials = async () => {
+    if (!user?.id) return;
+
     setLoading(true);
     setError(null);
 
     const { data, error } = await supabase
       .from("materials")
-      .select(
-        `
+      .select(`
         id,
         name,
+        description,
+        category,
+        unit,
         qty_required,
         unit_cost,
         project_id,
         projects ( name ),
+        supplier,
+        hsn,
+        specifications,
         status,
         updated_at,
         created_by
-      `
-      )
-      .eq("created_by", user?.id);
+      `)
+      .eq("created_by", user.id)
+      .order("updated_at", { ascending: false });
 
     if (error) {
       console.error("Fetch error:", error);
@@ -120,20 +135,18 @@ export function Materials() {
       const mapped = (data || []).map((m: any) => ({
         id: m.id,
         name: m.name,
-        description: `Construction material for ${m.projects?.name || 'project'}`,
-        category: categories[Math.floor(Math.random() * categories.length)],
-        unit: units[Math.floor(Math.random() * units.length)],
-        qty_required: m.qty_required,
-        unit_cost: m.unit_cost,
+        description: m.description || `Construction material for ${m.projects?.name || 'project'}`,
+        category: m.category || 'Cement & Concrete',
+        unit: m.unit || 'Kg',
+        qty_required: m.qty_required || 0,
+        unit_cost: m.unit_cost || 0,
         project_id: m.project_id,
         project_name: m.projects?.name || "Unknown",
-        supplier: `Supplier ${Math.floor(Math.random() * 5) + 1}`,
-        hsn: `${Math.floor(Math.random() * 90000000) + 10000000}`,
-        specifications: "Standard construction grade material",
+        supplier: m.supplier || 'Not Specified',
+        hsn: m.hsn || '',
+        specifications: m.specifications || 'Standard construction grade material',
         status: m.status || "In Stock",
-        last_updated: m.updated_at
-          ? new Date(m.updated_at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })
-          : "N/A",
+        updated_at: m.updated_at,
         created_by: m.created_by,
       }));
       setMaterials(mapped);
@@ -142,10 +155,13 @@ export function Materials() {
   };
 
   const fetchProjects = async () => {
+    if (!user?.id) return;
+
     const { data, error } = await supabase
       .from("projects")
       .select("id, name")
-      .eq("created_by", user?.id);
+      .eq("created_by", user.id)
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Fetch projects error:", error);
@@ -161,15 +177,21 @@ export function Materials() {
       !newMaterial.unit_cost ||
       !newMaterial.project_id
     ) {
-      alert("Please fill all required fields");
+      alert("Please fill all required fields (Name, Quantity, Unit Cost, Project)");
       return;
     }
 
     const materialData = {
       name: newMaterial.name.trim(),
+      description: newMaterial.description.trim() || null,
+      category: newMaterial.category,
+      unit: newMaterial.unit,
       qty_required: Number(newMaterial.qty_required),
       unit_cost: Number(newMaterial.unit_cost),
       project_id: newMaterial.project_id,
+      supplier: newMaterial.supplier.trim() || null,
+      hsn: newMaterial.hsn.trim() || null,
+      specifications: newMaterial.specifications.trim() || null,
       status: newMaterial.status,
       created_by: user?.id,
     };
@@ -200,29 +222,67 @@ export function Materials() {
     }
   };
 
-  const handleUpdateMaterial = async (id: string) => {
-    if (editValues) {
-      const { error } = await supabase
-        .from("materials")
-        .update({
-          name: editValues.name,
-          qty_required: Number(editValues.qty_required),
-          unit_cost: Number(editValues.unit_cost),
-          project_id: editValues.project_id,
-          status: editValues.status,
-        })
-        .eq("id", id)
-        .eq("created_by", user?.id);
+  const handleEditClick = (material: Material) => {
+    setSelectedMaterial(material);
+    setEditMaterial({
+      name: material.name,
+      description: material.description || "",
+      category: material.category || "Cement & Concrete",
+      unit: material.unit || "Kg",
+      qty_required: String(material.qty_required),
+      unit_cost: String(material.unit_cost),
+      project_id: material.project_id,
+      supplier: material.supplier || "",
+      hsn: material.hsn || "",
+      specifications: material.specifications || "",
+      status: material.status || "In Stock",
+    });
+    setShowEditModal(true);
+  };
 
-      if (error) {
-        alert("Error updating material: " + error.message);
-      } else {
-        setEditingId(null);
-        setEditValues(null);
-        setSuccessMessage("Material updated successfully!");
-        setShowSuccessMessage(true);
-        fetchMaterials();
-      }
+  const handleUpdateMaterial = async () => {
+    if (!selectedMaterial) return;
+
+    if (
+      !editMaterial.name.trim() ||
+      !editMaterial.qty_required ||
+      !editMaterial.unit_cost ||
+      !editMaterial.project_id
+    ) {
+      alert("Please fill all required fields (Name, Quantity, Unit Cost, Project)");
+      return;
+    }
+
+    const updateData = {
+      name: editMaterial.name.trim(),
+      description: editMaterial.description.trim() || null,
+      category: editMaterial.category,
+      unit: editMaterial.unit,
+      qty_required: Number(editMaterial.qty_required),
+      unit_cost: Number(editMaterial.unit_cost),
+      project_id: editMaterial.project_id,
+      supplier: editMaterial.supplier.trim() || null,
+      hsn: editMaterial.hsn.trim() || null,
+      specifications: editMaterial.specifications.trim() || null,
+      status: editMaterial.status,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from("materials")
+      .update(updateData)
+      .eq("id", selectedMaterial.id)
+      .eq("created_by", user?.id);
+
+    if (error) {
+      console.error("Update error:", error);
+      alert("Error updating material: " + error.message);
+    } else {
+      setShowEditModal(false);
+      setSelectedMaterial(null);
+      setSuccessMessage("Material updated successfully!");
+      setShowSuccessMessage(true);
+      fetchMaterials();
     }
   };
 
@@ -261,19 +321,13 @@ export function Materials() {
   const handleDeleteMaterial = (id: string) => {
     if (window.confirm('Are you sure you want to delete this material? This action cannot be undone.')) {
       setSelectedMaterials([id]);
-      handleDeleteMaterials();
+      setTimeout(() => handleDeleteMaterials(), 100);
     }
   };
 
   const handleViewMaterial = (material: Material) => {
     setSelectedMaterial(material);
     setShowViewModal(true);
-  };
-
-  const handleEditClick = (material: Material) => {
-    setSelectedMaterial(material);
-    setEditingId(material.id);
-    setEditValues({ ...material });
   };
 
   const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>, closeModal: () => void) => {
@@ -310,10 +364,10 @@ export function Materials() {
       'Steel & Metal': 'bg-blue-100 text-blue-800',
       'Bricks & Blocks': 'bg-red-100 text-red-800',
       'Sand & Aggregates': 'bg-yellow-100 text-yellow-800',
-      'Tiles & Flooring': 'bg-purple-100 text-purple-800',
-      'Paints & Finishes': 'bg-green-100 text-green-800',
+      'Tiles & Flooring': 'bg-green-100 text-green-800',
+      'Paints & Finishes': 'bg-emerald-100 text-emerald-800',
       'Electrical': 'bg-orange-100 text-orange-800',
-      'Plumbing': 'bg-indigo-100 text-indigo-800'
+      'Plumbing': 'bg-cyan-100 text-cyan-800'
     };
     return colors[category] || 'bg-slate-100 text-slate-800';
   };
@@ -451,9 +505,9 @@ export function Materials() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-slate-600 mb-1">Categories</p>
-                    <p className="text-2xl font-bold text-purple-600">{categoriesCount}</p>
+                    <p className="text-2xl font-bold text-slate-900">{categoriesCount}</p>
                   </div>
-                  <div className="p-3 bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg">
+                  <div className="p-3 bg-gradient-to-br from-slate-500 to-slate-600 rounded-lg">
                     <Tag className="w-6 h-6 text-white" />
                   </div>
                 </div>
@@ -522,13 +576,13 @@ export function Materials() {
                       onClick={() => setSelectedMaterial(material)}
                     >
                       <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                        <div className="flex items-center space-x-3 flex-1">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
                             <Package className="w-6 h-6 text-white" />
                           </div>
-                          <div>
-                            <h3 className="text-lg font-semibold text-slate-900">{material.name}</h3>
-                            <p className="text-sm text-slate-600">{material.description}</p>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="text-lg font-semibold text-slate-900 truncate">{material.name}</h3>
+                            <p className="text-sm text-slate-600 truncate">{material.description}</p>
                           </div>
                         </div>
                         <input
@@ -542,7 +596,7 @@ export function Materials() {
                                 : prev.filter((id) => id !== material.id)
                             );
                           }}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded flex-shrink-0"
                         />
                       </div>
 
@@ -559,22 +613,25 @@ export function Materials() {
 
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div className="flex items-center space-x-2">
-                            <Hash className="w-4 h-4 text-slate-400" />
+                            <Hash className="w-4 h-4 text-slate-400 flex-shrink-0" />
                             <span className="text-slate-600">Qty: {material.qty_required}</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            <Building className="w-4 h-4 text-slate-400" />
-                            <span className="text-slate-600 truncate">{material.supplier}</span>
+                            <Building className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                            <span className="text-slate-600 truncate" title={material.supplier}>
+                              {material.supplier}
+                            </span>
                           </div>
                         </div>
 
                         {material.hsn && (
-                          <div className="text-xs text-slate-500">
-                            HSN: {material.hsn}
+                          <div className="flex items-center space-x-2 text-xs text-slate-500">
+                            <FileText className="w-3 h-3 flex-shrink-0" />
+                            <span>HSN: {material.hsn}</span>
                           </div>
                         )}
 
-                        <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded">
+                        <div className="text-xs text-slate-600 bg-slate-50 p-2 rounded truncate">
                           Project: {material.project_name}
                         </div>
 
@@ -591,7 +648,7 @@ export function Materials() {
 
                       <div className="flex items-center justify-between pt-4 border-t border-slate-200">
                         <div className="text-xs text-slate-500">
-                          Updated {material.last_updated ? new Date(material.last_updated).toLocaleDateString('en-IN') : 'N/A'}
+                          Updated {material.updated_at ? new Date(material.updated_at).toLocaleDateString('en-IN') : 'N/A'}
                         </div>
                         <div className="flex items-center space-x-1">
                           <button
@@ -635,6 +692,7 @@ export function Materials() {
         </div>
       </Layout>
 
+      {/* Add Material Modal */}
       {showModal && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
@@ -648,7 +706,7 @@ export function Materials() {
               </button>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 space-y-0">
+            <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Material Name *</label>
                 <input
@@ -729,6 +787,16 @@ export function Materials() {
                 />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
+                <input
+                  type="text"
+                  placeholder="Enter HSN code"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={newMaterial.hsn}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, hsn: e.target.value })}
+                />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select
                   className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -744,10 +812,20 @@ export function Materials() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
                 <textarea
                   placeholder="Enter material description"
-                  rows={3}
+                  rows={2}
                   className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
                   value={newMaterial.description}
                   onChange={(e) => setNewMaterial({ ...newMaterial, description: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Specifications</label>
+                <textarea
+                  placeholder="Enter specifications"
+                  rows={2}
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  value={newMaterial.specifications}
+                  onChange={(e) => setNewMaterial({ ...newMaterial, specifications: e.target.value })}
                 />
               </div>
             </div>
@@ -770,6 +848,163 @@ export function Materials() {
         </div>
       )}
 
+      {/* Edit Material Modal */}
+      {showEditModal && selectedMaterial && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
+          onClick={(e) => handleClickOutside(e, () => setShowEditModal(false))}
+        >
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Edit Material</h2>
+              <button onClick={() => setShowEditModal(false)}>
+                <X className="h-5 w-5 text-gray-500 hover:text-gray-700" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Material Name *</label>
+                <input
+                  type="text"
+                  placeholder="Enter material name"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.name}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, name: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.category}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, category: e.target.value })}
+                >
+                  {categories.map(category => (
+                    <option key={category} value={category}>{category}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantity Required *</label>
+                <input
+                  type="number"
+                  placeholder="Enter quantity"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.qty_required}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, qty_required: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.unit}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, unit: e.target.value })}
+                >
+                  {units.map(unit => (
+                    <option key={unit} value={unit}>{unit}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Unit Cost *</label>
+                <input
+                  type="number"
+                  placeholder="Enter unit cost"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.unit_cost}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, unit_cost: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Project *</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.project_id}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, project_id: e.target.value })}
+                >
+                  <option value="">Select Project</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id}>
+                      {project.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
+                <input
+                  type="text"
+                  placeholder="Enter supplier name"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.supplier}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, supplier: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">HSN Code</label>
+                <input
+                  type="text"
+                  placeholder="Enter HSN code"
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.hsn}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, hsn: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={editMaterial.status}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, status: e.target.value })}
+                >
+                  <option value="In Stock">In Stock</option>
+                  <option value="Ordered">Ordered</option>
+                  <option value="Out of Stock">Out of Stock</option>
+                </select>
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                <textarea
+                  placeholder="Enter material description"
+                  rows={2}
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  value={editMaterial.description}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, description: e.target.value })}
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Specifications</label>
+                <textarea
+                  placeholder="Enter specifications"
+                  rows={2}
+                  className="border border-gray-300 rounded-lg w-full px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  value={editMaterial.specifications}
+                  onChange={(e) => setEditMaterial({ ...editMaterial, specifications: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
+                onClick={() => setShowEditModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                onClick={handleUpdateMaterial}
+              >
+                Update Material
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Material Modal */}
       {showViewModal && selectedMaterial && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
@@ -785,7 +1020,7 @@ export function Materials() {
 
             <div className="space-y-6">
               <div className="flex items-center space-x-4">
-                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+                <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
                   <Package className="w-8 h-8 text-white" />
                 </div>
                 <div>
@@ -812,7 +1047,7 @@ export function Materials() {
                     </div>
                     <div>
                       <span className="text-sm text-slate-500">HSN Code</span>
-                      <p className="font-medium">{selectedMaterial.hsn}</p>
+                      <p className="font-medium">{selectedMaterial.hsn || 'Not Specified'}</p>
                     </div>
                   </div>
                 </div>
@@ -852,7 +1087,9 @@ export function Materials() {
                 <h4 className="text-lg font-semibold text-slate-900 mb-3">Project Information</h4>
                 <div className="bg-slate-50 p-4 rounded-lg">
                   <p className="font-medium">{selectedMaterial.project_name}</p>
-                  <p className="text-sm text-slate-500 mt-1">Last updated: {selectedMaterial.last_updated}</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Last updated: {selectedMaterial.updated_at ? new Date(selectedMaterial.updated_at).toLocaleString('en-IN') : 'N/A'}
+                  </p>
                 </div>
               </div>
 
@@ -887,6 +1124,7 @@ export function Materials() {
         </div>
       )}
 
+      {/* Delete Confirmation Modal */}
       {showDeleteConfirm && (
         <div
           className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50"
