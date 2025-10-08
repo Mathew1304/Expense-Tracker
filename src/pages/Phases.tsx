@@ -72,6 +72,9 @@ export function Phases() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [phaseToDelete, setPhaseToDelete] = useState<Phase | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [photoToDelete, setPhotoToDelete] = useState<PhasePhoto | null>(null);
+  const [showPhotoDeleteConfirm, setShowPhotoDeleteConfirm] = useState(false);
+  const [deletingPhoto, setDeletingPhoto] = useState(false);
 
   const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
     userRole ?? ""
@@ -279,6 +282,54 @@ export function Phases() {
       .eq("phase_id", phaseId)
       .order("created_at", { ascending: false });
     if (!error) setPhasePhotos(data || []);
+  };
+
+  // Delete phase photo
+  const handleDeletePhoto = async () => {
+    if (!photoToDelete) return;
+
+    setDeletingPhoto(true);
+    try {
+      // Extract file path from the photo URL
+      const url = photoToDelete.photo_url;
+      const urlParts = url.split('/phase-photos/');
+
+      if (urlParts.length > 1) {
+        const filePath = `phase-photos/${urlParts[1].split('?')[0]}`;
+
+        // Delete from storage
+        const { error: storageError } = await supabase.storage
+          .from('phase-photos')
+          .remove([filePath]);
+
+        if (storageError) {
+          console.error('Storage deletion error:', storageError);
+        }
+      }
+
+      // Delete from database
+      const { error: dbError } = await supabase
+        .from('phase_photos')
+        .delete()
+        .eq('id', photoToDelete.id);
+
+      if (dbError) {
+        throw dbError;
+      }
+
+      // Refresh photos
+      if (viewPhase) {
+        await fetchPhasePhotos(viewPhase.id);
+      }
+
+      setShowPhotoDeleteConfirm(false);
+      setPhotoToDelete(null);
+    } catch (error) {
+      console.error('Error deleting photo:', error);
+      alert('Failed to delete photo. Please try again.');
+    } finally {
+      setDeletingPhoto(false);
+    }
   };
 
   // Fetch comments
@@ -867,14 +918,27 @@ export function Phases() {
                     {phasePhotos.map((p) => (
                       <div
                         key={p.id}
-                        className="rounded-lg shadow-sm bg-white cursor-pointer hover:shadow-md transition-shadow"
-                        onClick={() => setFullScreenImage(p.photo_url)}
+                        className="relative rounded-lg shadow-sm bg-white hover:shadow-md transition-shadow group"
                       >
                         <img
                           src={p.photo_url}
                           alt="Phase"
-                          className="w-full h-32 object-cover rounded-lg"
+                          className="w-full h-32 object-cover rounded-lg cursor-pointer"
+                          onClick={() => setFullScreenImage(p.photo_url)}
                         />
+                        {canManage && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPhotoToDelete(p);
+                              setShowPhotoDeleteConfirm(true);
+                            }}
+                            className="absolute top-2 right-2 bg-red-600 text-white p-1.5 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-700 shadow-lg"
+                            title="Delete photo"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -1003,6 +1067,73 @@ export function Phases() {
                   className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                 >
                   Delete Phase
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Photo Delete Confirmation Modal */}
+        {showPhotoDeleteConfirm && photoToDelete && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) {
+                setShowPhotoDeleteConfirm(false);
+                setPhotoToDelete(null);
+              }
+            }}
+          >
+            <div className="bg-white rounded-lg p-6 w-full max-w-md">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0">
+                  <AlertTriangle className="h-8 w-8 text-red-600" />
+                </div>
+                <div className="ml-3">
+                  <h3 className="text-lg font-medium text-gray-900">Delete Photo</h3>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <p className="text-sm text-gray-500">
+                  Are you sure you want to delete this photo? This action cannot be undone.
+                </p>
+                <div className="mt-4 flex justify-center">
+                  <img
+                    src={photoToDelete.photo_url}
+                    alt="Photo to delete"
+                    className="max-w-full h-32 object-cover rounded-lg border-2 border-red-200"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowPhotoDeleteConfirm(false);
+                    setPhotoToDelete(null);
+                  }}
+                  disabled={deletingPhoto}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeletePhoto}
+                  disabled={deletingPhoto}
+                  className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {deletingPhoto ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                      Deleting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      Delete Photo
+                    </>
+                  )}
                 </button>
               </div>
             </div>
