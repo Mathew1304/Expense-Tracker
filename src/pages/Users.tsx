@@ -3,7 +3,7 @@ import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import { sendUserCredentialsEmail, sendCredentialsEmailFallback } from "../lib/emailService";
 import { Layout } from "../components/Layout/Layout";
-import { Users as UsersIcon, Plus, Search, Mail, Phone, Shield, MoveVertical as MoreVertical, ListFilter as Filter, CreditCard as Edit2, Trash2, Eye, Grid2x2 as Grid, List, Building, Calendar, Clock, X, Check, User, AlertCircle as AlertCircle } from 'lucide-react';
+import { Users as UsersIcon, Plus, Search, Mail, Phone, Shield, MoveVertical as MoreVertical, ListFilter as Filter, CreditCard as Edit2, Trash2, Eye, Grid2x2 as Grid, List, Building, Calendar, Clock, X, Check, User, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 
 type User = {
   id: string;
@@ -36,6 +36,12 @@ type Project = {
   name: string;
 };
 
+type Notification = {
+  id: string;
+  type: 'success' | 'error';
+  message: string;
+};
+
 export function Users() {
   const { profile } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
@@ -54,6 +60,7 @@ export function Users() {
   const [showForm, setShowForm] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [formData, setFormData] = useState({
@@ -77,6 +84,17 @@ export function Users() {
     status: "",
   });
 
+  // Notification State
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const showNotification = (type: 'success' | 'error', message: string) => {
+    const id = Date.now().toString();
+    setNotifications(prev => [...prev, { id, type, message }]);
+    setTimeout(() => {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+    }, 3000);
+  };
+
   // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
     async function fetchData() {
@@ -95,7 +113,7 @@ export function Users() {
       // Fetch only users created by this admin
       const { data: usersData, error: usersError } = await supabase
         .from("users")
-        .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+        .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
         .eq("created_by", user.id)
         .order("created_at", { ascending: false });
 
@@ -105,7 +123,7 @@ export function Users() {
         // Transform data to match UI expectations
         const transformedUsers = usersData.map(u => ({
           ...u,
-          phone: u.phone || '+91 XXXXX XXXXX',
+          phone: u.phone || '',
           department: u.roles?.role_name || 'No Department',
           status: 'Active', // Default status
           lastLogin: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -188,7 +206,7 @@ export function Users() {
       const result = await sendUserCredentialsEmail(emailParams);
 
       if (result.success) {
-        alert('Welcome email sent successfully!');
+        showNotification('success', 'Welcome email sent successfully!');
       } else {
         throw new Error(result.error || 'Failed to send email');
       }
@@ -204,7 +222,7 @@ export function Users() {
       };
 
       const fallbackMessage = await sendCredentialsEmailFallback(emailParams);
-      alert(`Email service unavailable. ${fallbackMessage}\n\nPassword: ${generatedPassword}`);
+      showNotification('error', `Email service unavailable. ${fallbackMessage}. Password: ${generatedPassword}`);
     }
 
     setSendingEmail(false);
@@ -226,17 +244,18 @@ export function Users() {
         {
           name: formData.name,
           email: formData.email,
+          phone: formData.phone || null,
           role_id: formData.role_id || null,
           project_id: formData.project_id || null,
           created_by: user.id,
         },
       ])
-      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+      .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
       .single();
 
     if (insertError) {
       console.error("Insert failed:", insertError.message);
-      alert("Failed to add user. Please try again.");
+      showNotification('error', 'Failed to add user. Please try again.');
       return;
     }
 
@@ -246,7 +265,7 @@ export function Users() {
     // Transform new user data
     const transformedUser = {
       ...newUser,
-      phone: '+91 XXXXX XXXXX',
+      phone: newUser.phone || '',
       department: newUser.roles?.role_name || 'No Department',
       status: 'Active',
       lastLogin: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
@@ -285,43 +304,51 @@ export function Users() {
       department: user.department || '',
       status: user.status || 'Active',
     });
+    setShowEditModal(true);
   }
 
   // Cancel editing
   function cancelEdit() {
     setEditingUser(null);
     setEditForm({ name: "", email: "", phone: "", role_id: "", department: "", status: "" });
+    setShowEditModal(false);
   }
 
   // Save edits
-  async function handleEditSubmit(userId: string) {
+  async function handleEditSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingUser) return;
+
     const { data, error } = await supabase
       .from("users")
       .update({
         name: editForm.name,
         email: editForm.email,
+        phone: editForm.phone || null,
         role_id: editForm.role_id || null,
       })
-      .eq("id", userId)
-      .select("id, name, email, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+      .eq("id", editingUser.id)
+      .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
       .single();
 
     if (error) {
       console.error("Update failed:", error.message);
+      showNotification('error', 'Failed to update user. Please try again.');
       return;
     }
 
     // Transform updated user data
     const transformedUser = {
       ...data,
-      phone: editForm.phone || '+91 XXXXX XXXXX',
+      phone: data.phone || '',
       department: data.roles?.role_name || 'No Department',
       status: editForm.status || 'Active',
       lastLogin: data.created_at ? new Date(data.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
       joinDate: data.created_at ? new Date(data.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
     };
 
-    setUsers(users.map((u) => (u.id === userId ? transformedUser : u)));
+    setUsers(users.map((u) => (u.id === editingUser.id ? transformedUser : u)));
+    showNotification('success', 'User updated successfully!');
     cancelEdit();
   }
 
@@ -390,6 +417,27 @@ export function Users() {
 
   return (
     <div className="h-screen flex flex-col">
+      {/* Success/Error Message Notifications - Fixed at top center */}
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-[60] flex flex-col gap-2">
+        {notifications.map(notification => (
+          <div
+            key={notification.id}
+            className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 ${
+              notification.type === 'success'
+                ? 'bg-green-500 text-white'
+                : 'bg-red-500 text-white'
+            }`}
+          >
+            {notification.type === 'success' ? (
+              <CheckCircle className="w-5 h-5" />
+            ) : (
+              <XCircle className="w-5 h-5" />
+            )}
+            <span className="font-medium">{notification.message}</span>
+          </div>
+        ))}
+      </div>
+
       <Layout title="Users" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
           <div className="p-6 space-y-6">
@@ -542,7 +590,7 @@ export function Users() {
                       </div>
                       <div className="flex items-center space-x-2 text-sm text-slate-600">
                         <Phone className="w-4 h-4" />
-                        <span>{user.phone || '+91 XXXXX XXXXX'}</span>
+                        <span>{user.phone || 'Not Provided'}</span>
                       </div>
                       <div className="flex items-center space-x-2 text-sm text-slate-600">
                         <Building className="w-4 h-4" />
@@ -610,142 +658,69 @@ export function Users() {
                           onClick={() => setSelectedUser(user)}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {editingUser?.id === user.id ? (
-                              <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                <input
-                                  type="text"
-                                  value={editForm.name}
-                                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                />
-                                <input
-                                  type="email"
-                                  value={editForm.email}
-                                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                                  className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
-                                />
+                            <div className="flex items-center space-x-3">
+                              <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
+                                <span className="text-white font-medium text-sm">
+                                  {user.name.split(' ').map(n => n[0]).join('')}
+                                </span>
                               </div>
-                            ) : (
-                              <div className="flex items-center space-x-3">
-                                <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                                  <span className="text-white font-medium text-sm">
-                                    {user.name.split(' ').map(n => n[0]).join('')}
-                                  </span>
-                                </div>
-                                <div>
-                                  <p className="font-medium text-slate-900">{user.name}</p>
-                                  <div className="flex items-center space-x-2 text-sm text-slate-500">
-                                    <Mail className="w-3 h-3" />
-                                    <span>{user.email}</span>
-                                  </div>
+                              <div>
+                                <p className="font-medium text-slate-900">{user.name}</p>
+                                <div className="flex items-center space-x-2 text-sm text-slate-500">
+                                  <Mail className="w-3 h-3" />
+                                  <span>{user.email}</span>
                                 </div>
                               </div>
-                            )}
+                            </div>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {editingUser?.id === user.id ? (
-                              <select
-                                value={editForm.role_id}
-                                onChange={(e) => setEditForm({ ...editForm, role_id: e.target.value })}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <option value="">Select role</option>
-                                {roles.map((r) => (
-                                  <option key={r.id} value={r.id}>
-                                    {r.role_name}
-                                  </option>
-                                ))}
-                              </select>
-                            ) : (
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(user.roles?.role_name || '')}`}>
-                                {user.roles?.role_name || 'No Role'}
-                              </span>
-                            )}
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(user.roles?.role_name || '')}`}>
+                              {user.roles?.role_name || 'No Role'}
+                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
                             {user.projects?.name || 'No Project'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            {editingUser?.id === user.id ? (
-                              <select
-                                value={editForm.status}
-                                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                className="border border-gray-300 rounded px-2 py-1 text-sm"
-                                onClick={(e) => e.stopPropagation()}
-                              >
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                                <option value="Pending">Pending</option>
-                              </select>
-                            ) : (
-                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status || 'Active')}`}>
-                                {user.status || 'Active'}
-                              </span>
-                            )}
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status || 'Active')}`}>
+                              {user.status || 'Active'}
+                            </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                             {user.joinDate ? new Date(user.joinDate).toLocaleDateString() : 'N/A'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center space-x-1">
-                              {editingUser?.id === user.id ? (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleEditSubmit(user.id);
-                                    }}
-                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                    title="Save"
-                                  >
-                                    <Check className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      cancelEdit();
-                                    }}
-                                    className="p-1 text-gray-600 hover:bg-gray-50 rounded transition-colors"
-                                    title="Cancel"
-                                  >
-                                    <X className="w-4 h-4" />
-                                  </button>
-                                </>
-                              ) : (
-                                <>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleViewUser(user);
-                                    }}
-                                    className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                                    title="View"
-                                  >
-                                    <Eye className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startEdit(user);
-                                    }}
-                                    className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                    title="Edit"
-                                  >
-                                    <Edit2 className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleDelete(user.id);
-                                    }}
-                                    className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                    title="Delete"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewUser(user);
+                                }}
+                                className="p-1 text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                title="View"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startEdit(user);
+                                }}
+                                className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDelete(user.id);
+                                }}
+                                className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
                             </div>
                           </td>
                         </tr>
@@ -1007,7 +982,7 @@ export function Users() {
                       <Phone className="w-5 h-5 text-slate-400" />
                       <div>
                         <p className="text-sm text-slate-500">Phone</p>
-                        <p className="text-slate-900">{selectedUser.phone || '+91 XXXXX XXXXX'}</p>
+                        <p className="text-slate-900">{selectedUser.phone || 'Not Provided'}</p>
                       </div>
                     </div>
                   </div>
@@ -1067,6 +1042,101 @@ export function Users() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditModal && editingUser && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, cancelEdit)}
+        >
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b pb-4 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Edit User</h2>
+              <button
+                onClick={cancelEdit}
+                className="text-gray-500 hover:text-gray-700 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
+                <input
+                  type="email"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <input
+                  type="tel"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="+91 XXXXX XXXXX"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Select Role</label>
+                <select
+                  value={editForm.role_id}
+                  onChange={(e) => setEditForm({ ...editForm, role_id: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select role</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.role_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                  <option value="Pending">Pending</option>
+                </select>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Update User
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

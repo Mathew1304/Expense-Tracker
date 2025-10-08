@@ -905,12 +905,6 @@ export function Expenses() {
           <div className="flex justify-between items-center mb-6 gap-3 flex-wrap">
             <div className="flex gap-3">
               <button
-                onClick={downloadCSVTemplate}
-                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <FileDown className="mr-2" size={18} /> Download Template
-              </button>
-              <button
                 onClick={() => setShowBulkUploadModal(true)}
                 className="flex items-center bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
               >
@@ -920,7 +914,7 @@ export function Expenses() {
                 onClick={exportToCSV}
                 className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
               >
-                <Download className="mr-2" size={18} /> Export CSV
+                <Download className="mr-2" size={18} /> Export
               </button>
               <button
                 onClick={() => setShowPaymentLinkForm(true)}
@@ -1952,6 +1946,16 @@ export function Expenses() {
             </div>
 
             <div className="p-6 overflow-y-auto max-h-[calc(90vh-160px)]">
+              {/* Download Template Button */}
+              <div className="mb-6">
+                <button
+                  onClick={downloadCSVTemplate}
+                  className="w-full flex items-center justify-center bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                >
+                  <FileDown className="mr-2" size={20} /> Download CSV Template
+                </button>
+              </div>
+
               {/* Instructions */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                 <div className="flex items-start">
@@ -1959,11 +1963,11 @@ export function Expenses() {
                   <div className="text-sm text-blue-800">
                     <p className="font-medium mb-2">Instructions:</p>
                     <ol className="list-decimal list-inside space-y-1">
-                      <li>Download the CSV template using the "Download Template" button</li>
+                      <li>Download the CSV template using the button above</li>
                       <li>Fill in your expense data following the example format</li>
                       <li>Ensure project names and phase names match exactly with existing data</li>
                       <li>Use the format DD-MM-YYYY for dates (e.g., 07-10-2025)</li>
-                      <li>Upload the completed CSV file</li>
+                      <li>Upload the completed CSV file below</li>
                     </ol>
                   </div>
                 </div>
