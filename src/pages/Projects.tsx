@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, CreditCard as Edit, X, Eye, Download, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle } from "lucide-react";
+import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle, Clock, Link as LinkIcon, Trash2, ExternalLink } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -40,6 +40,8 @@ export function Projects() {
   const [sharePassword, setSharePassword] = useState('');
   const [generatedLink, setGeneratedLink] = useState('');
   const [linkCopied, setLinkCopied] = useState(false);
+  const [expiryAmount, setExpiryAmount] = useState<string>('24');
+  const [expiryUnit, setExpiryUnit] = useState<'minutes' | 'hours'>('hours');
   
   // Share options state
   const [shareOptions, setShareOptions] = useState({
@@ -50,6 +52,12 @@ export function Projects() {
     phasePhotos: true,
     teamMembers: true
   });
+
+  // Manage Links modal states
+  const [manageLinksModalOpen, setManageLinksModalOpen] = useState(false);
+  const [managingLinksProject, setManagingLinksProject] = useState<any | null>(null);
+  const [projectLinks, setProjectLinks] = useState<any[]>([]);
+  const [loadingLinks, setLoadingLinks] = useState(false);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -1035,7 +1043,13 @@ export function Projects() {
       
       const shareId = crypto.randomUUID();
       const expiresAt = new Date();
-      expiresAt.setHours(expiresAt.getHours() + 24); // 24 hours from now
+      const expiryValue = parseInt(expiryAmount) || 24;
+
+      if (expiryUnit === 'minutes') {
+        expiresAt.setMinutes(expiresAt.getMinutes() + expiryValue);
+      } else {
+        expiresAt.setHours(expiresAt.getHours() + expiryValue);
+      }
 
       // ✅ CRITICAL FIX: Ensure share_options is properly structured
       const shareData = {
@@ -1064,6 +1078,12 @@ export function Projects() {
       
       console.log('✅ Share link generated successfully:', shareUrl);
       setGeneratedLink(shareUrl);
+
+      // Auto-refresh manage links if modal is open for this project
+      if (manageLinksModalOpen && managingLinksProject?.id === project.id) {
+        fetchProjectLinks(project.id);
+      }
+
       return shareUrl;
     } catch (error: any) {
       console.error('Error generating share link:', error.message);
@@ -1081,6 +1101,8 @@ export function Projects() {
     setSharePassword('');
     setGeneratedLink('');
     setLinkCopied(false);
+    setExpiryAmount('24');
+    setExpiryUnit('hours');
     // Reset share options to default (all selected)
     setShareOptions({
       expenseDetails: true,
@@ -1155,6 +1177,94 @@ export function Projects() {
       phasePhotos: true,
       teamMembers: true
     });
+  };
+
+  // Handle manage links button click
+  const handleManageLinks = async (project: any) => {
+    setManagingLinksProject(project);
+    setManageLinksModalOpen(true);
+    await fetchProjectLinks(project.id);
+  };
+
+  // Fetch all links for a project
+  const fetchProjectLinks = async (projectId: string) => {
+    setLoadingLinks(true);
+    try {
+      const { data, error } = await supabase
+        .from('project_shares')
+        .select('*')
+        .eq('project_id', projectId)
+        .eq('created_by', user?.id)
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching project links:', error);
+        return;
+      }
+
+      setProjectLinks(data || []);
+    } catch (error) {
+      console.error('Error fetching links:', error);
+    } finally {
+      setLoadingLinks(false);
+    }
+  };
+
+  // Delete/revoke a share link
+  const handleDeleteLink = async (linkId: string) => {
+    if (!window.confirm('Are you sure you want to revoke this link? It will no longer be accessible.')) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('project_shares')
+        .delete()
+        .eq('id', linkId)
+        .eq('created_by', user?.id);
+
+      if (error) {
+        console.error('Error deleting link:', error);
+        alert('Failed to revoke link');
+        return;
+      }
+
+      // Refresh the links list
+      if (managingLinksProject) {
+        await fetchProjectLinks(managingLinksProject.id);
+      }
+    } catch (error) {
+      console.error('Error revoking link:', error);
+      alert('Failed to revoke link');
+    }
+  };
+
+  // Copy link to clipboard
+  const copyLinkToClipboard = async (shareId: string) => {
+    const link = `${window.location.origin}/shared/${shareId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      alert('Link copied to clipboard!');
+    } catch (error) {
+      console.error('Failed to copy link:', error);
+      alert('Failed to copy link');
+    }
+  };
+
+  // Format date
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleString('en-IN', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  // Check if link is expired
+  const isLinkExpired = (expiresAt: string) => {
+    return new Date(expiresAt) < new Date();
   };
 
   // Deselect all share options
@@ -1274,18 +1384,18 @@ export function Projects() {
                     View
                   </button>
                   <button
-                    onClick={() => handleDownloadReport(project)}
-                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
-                  >
-                    <Download className="h-4 w-4 mr-1" />
-                    Download
-                  </button>
-                  <button
                     onClick={() => handleShare(project)}
-                    className="flex items-center px-3 py-1 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
+                    className="flex items-center px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <Share2 className="h-4 w-4 mr-1" />
                     Share
+                  </button>
+                  <button
+                    onClick={() => handleManageLinks(project)}
+                    className="flex items-center px-3 py-1 bg-cyan-600 text-white text-sm rounded-lg hover:bg-cyan-700 transition-colors"
+                  >
+                    <LinkIcon className="h-4 w-4 mr-1" />
+                    Manage Links
                   </button>
                   <button
                     onClick={() => {
@@ -1747,6 +1857,35 @@ export function Projects() {
                   </div>
                 )}
 
+                {/* Expiry Time Selection */}
+                <div className="bg-gray-50 p-4 rounded-lg space-y-3 mt-4">
+                  <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Link Expiration Time
+                  </h3>
+                  <div className="flex gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      value={expiryAmount}
+                      onChange={(e) => setExpiryAmount(e.target.value)}
+                      className="w-24 border rounded-lg px-3 py-2 text-sm"
+                      placeholder="24"
+                    />
+                    <select
+                      value={expiryUnit}
+                      onChange={(e) => setExpiryUnit(e.target.value as 'minutes' | 'hours')}
+                      className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                    >
+                      <option value="minutes">Minutes</option>
+                      <option value="hours">Hours</option>
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-600">
+                    Link will expire {expiryAmount} {expiryUnit} after creation
+                  </p>
+                </div>
+
                 <h3 className="text-md font-semibold text-gray-800 mt-6">
                   How would you like to share "{sharingProject?.name}"?
                 </h3>
@@ -1775,7 +1914,7 @@ export function Projects() {
                         }`}>Public Link</h4>
                         <p className={`text-sm ${
                           hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
-                        }`}>Anyone with the link can view (24h expiry)</p>
+                        }`}>Anyone with the link can view</p>
                       </div>
                     </div>
                   </button>
@@ -1803,7 +1942,7 @@ export function Projects() {
                         }`}>Private Link</h4>
                         <p className={`text-sm ${
                           hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
-                        }`}>Password protected (24h expiry)</p>
+                        }`}>Password protected</p>
                       </div>
                     </div>
                   </button>
@@ -1883,7 +2022,7 @@ export function Projects() {
 
                 <div className="bg-blue-50 rounded-lg p-3">
                   <p className="text-sm text-blue-800">
-                    ⏰ This link will expire in 24 hours
+                    ⏰ This link will expire in {expiryAmount} {expiryUnit}
                   </p>
                 </div>
 
@@ -1902,6 +2041,234 @@ export function Projects() {
                   >
                     <Eye className="h-4 w-4 mr-2" />
                     Open Link
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Manage Links Modal */}
+      {manageLinksModalOpen && managingLinksProject && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setManageLinksModalOpen(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-cyan-50 to-blue-50">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-cyan-600 rounded-lg">
+                  <LinkIcon className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Manage Share Links</h2>
+                  <p className="text-sm text-slate-600">{managingLinksProject.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setManageLinksModalOpen(false)}
+                className="p-2 hover:bg-white rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingLinks ? (
+                <div className="flex justify-center items-center h-64">
+                  <div className="text-slate-600">Loading links...</div>
+                </div>
+              ) : projectLinks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-64 text-center">
+                  <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
+                    <LinkIcon className="w-8 h-8 text-slate-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-slate-900 mb-2">No Share Links Yet</h3>
+                  <p className="text-slate-600 mb-4">
+                    You haven't created any share links for this project.
+                  </p>
+                  <button
+                    onClick={() => {
+                      setManageLinksModalOpen(false);
+                      handleShare(managingLinksProject);
+                    }}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Share2 className="w-4 h-4 mr-2" />
+                    Create Share Link
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {projectLinks.map((link) => {
+                    const expired = isLinkExpired(link.expires_at);
+                    const shareUrl = `${window.location.origin}/shared/${link.id}`;
+                    const sharedOptions = link.share_options || {};
+                    const optionsCount = Object.values(sharedOptions).filter(Boolean).length;
+
+                    return (
+                      <div
+                        key={link.id}
+                        className={`border rounded-lg p-4 ${
+                          expired
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-white border-slate-200 hover:border-cyan-300 hover:shadow-md'
+                        } transition-all`}
+                      >
+                        <div className="flex items-start justify-between mb-3">
+                          <div className="flex items-center space-x-3 flex-1">
+                            <div className={`p-2 rounded-lg ${
+                                expired
+                                  ? 'bg-red-100'
+                                  : link.share_type === 'public'
+                                  ? 'bg-green-100'
+                                  : 'bg-orange-100'
+                              }`}>
+                              {link.share_type === 'public' ? (
+                                <Globe className={`w-5 h-5 ${expired ? 'text-red-600' : 'text-green-600'}`} />
+                              ) : (
+                                <Lock className={`w-5 h-5 ${expired ? 'text-red-600' : 'text-orange-600'}`} />
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center space-x-2">
+                                <span className="font-semibold text-slate-900 capitalize">
+                                  {link.share_type} Link
+                                </span>
+                                {expired && (
+                                  <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-medium rounded-full">
+                                    Expired
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-sm text-slate-600 mt-1">
+                                Created: {formatDate(link.created_at)}
+                              </p>
+                              <p className="text-sm text-slate-600">
+                                Expires: {formatDate(link.expires_at)}
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleDeleteLink(link.id)}
+                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            title="Revoke Link"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Link Statistics */}
+                        <div className="grid grid-cols-3 gap-4 mb-3 p-3 bg-slate-50 rounded-lg">
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Views</p>
+                            <p className="text-lg font-bold text-slate-900">{link.view_count || 0}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Type</p>
+                            <p className="text-sm font-medium text-slate-900 capitalize">{link.share_type}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs text-slate-500 mb-1">Shared Items</p>
+                            <p className="text-sm font-medium text-slate-900">{optionsCount} of 6</p>
+                          </div>
+                        </div>
+
+                        {/* Shared Details */}
+                        <div className="mb-3">
+                          <p className="text-xs font-medium text-slate-700 mb-2">Shared Details:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {sharedOptions.phaseDetails && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Phase Details
+                              </span>
+                            )}
+                            {sharedOptions.expenseDetails && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Expenses
+                              </span>
+                            )}
+                            {sharedOptions.incomeDetails && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Income
+                              </span>
+                            )}
+                            {sharedOptions.materialsDetails && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Materials
+                              </span>
+                            )}
+                            {sharedOptions.phasePhotos && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Photos
+                              </span>
+                            )}
+                            {sharedOptions.teamMembers && (
+                              <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">
+                                Team Members
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Link URL */}
+                        <div className="flex items-center space-x-2 p-3 bg-slate-100 rounded-lg">
+                          <code className="flex-1 text-sm text-slate-700 truncate">{shareUrl}</code>
+                          <button
+                            onClick={() => copyLinkToClipboard(link.id)}
+                            disabled={expired}
+                            className={`p-2 rounded-lg transition-colors ${
+                              expired
+                                ? 'text-slate-400 cursor-not-allowed'
+                                : 'text-cyan-600 hover:bg-cyan-50'
+                            }`}
+                            title="Copy Link"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => window.open(shareUrl, '_blank')}
+                            disabled={expired}
+                            className={`p-2 rounded-lg transition-colors ${
+                              expired
+                                ? 'text-slate-400 cursor-not-allowed'
+                                : 'text-cyan-600 hover:bg-cyan-50'
+                            }`}
+                            title="Open Link"
+                          >
+                            <ExternalLink className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {projectLinks.length > 0 && (
+              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm text-slate-600">
+                    {projectLinks.filter((l) => !isLinkExpired(l.expires_at)).length} active link(s)
+                  </div>
+                  <button
+                    onClick={() => {
+                      setManageLinksModalOpen(false);
+                      handleShare(managingLinksProject);
+                    }}
+                    className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    Create New Link
                   </button>
                 </div>
               </div>
