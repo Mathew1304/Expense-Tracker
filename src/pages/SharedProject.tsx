@@ -41,7 +41,7 @@ export function SharedProject() {
   const [materials, setMaterials] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [phasePhotos, setPhasePhotos] = useState<any[]>([]);
-  
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [passwordRequired, setPasswordRequired] = useState(false);
@@ -55,6 +55,41 @@ export function SharedProject() {
       fetchShareData();
     }
   }, [shareId]);
+
+  useEffect(() => {
+    if (projectData) {
+      const currentUrl = window.location.href;
+      const title = `${projectData.name} - Shared Project | Buildmyhomes`;
+      const description = projectData.description || `View shared construction project: ${projectData.name} in ${projectData.location || 'N/A'}`;
+
+      document.title = title;
+
+      updateMetaTag('og:title', title);
+      updateMetaTag('og:description', description);
+      updateMetaTag('og:url', currentUrl);
+      updateMetaTag('description', description);
+      updateMetaTag('twitter:title', title);
+      updateMetaTag('twitter:description', description);
+    }
+  }, [projectData]);
+
+  const updateMetaTag = (property: string, content: string) => {
+    const isOgTag = property.startsWith('og:');
+    const isTwitterTag = property.startsWith('twitter:');
+    const selector = isOgTag || isTwitterTag ? `meta[property="${property}"]` : `meta[name="${property}"]`;
+
+    let meta = document.querySelector(selector);
+    if (!meta) {
+      meta = document.createElement('meta');
+      if (isOgTag || isTwitterTag) {
+        meta.setAttribute('property', property);
+      } else {
+        meta.setAttribute('name', property);
+      }
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', content);
+  };
 
   const fetchShareData = async () => {
     try {
@@ -83,6 +118,9 @@ export function SharedProject() {
         setLoading(false);
         return;
       }
+
+      // Increment view count
+      await supabase.rpc('increment_share_view_count', { share_id: shareId });
 
       setShareData(shareInfo);
 

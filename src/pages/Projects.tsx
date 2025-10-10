@@ -1034,14 +1034,13 @@ export function Projects() {
   // ✅ FIXED: Generate share link with proper share_options handling
   const generateShareLink = async (project: any, type: 'public' | 'private', password?: string) => {
     try {
-      console.log('🔍 generateShareLink called with:', { 
-        project: project?.name, 
-        type, 
+      console.log('🔍 generateShareLink called with:', {
+        project: project?.name,
+        type,
         hasPassword: !!password,
-        shareOptions 
+        shareOptions
       });
-      
-      const shareId = crypto.randomUUID();
+
       const expiresAt = new Date();
       const expiryValue = parseInt(expiryAmount) || 24;
 
@@ -1051,31 +1050,31 @@ export function Projects() {
         expiresAt.setHours(expiresAt.getHours() + expiryValue);
       }
 
-      // ✅ CRITICAL FIX: Ensure share_options is properly structured
       const shareData = {
-        id: shareId,
         project_id: project.id,
         created_by: profileId,
         share_type: type,
         password: password || null,
         expires_at: expiresAt.toISOString(),
-        share_options: shareOptions, // This should be a JSON object
+        share_options: shareOptions,
         is_active: true
       };
 
       console.log('🔍 Inserting share data:', shareData);
-      const { error } = await supabase
+      const { data: insertedShare, error } = await supabase
         .from('project_shares')
-        .insert([shareData]);
+        .insert([shareData])
+        .select('id')
+        .single();
 
-      if (error) {
+      if (error || !insertedShare) {
         console.error('Database error:', error);
         throw error;
       }
 
       const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/shared/${shareId}`;
-      
+      const shareUrl = `${baseUrl}/shared/${insertedShare.id}`;
+
       console.log('✅ Share link generated successfully:', shareUrl);
       setGeneratedLink(shareUrl);
 
