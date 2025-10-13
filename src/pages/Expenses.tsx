@@ -31,6 +31,7 @@ interface Transaction {
   payment_method: string;
   bill_path: string | null;
   type: 'expense' | 'income';
+  vendor_name?: string;
 }
 
 interface Phase {
@@ -84,6 +85,7 @@ const EXPENSE_CATEGORY_OPTIONS = [
   "Site Expenses",
   "Transport",
   "Miscellaneous",
+  "Other",
 ];
 
 const INCOME_CATEGORY_OPTIONS = [
@@ -97,6 +99,7 @@ const INCOME_CATEGORY_OPTIONS = [
   "Government Subsidy",
   "Loan Disbursement",
   "Other Income",
+  "Other",
 ];
 
 const PAYMENT_OPTIONS = ["Cash", "UPI", "Card", "Bank Transfer", "Cheque"];
@@ -123,6 +126,7 @@ export function Expenses() {
   const [detailsTransaction, setDetailsTransaction] = useState<Transaction | null>(null);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
   const [showGstModal, setShowGstModal] = useState(false);
   const [gstAmount, setGstAmount] = useState("");
   const [formData, setFormData] = useState({
@@ -135,6 +139,8 @@ export function Expenses() {
     billFile: null as File | null,
     includeGst: false,
     gstAmount: "",
+    source: "",
+    customCategory: "",
   });
   const [paymentLinkData, setPaymentLinkData] = useState({
     businessName: "",
@@ -209,7 +215,7 @@ export function Expenses() {
     const { data, error } = await supabase
       .from("expenses")
       .select(
-        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type,
+        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source,
         phases (id, name, project_id, projects (id, name))`
       )
       .in(
@@ -232,6 +238,7 @@ export function Expenses() {
           type: e.type || 'expense',
           phase_name: e.phases?.name || "No Phase",
           project_name: e.phases?.projects?.name || "No Project",
+          vendor_name: e.source,
         }))
       );
     }
@@ -593,9 +600,12 @@ export function Expenses() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount } = formData;
+    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount, source, customCategory } = formData;
 
-    if (!phaseId || !projectId || !category || !paymentMethod) {
+    // Use custom category if "Other" is selected and customCategory is provided
+    const finalCategory = category === "Other" && customCategory ? customCategory : category;
+
+    if (!phaseId || !projectId || !finalCategory || !paymentMethod) {
       setErrorMessage("Please fill all required fields.");
       setTimeout(() => setErrorMessage(null), 5000);
       return;
@@ -621,7 +631,7 @@ export function Expenses() {
     const payload = {
       project_id: projectId,
       phase_id: phaseId,
-      category,
+      category: finalCategory,
       amount: parseFloat(amount),
       gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : null,
       date,
@@ -629,6 +639,7 @@ export function Expenses() {
       bill_path,
       type: formType,
       created_by: user?.id,
+      source: source || null,
     };
 
     const { error } = editingId
@@ -653,6 +664,8 @@ export function Expenses() {
         billFile: null,
         includeGst: false,
         gstAmount: "",
+        source: "",
+        customCategory: "",
       });
       setSuccessMessage(`${formType === 'income' ? 'Income' : 'Expense'} saved successfully!`);
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -672,6 +685,8 @@ export function Expenses() {
       billFile: null,
       includeGst: (transaction.gst_amount || 0) > 0,
       gstAmount: (transaction.gst_amount || 0).toString(),
+      source: transaction.vendor_name || "",
+      customCategory: "",
     });
     setFormType(transaction.type);
     setEditingId(transaction.id);
@@ -708,6 +723,8 @@ export function Expenses() {
       billFile: null,
       includeGst: false,
       gstAmount: "",
+      source: "",
+      customCategory: "",
     });
     setShowForm(true);
   };
@@ -929,6 +946,28 @@ export function Expenses() {
                 <Eye className="mr-2" size={18} /> View Links ({paymentLinks.length})
               </button>
             </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setViewMode('cards')}
+                className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
+                  viewMode === 'cards' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <FileText className="mr-2" size={16} /> Cards
+              </button>
+              <button
+                onClick={() => setViewMode('table')}
+                className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
+                  viewMode === 'table' 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+              >
+                <FileText className="mr-2" size={16} /> Table
+              </button>
+            </div>
             <div className="flex gap-3">
               <button
                 onClick={() => openForm('income')}
@@ -1008,13 +1047,13 @@ export function Expenses() {
             </div>
           </div>
 
-          {/* Table Container - Scrollable */}
+          {/* Transactions Container */}
           <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
             {loading ? (
               <div className="flex justify-center items-center h-64">
                 <p className="text-xl text-gray-600">Loading...</p>
               </div>
-            ) : (
+            ) : viewMode === 'table' ? (
               <table className="w-full">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -1022,6 +1061,7 @@ export function Expenses() {
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Project</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Phase</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Category</th>
+                    <th className="p-3 text-left font-medium text-gray-700 border-b">Vendor</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Amount</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">GST</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Total</th>
@@ -1057,10 +1097,11 @@ export function Expenses() {
                         <td className="p-3 text-gray-900">{t.project_name}</td>
                         <td className="p-3 text-gray-900">{t.phase_name}</td>
                         <td className="p-3 text-gray-900">{t.category}</td>
+                        <td className="p-3 text-gray-900">{t.vendor_name || '-'}</td>
                         <td className={`p-3 font-medium ${
                           t.type === 'income' ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {t.type === 'income' ? '+' : '-'}₹{t.amount.toFixed(2)}
+                          {t.type === 'income' ? '' : ''}₹{t.amount.toFixed(2)}
                         </td>
                         <td className={`p-3 ${hasGst ? 'text-blue-600' : 'text-gray-500'}`}>
                           {hasGst ? (
@@ -1074,7 +1115,7 @@ export function Expenses() {
                         <td className={`p-3 font-bold ${
                           t.type === 'income' ? 'text-green-600' : 'text-red-600'
                         }`}>
-                          {t.type === 'income' ? '+' : '-'}₹{totalAmount.toFixed(2)}
+                          {t.type === 'income' ? '' : ''}₹{totalAmount.toFixed(2)}
                         </td>
                         <td className="p-3 text-gray-900">{t.payment_method}</td>
                         <td className="p-3">
@@ -1135,13 +1176,160 @@ export function Expenses() {
                   })}
                   {currentTransactions.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="p-8 text-center text-gray-500">
-                        No transactions found.
+                      <td colSpan={12} className="p-8 text-center text-gray-500">
+                        No transactions found
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            ) : (
+              <div className="p-6">
+                <div className="space-y-4">
+                  {currentTransactions.map((t) => {
+                    const totalAmount = t.amount + (t.gst_amount || 0);
+                    const hasGst = (t.gst_amount || 0) > 0;
+                    return (
+                      <div
+                        key={t.id}
+                        className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md ${
+                          selectedTransaction?.id === t.id
+                            ? "border-blue-500 bg-blue-50"
+                            : "border-gray-200 bg-white"
+                        }`}
+                        onClick={() => setSelectedTransaction(t)}
+                      >
+                        <div className="flex items-start justify-between">
+                          {/* Left Section */}
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <div className={`w-3 h-3 rounded-sm ${
+                                t.type === 'expense' ? 'bg-red-500' : 'bg-green-500'
+                              }`}></div>
+                              <h3 className="font-semibold text-gray-900 text-lg">
+                                {t.category} - {t.vendor_name || 'No Vendor'}
+                              </h3>
+                            </div>
+                            
+                            {/* Tags */}
+                            <div className="flex flex-wrap gap-2 mb-3">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                t.type === 'expense' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                              }`}>
+                                {t.type === 'expense' ? 'Expense' : 'Income'}
+                              </span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                {t.category}
+                              </span>
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                {t.payment_method}
+                              </span>
+                              {hasGst && (
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                  GST: ₹{(t.gst_amount || 0).toFixed(2)}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Details */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Project:</span>
+                                <span>{t.project_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Phase:</span>
+                                <span>{t.phase_name}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Source:</span>
+                                <span>{t.vendor_name || 'Not specified'}</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">Date:</span>
+                                <span>{format(new Date(t.date), "dd/MM/yyyy")}</span>
+                              </div>
+                            </div>
+
+                            {/* Bill Link */}
+                            {t.bill_path && (
+                              <div className="mt-3">
+                                <a
+                                  href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${t.bill_path}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800 underline text-sm"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  View Bill
+                                </a>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Right Section */}
+                          <div className="text-right">
+                            <div className={`text-2xl font-bold ${
+                              t.type === 'income' ? 'text-green-600' : 'text-red-600'
+                            }`}>
+                              {t.type === 'income' ? '+' : '-'}₹{totalAmount.toFixed(2)}
+                            </div>
+                            {hasGst && (
+                              <div className="text-sm text-gray-500 mt-1">
+                                Base: ₹{t.amount.toFixed(2)}
+                              </div>
+                            )}
+                            <div className="text-sm text-gray-500 mt-2">
+                              {t.payment_method}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-100">
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setDetailsTransaction(t);
+                              setShowDetailsModal(true);
+                            }}
+                            className="text-purple-600 hover:text-purple-800 p-2 rounded transition-colors"
+                            title="View Details"
+                          >
+                            <Eye size={16} />
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleEdit(t);
+                            }}
+                            className="text-blue-600 hover:text-blue-800 p-2 rounded transition-colors"
+                            title="Edit"
+                          >
+                            <Edit2 size={16} />
+                          </button>
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDelete(t.id);
+                            }}
+                            className="text-red-600 hover:text-red-800 p-2 rounded transition-colors"
+                            title="Delete"
+                          >
+                            <Trash size={16} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  
+                  {currentTransactions.length === 0 && (
+                    <div className="text-center py-12 text-gray-500">
+                      <p className="text-xl">No transactions found</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 
@@ -1399,6 +1587,26 @@ export function Expenses() {
                       </option>
                     ))}
                   </select>
+                  {formData.category === "Other" && (
+                    <input
+                      type="text"
+                      className="mt-2 border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter custom category"
+                      value={formData.customCategory}
+                      onChange={(e) => handleChange("customCategory", e.target.value)}
+                      required
+                    />
+                  )}
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-1">Vendor</label>
+                  <input
+                    type="text"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter vendor name"
+                    value={formData.source}
+                    onChange={(e) => handleChange("source", e.target.value)}
+                  />
                 </div>
                 <div>
                   <label className="block font-medium text-gray-700 mb-1">Amount</label>

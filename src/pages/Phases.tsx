@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, CreditCard as Edit2, Trash2, X, AlertTriangle, Calendar, MapPin, User, File, Camera, DollarSign, TrendingUp, TrendingDown, Search, IndianRupee } from "lucide-react";
+import { Plus, CreditCard as Edit2, Trash2, X, AlertTriangle, Calendar, MapPin, User, File, Camera, DollarSign, TrendingUp, TrendingDown, Search, IndianRupee, BarChart3, List } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -75,10 +75,63 @@ export function Phases() {
   const [photoToDelete, setPhotoToDelete] = useState<PhasePhoto | null>(null);
   const [showPhotoDeleteConfirm, setShowPhotoDeleteConfirm] = useState(false);
   const [deletingPhoto, setDeletingPhoto] = useState(false);
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list');
+  const [timelineFilter, setTimelineFilter] = useState<"All" | "This Month" | "This Year">("All");
 
   const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
     userRole ?? ""
   );
+
+  // Function to format dates as DD-MMM-YYYY
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    if (isNaN(date.getTime())) return 'Invalid Date';
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
+
+  // Helper function to get date range for timeline filter
+  const getTimelineDateRange = () => {
+    const today = new Date('2025-10-13'); // Fixed date as per instructions
+    let startDate: Date, endDate: Date;
+
+    if (timelineFilter === "This Month") {
+      startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+      endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    } else if (timelineFilter === "This Year") {
+      startDate = new Date(today.getFullYear(), 0, 1);
+      endDate = new Date(today.getFullYear(), 11, 31);
+    } else {
+      // All Time: Find min and max dates from phases
+      if (phases.length === 0) {
+        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+      } else {
+        const phaseDates = phases
+          .flatMap((p) => [
+            p.start_date ? new Date(p.start_date) : null,
+            p.end_date ? new Date(p.end_date) : null,
+          ])
+          .filter((date): date is Date => date !== null && !isNaN(date.getTime()));
+        if (phaseDates.length === 0) {
+          startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+          endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        } else {
+          startDate = new Date(Math.min(...phaseDates.map((d) => d.getTime())));
+          endDate = new Date(Math.max(...phaseDates.map((d) => d.getTime())));
+          // Add padding to the range
+          startDate.setDate(startDate.getDate() - 7);
+          endDate.setDate(endDate.getDate() + 7);
+        }
+      }
+    }
+
+    return { startDate, endDate };
+  };
 
   // Fetch projects
   useEffect(() => {
@@ -99,7 +152,6 @@ export function Phases() {
   const fetchPhases = async () => {
     if (!user?.id) return;
     
-    // First get projects created by the logged-in admin
     const { data: adminProjects, error: projectsError } = await supabase
       .from("projects")
       .select("id")
@@ -125,7 +177,10 @@ export function Phases() {
       .in("project_id", adminProjectIds)
       .order("start_date");
 
-    if (error) return console.error("Error fetching phases:", error.message);
+    if (error) {
+      console.error("Error fetching phases:", error.message);
+      return;
+    }
 
     const mapped: Phase[] = (data || []).map((p: any) => ({
       id: p.id,
@@ -139,6 +194,7 @@ export function Phases() {
       contractor_name: p.contractor_name,
     }));
 
+    console.log("Fetched phases:", mapped);
     setPhases(mapped);
 
     // Fetch expenses per phase
@@ -149,11 +205,11 @@ export function Phases() {
         .eq("phase_id", phase.id);
       
       const transactions = allTransactions || [];
-      const expenses = transactions.filter(t => t.type === 'expense' || !t.type);
-      const incomes = transactions.filter(t => t.type === 'income');
+      const expensesData = transactions.filter(t => t.type === 'expense' || !t.type);
+      const incomesData = transactions.filter(t => t.type === 'income');
       
-      setExpenses((prev) => ({ ...prev, [phase.id]: expenses }));
-      setIncomes((prev) => ({ ...prev, [phase.id]: incomes }));
+      setExpenses((prev) => ({ ...prev, [phase.id]: expensesData }));
+      setIncomes((prev) => ({ ...prev, [phase.id]: incomesData }));
     }
   };
 
@@ -209,7 +265,6 @@ export function Phases() {
     try {
       console.log("Attempting to delete phase:", phase.id);
       
-      // Delete the phase - related data should cascade automatically
       const { error } = await supabase
         .from("phases")
         .delete()
@@ -223,15 +278,12 @@ export function Phases() {
 
       console.log("Phase deleted successfully from database");
       
-      // Refresh phases from database to ensure sync
       await fetchPhases();
       
-      // Clear selected phase if it was deleted
       if (selectedPhase?.id === phase.id) {
         setSelectedPhase(null);
       }
       
-      // Close view modal if the deleted phase was being viewed
       if (viewPhase?.id === phase.id) {
         setViewPhase(null);
       }
@@ -240,7 +292,7 @@ export function Phases() {
       setPhaseToDelete(null);
       alert("Phase deleted successfully!");
       
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting phase:", error);
       alert(`An error occurred while deleting the phase: ${error.message}`);
     }
@@ -290,14 +342,11 @@ export function Phases() {
 
     setDeletingPhoto(true);
     try {
-      // Extract file path from the photo URL
       const url = photoToDelete.photo_url;
       const urlParts = url.split('/phase-photos/');
 
       if (urlParts.length > 1) {
         const filePath = `phase-photos/${urlParts[1].split('?')[0]}`;
-
-        // Delete from storage
         const { error: storageError } = await supabase.storage
           .from('phase-photos')
           .remove([filePath]);
@@ -307,7 +356,6 @@ export function Phases() {
         }
       }
 
-      // Delete from database
       const { error: dbError } = await supabase
         .from('phase_photos')
         .delete()
@@ -317,14 +365,13 @@ export function Phases() {
         throw dbError;
       }
 
-      // Refresh photos
       if (viewPhase) {
         await fetchPhasePhotos(viewPhase.id);
       }
 
       setShowPhotoDeleteConfirm(false);
       setPhotoToDelete(null);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error deleting photo:', error);
       alert('Failed to delete photo. Please try again.');
     } finally {
@@ -374,7 +421,6 @@ export function Phases() {
     if (viewPhase) fetchComments(viewPhase.id);
   };
 
-  // Get the header subtitle based on selected phase
   const getHeaderSubtitle = () => {
     if (selectedPhase) {
       return `${selectedPhase.name} - ${selectedPhase.project_name}`;
@@ -382,14 +428,12 @@ export function Phases() {
     return undefined;
   };
 
-  // Close modal when clicking outside
   const handleModalClick = (e: React.MouseEvent, closeModal: () => void) => {
     if (e.target === e.currentTarget) {
       closeModal();
     }
   };
 
-  // Get status color
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Completed': return 'bg-green-100 text-green-800';
@@ -399,21 +443,197 @@ export function Phases() {
     }
   };
 
-  // Filter phases based on search term
   const filteredPhases = phases.filter((phase) => {
     const searchLower = searchTerm.toLowerCase();
-    return (
+    const matchesSearch = (
       phase.name.toLowerCase().includes(searchLower) ||
       phase.project_name?.toLowerCase().includes(searchLower) ||
       phase.status.toLowerCase().includes(searchLower) ||
       phase.contractor_name?.toLowerCase().includes(searchLower)
     );
+    const matchesProject = selectedProjectFilter === "all" || phase.project_id === selectedProjectFilter;
+    
+    // Apply timeline filter
+    if (timelineFilter !== "All" && phase.start_date && phase.end_date) {
+      const phaseStart = new Date(phase.start_date);
+      const phaseEnd = new Date(phase.end_date);
+      const { startDate, endDate } = getTimelineDateRange();
+      return matchesSearch && matchesProject && phaseEnd >= startDate && phaseStart <= endDate;
+    }
+    
+    return matchesSearch && matchesProject;
   });
+
+  const phasesByProject = filteredPhases.reduce((acc, phase) => {
+    if (!acc[phase.project_id]) {
+      acc[phase.project_id] = {
+        projectName: phase.project_name || 'Unknown Project',
+        phases: []
+      };
+    }
+    acc[phase.project_id].phases.push(phase);
+    return acc;
+  }, {} as Record<string, { projectName: string; phases: Phase[] }>);
+
+  // Render Gantt Chart for a single project
+  const renderProjectGantt = (projectId: string, projectName: string, projectPhases: Phase[]) => {
+    console.log(`Rendering Gantt for project ${projectId}:`, projectPhases);
+
+    const validPhases = projectPhases.filter(phase => {
+      const start = new Date(phase.start_date);
+      const end = new Date(phase.end_date);
+      return !isNaN(start.getTime()) && !isNaN(end.getTime()) && start <= end;
+    });
+
+    if (validPhases.length === 0) {
+      console.log(`No valid phases for project ${projectId}`);
+      return (
+        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+          <h3 className="text-xl font-bold text-slate-900 mb-4">{projectName}</h3>
+          <p className="text-gray-500">No valid phase dates available for Gantt chart</p>
+        </div>
+      );
+    }
+
+    // Use timeline filter to set date range
+    const { startDate: minDate, endDate: maxDate } = getTimelineDateRange();
+    const totalDays = Math.ceil((maxDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+    if (totalDays <= 0) {
+      console.log(`Invalid total days for project ${projectId}: ${totalDays}`);
+      return null;
+    }
+
+    const statusColors: Record<string, string> = {
+      'Completed': 'bg-green-500',
+      'In Progress': 'bg-blue-500',
+      'Not Started': 'bg-gray-400',
+    };
+
+    return (
+      <div key={projectId} className="bg-white rounded-lg shadow-sm border border-slate-200 p-6 mb-6">
+        <h3 className="text-xl font-bold text-slate-900 mb-4">{projectName}</h3>
+        <div className="overflow-x-auto">
+          <div className="min-w-[800px] space-y-3 relative">
+            {/* Timeline Header */}
+            <div className="flex mb-4">
+              <div className="w-48 flex-shrink-0"></div>
+              <div className="flex-1 relative">
+                <div className="flex justify-between text-xs text-slate-600">
+                  {[...Array(5)].map((_, i) => {
+                    const date = new Date(
+                      minDate.getTime() + (i * (maxDate.getTime() - minDate.getTime())) / 4
+                    );
+                    return <span key={i}>{formatDate(date.toISOString())}</span>;
+                  })}
+                </div>
+              </div>
+            </div>
+            {/* Gantt Chart Bars */}
+            {validPhases.map((phase) => {
+              const startDate = new Date(phase.start_date);
+              const endDate = new Date(phase.end_date);
+              const phaseDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+              const startOffset = Math.ceil((startDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+              const widthPercent = Math.max((phaseDays / totalDays) * 100, 2);
+              const leftPercent = (startOffset / totalDays) * 100;
+
+              const totalExpenses = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+              const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+
+              console.log(`Phase ${phase.name}: start=${startDate}, end=${endDate}, width=${widthPercent}%, left=${leftPercent}%`);
+
+              return (
+                <div key={phase.id} className="group">
+                  <div className="flex items-center mb-2">
+                    <div className="w-48 flex-shrink-0">
+                      <p className="text-sm font-semibold text-slate-700 truncate">{phase.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {formatDate(phase.start_date)} - {formatDate(phase.end_date)}
+                      </p>
+                    </div>
+                    <div className="flex-1 ml-4 relative">
+                      <div className="relative h-10 bg-slate-100 rounded-lg">
+                        <div
+                          className={`absolute h-full rounded-lg ${
+                            statusColors[phase.status] || 'bg-gray-400'
+                          } flex items-center justify-center text-white text-xs font-medium transition-all hover:opacity-90 cursor-pointer z-10`}
+                          style={{
+                            left: `${leftPercent}%`,
+                            width: `${widthPercent}%`,
+                          }}
+                          onClick={() => setSelectedPhase(phase)}
+                          title={`${phase.name}: ${formatDate(phase.start_date)} to ${formatDate(phase.end_date)}`}
+                        >
+                          <span className="truncate px-2">{phase.status}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 text-xs text-slate-600">
+                        <span className="flex items-center">
+                          <TrendingDown className="w-3 h-3 mr-1 text-red-500" />
+                          ₹{totalExpenses.toLocaleString()}
+                        </span>
+                        <span className="flex items-center">
+                          <TrendingUp className="w-3 h-3 mr-1 text-green-500" />
+                          ₹{totalIncome.toLocaleString()}
+                        </span>
+                        {phase.contractor_name && (
+                          <span className="flex items-center">
+                            <User className="w-3 h-3 mr-1" />
+                            {phase.contractor_name}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            {/* Today Line */}
+            {(() => {
+              const today = new Date('2025-10-13');
+              if (today >= minDate && today <= maxDate) {
+                const offsetDays = Math.ceil((today.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+                const leftPercent = (offsetDays / totalDays) * 100;
+                return (
+                  <div
+                    className="absolute top-0 bottom-0 w-0.5 bg-red-600 z-20"
+                    style={{ left: `calc(${leftPercent}% + 12rem)` }}
+                  >
+                    <div className="absolute top-0 -translate-x-1/2 bg-red-600 text-white text-xs px-1 py-0.5 rounded">
+                      Today
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })()}
+          </div>
+        </div>
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-green-500 rounded"></div>
+              <span className="text-slate-600">Completed</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-blue-500 rounded"></div>
+              <span className="text-slate-600">In Progress</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 bg-gray-400 rounded"></div>
+              <span className="text-slate-600">Not Started</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
       <div className="p-6">
-        <div className="mb-6 flex gap-4 items-center">
+        <div className="mb-6 flex flex-wrap gap-4 items-center">
           {canManage && (
             <button
               onClick={() => setShowModal(true)}
@@ -423,8 +643,61 @@ export function Phases() {
             </button>
           )}
 
+          {/* View Mode Toggle */}
+          <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'list'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+              title="List View"
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('gantt')}
+              className={`p-2 rounded-md transition-colors ${
+                viewMode === 'gantt'
+                  ? 'bg-blue-500 text-white'
+                  : 'text-slate-600 hover:bg-slate-100'
+              }`}
+              title="Gantt Chart View"
+            >
+              <BarChart3 className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Timeline Filter */}
+          {viewMode === 'gantt' && (
+            <select
+              value={timelineFilter}
+              onChange={(e) => setTimelineFilter(e.target.value as "All" | "This Month" | "This Year")}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+            >
+              <option value="All">All Time</option>
+              <option value="This Month">This Month</option>
+              <option value="This Year">This Year</option>
+            </select>
+          )}
+
+          {/* Project Filter */}
+          <select
+            value={selectedProjectFilter}
+            onChange={(e) => setSelectedProjectFilter(e.target.value)}
+            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+          >
+            <option value="all">All Projects</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+
           {/* Search Bar */}
-          <div className="flex-1 relative">
+          <div className="flex-1 relative min-w-[200px]">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
               <Search className="h-5 w-5 text-gray-400" />
             </div>
@@ -433,165 +706,184 @@ export function Phases() {
               placeholder="Search phases"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="block w-half pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
         </div>
 
-        {/* Phase List */}
-        <div className="space-y-4">
-          {filteredPhases.length === 0 && searchTerm && (
-            <div className="text-center py-8 text-gray-500">
-              No phases found matching "{searchTerm}"
-            </div>
-          )}
-          {filteredPhases.map((phase) => {
-            const totalExpenses = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
-            const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
-            const netAmount = totalExpenses - totalIncome;
+        {/* Gantt Chart View */}
+        {viewMode === 'gantt' ? (
+          <div>
+            {filteredPhases.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                {searchTerm || selectedProjectFilter !== 'all' || timelineFilter !== 'All'
+                  ? 'No phases found matching your filters'
+                  : 'No phases available'}
+              </div>
+            ) : (
+              <div>
+                {Object.entries(phasesByProject).map(([projectId, { projectName, phases }]) =>
+                  renderProjectGantt(projectId, projectName, phases)
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          /* List View */
+          <div className="space-y-4">
+            {filteredPhases.length === 0 && (searchTerm || selectedProjectFilter !== 'all') && (
+              <div className="text-center py-8 text-gray-500">
+                No phases found matching your filters
+              </div>
+            )}
+            {filteredPhases.map((phase) => {
+              const totalExpenses = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+              const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
+              const netAmount = totalExpenses - totalIncome;
 
-            return (
-            <div
-              key={phase.id}
-              className={`border rounded-lg shadow-sm cursor-pointer transition-all ${
-                selectedPhase?.id === phase.id
-                  ? "border-blue-500 bg-blue-50"
-                  : "hover:border-gray-300 hover:shadow-md"
-              }`}
-              onClick={() => setSelectedPhase(phase)}
-            >
-              <div className="p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1">
-                    <h2 className="text-lg font-semibold text-gray-900">{phase.name}</h2>
-                    <p className="text-sm text-gray-500 mb-1">
-                      Project: {phase.project_name}
-                    </p>
-                    <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
-                      <span className="flex items-center">
-                        <Calendar className="w-4 h-4 mr-1" />
-                        {phase.start_date} → {phase.end_date}
-                      </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(phase.status)}`}>
-                        {phase.status}
-                      </span>
-                    </div>
-                    {phase.contractor_name && (
-                      <p className="text-sm text-gray-600 flex items-center">
-                        <User className="w-4 h-4 mr-1" />
-                        Contractor: {phase.contractor_name}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPhase(phase);
-                        setViewPhase(phase);
-                        fetchPhasePhotos(phase.id);
-                        fetchComments(phase.id);
-                      }}
-                      className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
-                    >
-                      View Details
-                    </button>
-                    {canManage && (
-                      <>
+              return (
+                <div
+                  key={phase.id}
+                  className={`border rounded-lg shadow-sm cursor-pointer transition-all ${
+                    selectedPhase?.id === phase.id
+                      ? "border-blue-500 bg-blue-50"
+                      : "hover:border-gray-300 hover:shadow-md"
+                  }`}
+                  onClick={() => setSelectedPhase(phase)}
+                >
+                  <div className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="flex-1">
+                        <h2 className="text-lg font-semibold text-gray-900">{phase.name}</h2>
+                        <p className="text-sm text-gray-500 mb-1">
+                          Project: {phase.project_name}
+                        </p>
+                        <div className="flex items-center gap-3 text-sm text-gray-600 mb-2">
+                          <span className="flex items-center">
+                            <Calendar className="w-4 h-4 mr-1" />
+                            {formatDate(phase.start_date)} → {formatDate(phase.end_date)}
+                          </span>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(phase.status)}`}>
+                            {phase.status}
+                          </span>
+                        </div>
+                        {phase.contractor_name && (
+                          <p className="text-sm text-gray-600 flex items-center">
+                            <User className="w-4 h-4 mr-1" />
+                            Contractor: {phase.contractor_name}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            editPhase(phase);
+                            setSelectedPhase(phase);
+                            setViewPhase(phase);
+                            fetchPhasePhotos(phase.id);
+                            fetchComments(phase.id);
                           }}
-                          className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                          className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
                         >
-                          Edit
+                          View Details
                         </button>
-                        <button
-                          onClick={(e) => handleDeleteClick(e, phase)}
-                          className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
-                        >
-                          Delete
-                        </button>
-                      </>
-                    )}
+                        {canManage && (
+                          <>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                editPhase(phase);
+                              }}
+                              className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={(e) => handleDeleteClick(e, phase)}
+                              className="bg-red-600 text-white px-3 py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t">
+                      <div className="bg-white rounded-lg p-3 border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-600">Budget</span>
+                          <DollarSign className="w-4 h-4 text-gray-500" />
+                        </div>
+                        <p className="text-lg font-bold text-gray-900 mt-1">
+                          ₹{phase.estimated_cost?.toLocaleString() || '0'}
+                        </p>
+                      </div>
+
+                      <div className="bg-green-50 rounded-lg p-3 border border-green-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-green-700">Income</span>
+                          <TrendingUp className="w-4 h-4 text-green-600" />
+                        </div>
+                        <p className="text-lg font-bold text-green-600 mt-1">
+                          ₹{totalIncome.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-green-600 mt-1">
+                          {incomes[phase.id]?.length || 0} transactions
+                        </p>
+                      </div>
+
+                      <div className="bg-red-50 rounded-lg p-3 border border-red-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-red-700">Expenses</span>
+                          <TrendingDown className="w-4 h-4 text-red-600" />
+                        </div>
+                        <p className="text-lg font-bold text-red-600 mt-1">
+                          ₹{totalExpenses.toLocaleString()}
+                        </p>
+                        <p className="text-xs text-red-600 mt-1">
+                          {expenses[phase.id]?.length || 0} transactions
+                        </p>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-700">Net Amount</span>
+                          <DollarSign className="w-4 h-4 text-gray-600" />
+                        </div>
+                        <p className={`text-lg font-bold mt-1 ${netAmount <= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {netAmount <= 0 ? '+' : '-'}₹{Math.abs(netAmount).toLocaleString()}
+                        </p>
+                        <p className="text-xs text-gray-600 mt-1">
+                          {netAmount <= 0 ? 'Surplus' : 'Deficit'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Budget Progress Bar */}
+                    <div className="mt-3">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-medium text-gray-600">Budget Usage</span>
+                        <span className={`text-xs font-semibold ${getBudgetUsage(phase) > 100 ? 'text-red-600' : 'text-gray-900'}`}>
+                          {getBudgetUsage(phase)}%
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${
+                            getBudgetUsage(phase) > 100 ? 'bg-red-500' : 'bg-blue-500'
+                          }`}
+                          style={{ width: `${Math.min(getBudgetUsage(phase), 100)}%` }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Financial Summary */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t">
-                  <div className="bg-white rounded-lg p-3 border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-600">Budget</span>
-                      <DollarSign className="w-4 h-4 text-gray-500" />
-                    </div>
-                    <p className="text-lg font-bold text-gray-900 mt-1">
-                      ₹{phase.estimated_cost?.toLocaleString() || '0'}
-                    </p>
-                  </div>
-
-                  <div className="bg-green-50 rounded-lg p-3 border border-green-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-green-700">Income</span>
-                      <TrendingUp className="w-4 h-4 text-green-600" />
-                    </div>
-                    <p className="text-lg font-bold text-green-600 mt-1">
-                      ₹{totalIncome.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-green-600 mt-1">
-                      {incomes[phase.id]?.length || 0} transactions
-                    </p>
-                  </div>
-
-                  <div className="bg-red-50 rounded-lg p-3 border border-red-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-red-700">Expenses</span>
-                      <TrendingDown className="w-4 h-4 text-red-600" />
-                    </div>
-                    <p className="text-lg font-bold text-red-600 mt-1">
-                      ₹{totalExpenses.toLocaleString()}
-                    </p>
-                    <p className="text-xs text-red-600 mt-1">
-                      {expenses[phase.id]?.length || 0} transactions
-                    </p>
-                  </div>
-
-                  <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-gray-700">Net Amount</span>
-                      <DollarSign className="w-4 h-4 text-gray-600" />
-                    </div>
-                    <p className={`text-lg font-bold mt-1 {netAmount <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {netAmount <= 0 ? '+' : '-'}₹{Math.abs(netAmount).toLocaleString()}
-                    </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      {netAmount <= 0 ? 'Surplus' : 'Deficit'}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Budget Progress Bar */}
-                <div className="mt-3">
-                  <div className="flex justify-between items-center mb-1">
-                    <span className="text-xs font-medium text-gray-600">Budget Usage</span>
-                    <span className={`text-xs font-semibold {getBudgetUsage(phase) > 100 ? 'text-red-600' : 'text-gray-900'}`}>
-                      {getBudgetUsage(phase)}%
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div
-                      className={`h-2 rounded-full transition-all ${
-                        getBudgetUsage(phase) > 100 ? 'bg-red-500' : 'bg-blue-500'
-                      }`}
-                      style={{ width: `${Math.min(getBudgetUsage(phase), 100)}%` }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Create/Edit Modal */}
         {showModal && (
@@ -695,7 +987,6 @@ export function Phases() {
             onClick={(e) => handleModalClick(e, () => setViewPhase(null))}
           >
             <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto z-40">
-              {/* Header */}
               <div className="flex justify-between items-center p-6 border-b">
                 <h2 className="text-2xl font-bold text-gray-900">Phase Details</h2>
                 <button 
@@ -707,7 +998,6 @@ export function Phases() {
               </div>
 
               <div className="p-6 space-y-6">
-                {/* Phase Title and Project */}
                 <div className="text-center">
                   <h1 className="text-3xl font-bold text-gray-900 mb-2">{viewPhase.name}</h1>
                   <div className="flex items-center justify-center text-gray-600 mb-4">
@@ -716,7 +1006,6 @@ export function Phases() {
                   </div>
                 </div>
 
-                {/* Status, Dates, and Basic Info */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="text-center">
                     <div className="flex items-center justify-center mb-2">
@@ -738,7 +1027,7 @@ export function Phases() {
                     </div>
                     <h3 className="font-semibold text-gray-700 mb-1">Start Date</h3>
                     <p className="text-gray-900 font-medium">
-                      {viewPhase.start_date ? new Date(viewPhase.start_date).toLocaleDateString() : 'Not set'}
+                      {viewPhase.start_date ? formatDate(viewPhase.start_date) : 'Not set'}
                     </p>
                   </div>
 
@@ -750,12 +1039,11 @@ export function Phases() {
                     </div>
                     <h3 className="font-semibold text-gray-700 mb-1">End Date</h3>
                     <p className="text-gray-900 font-medium">
-                      {viewPhase.end_date ? new Date(viewPhase.end_date).toLocaleDateString() : 'Not set'}
+                      {viewPhase.end_date ? formatDate(viewPhase.end_date) : 'Not set'}
                     </p>
                   </div>
                 </div>
 
-                {/* Budget Overview Section */}
                 <div className="bg-blue-50 rounded-lg p-6">
                   <div className="flex items-center mb-4">
                     <IndianRupee className="w-6 h-6 text-blue-600 mr-2" />
@@ -814,7 +1102,6 @@ export function Phases() {
                   </div>
                 </div>
 
-                {/* Financial Overview Section */}
                 <div className="bg-green-50 rounded-lg p-6">
                   <div className="flex items-center mb-4">
                     <IndianRupee className="w-6 h-6 text-green-600 mr-2" />
@@ -873,7 +1160,6 @@ export function Phases() {
                   </div>
                 </div>
 
-                {/* Additional Details */}
                 {viewPhase.contractor_name && (
                   <div className="bg-gray-50 rounded-lg p-4">
                     <div className="flex items-center">
@@ -884,7 +1170,6 @@ export function Phases() {
                   </div>
                 )}
 
-                {/* Photos Section */}
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center">
@@ -947,7 +1232,6 @@ export function Phases() {
                   )}
                 </div>
 
-                {/* Comments Section */}
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 mb-4">Comments</h3>
                   <div className="space-y-3 mb-4">
@@ -959,7 +1243,7 @@ export function Phases() {
                               <User className="w-4 h-4 text-gray-500 mr-2" />
                               <span className="font-medium text-gray-900">{c.user_name}</span>
                               <span className="text-xs text-gray-500 ml-2">
-                                {new Date(c.created_at).toLocaleDateString()}
+                                {formatDate(c.created_at)}
                               </span>
                             </div>
                             <input
@@ -1001,7 +1285,6 @@ export function Phases() {
                   )}
                 </div>
 
-                {/* Action Buttons */}
                 {canManage && (
                   <div className="flex gap-3 pt-6 border-t">
                     <button

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Header } from "./Header";
 import { Sidebar } from "./Sidebar";
+import { DisqusChat } from "./DisqusChat";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -67,6 +68,9 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
           © 2025 BuildMyHomes.in — All Rights Reserved
         </div>
       </footer>
+
+      {/* Disqus Chat Widget */}
+      <DisqusChat />
     </div>
   );
 }

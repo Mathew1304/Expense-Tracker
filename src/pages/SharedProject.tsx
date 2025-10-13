@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Navigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Eye, EyeOff, Lock, AlertTriangle, Calendar, MapPin, User, File, Camera } from 'lucide-react';
+import { Eye, EyeOff, Lock, AlertTriangle, Calendar, MapPin, User, File, Camera, MessageCircle, Send } from 'lucide-react';
 
 interface ShareData {
   id: string;
@@ -16,8 +16,10 @@ interface ShareData {
     incomeDetails: boolean;
     phasePhotos: boolean;
     teamMembers: boolean;
+    allowComments: boolean;
   };
   is_active: boolean;
+  view_count: number; // Added to match project_shares table
 }
 
 interface ProjectData {
@@ -31,6 +33,13 @@ interface ProjectData {
   created_at: string;
 }
 
+interface ShareComment {
+  id: string;
+  comment: string;
+  author_name: string;
+  created_at: string;
+}
+
 export function SharedProject() {
   const { shareId } = useParams<{ shareId: string }>();
   const [shareData, setShareData] = useState<ShareData | null>(null);
@@ -41,35 +50,91 @@ export function SharedProject() {
   const [materials, setMaterials] = useState<any[]>([]);
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
   const [phasePhotos, setPhasePhotos] = useState<any[]>([]);
-  
+  const [comments, setComments] = useState<ShareComment[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [enteredPassword, setEnteredPassword] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [authenticated, setAuthenticated] = useState(false);
+  const [, setAuthenticated] = useState(false);
+
+  // Comment-related state
+  const [newComment, setNewComment] = useState('');
+  const [commentAuthorName, setCommentAuthorName] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // UUID validation regex
+  const isValidUUID = (str: string) => {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(str);
+  };
 
   useEffect(() => {
     if (shareId) {
+      if (!isValidUUID(shareId)) {
+        console.error('Invalid shareId format:', shareId);
+        setError('Invalid share link');
+        setLoading(false);
+        return;
+      }
       fetchShareData();
     }
   }, [shareId]);
+
+  useEffect(() => {
+    if (projectData) {
+      const currentUrl = window.location.href;
+      const title = `${projectData.name} - Shared Project | Buildmyhomes`;
+      const description = projectData.description || `View shared construction project: ${projectData.name} in ${projectData.location || 'N/A'}`;
+
+      document.title = title;
+
+      updateMetaTag('og:title', title);
+      updateMetaTag('og:description', description);
+      updateMetaTag('og:url', currentUrl);
+      updateMetaTag('description', description);
+      updateMetaTag('twitter:title', title);
+      updateMetaTag('twitter:description', description);
+    }
+  }, [projectData]);
+
+  const updateMetaTag = (property: string, content: string) => {
+    const isOgTag = property.startsWith('og:');
+    const isTwitterTag = property.startsWith('twitter:');
+    const selector = isOgTag || isTwitterTag ? `meta[property="${property}"]` : `meta[name="${property}"]`;
+
+    let meta = document.querySelector(selector);
+    if (!meta) {
+      meta = document.createElement('meta');
+      if (isOgTag || isTwitterTag) {
+        meta.setAttribute('property', property);
+      } else {
+        meta.setAttribute('name', property);
+      }
+      document.head.appendChild(meta);
+    }
+    meta.setAttribute('content', content);
+  };
 
   const fetchShareData = async () => {
     try {
       setLoading(true);
       setError(null);
 
+      console.log('Fetching share data for shareId:', shareId); // Debug log
+
       // Fetch share data
       const { data: shareInfo, error: shareError } = await supabase
         .from('project_shares')
-        .select('*')
+        .select('id, project_id, created_at, expires_at, share_type, password, share_options, is_active, view_count')
         .eq('id', shareId)
         .eq('is_active', true)
         .single();
 
       if (shareError || !shareInfo) {
+        console.error('Share fetch error:', shareError);
         setError('Share link not found or has expired');
         setLoading(false);
         return;
@@ -84,6 +149,14 @@ export function SharedProject() {
         return;
       }
 
+      // Increment view count
+      const { error: viewError } = await supabase.rpc('increment_share_view_count', { share_id: shareId });
+      if (viewError) {
+        console.error('Error incrementing view count:', viewError);
+      } else {
+        console.log('View count incremented for shareId:', shareId);
+      }
+
       setShareData(shareInfo);
 
       // Check if password is required
@@ -95,7 +168,6 @@ export function SharedProject() {
 
       // If no password required or already authenticated, fetch project data
       await fetchProjectData(shareInfo);
-      
     } catch (error) {
       console.error('Error fetching share data:', error);
       setError('Failed to load shared project');
@@ -105,7 +177,7 @@ export function SharedProject() {
 
   const handlePasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!shareData || !enteredPassword.trim()) {
       setPasswordError('Please enter a password');
       return;
@@ -129,11 +201,12 @@ export function SharedProject() {
       // Fetch project basic info
       const { data: project, error: projectError } = await supabase
         .from('projects')
-        .select('*')
+        .select('id, name, description, status, location, start_date, end_date, created_at')
         .eq('id', shareInfo.project_id)
         .single();
 
       if (projectError || !project) {
+        console.error('Project fetch error:', projectError);
         setError('Project not found');
         setLoading(false);
         return;
@@ -146,75 +219,188 @@ export function SharedProject() {
 
       // Fetch phases if selected
       if (options.phaseDetails) {
-        const { data: phaseData } = await supabase
+        const { data: phaseData, error: phaseError } = await supabase
           .from('phases')
-          .select('*')
+          .select('id, name, start_date, end_date, status, estimated_cost, contractor_name')
           .eq('project_id', shareInfo.project_id)
           .order('start_date');
+        if (phaseError) {
+          console.error('Error fetching phases:', phaseError);
+        }
         setPhases(phaseData || []);
       }
 
       // Fetch expenses if selected
       if (options.expenseDetails) {
-        const { data: expenseData } = await supabase
+        const { data: expenseData, error: expenseError } = await supabase
           .from('expenses')
           .select(`
-            *,
-            phases!inner(name)
+            id, amount, gst_amount, category, date,
+            phases!inner(id, name)
           `)
           .eq('project_id', shareInfo.project_id)
           .eq('type', 'expense');
+        if (expenseError) {
+          console.error('Error fetching expenses:', expenseError);
+        }
         setExpenses(expenseData || []);
       }
 
       // Fetch income if selected
       if (options.incomeDetails) {
-        const { data: incomeData } = await supabase
+        const { data: incomeData, error: incomeError } = await supabase
           .from('expenses')
           .select(`
-            *,
-            phases!inner(name)
+            id, amount, gst_amount, category, date,
+            phases!inner(id, name)
           `)
           .eq('project_id', shareInfo.project_id)
           .eq('type', 'income');
+        if (incomeError) {
+          console.error('Error fetching income:', incomeError);
+        }
         setIncome(incomeData || []);
       }
 
       // Fetch materials if selected
       if (options.materialsDetails) {
-        const { data: materialData } = await supabase
+        const { data: materialData, error: materialError } = await supabase
           .from('materials')
-          .select('*')
+          .select('id, name, unit_cost, qty_required, status')
           .eq('project_id', shareInfo.project_id);
+        if (materialError) {
+          console.error('Error fetching materials:', materialError);
+        }
         setMaterials(materialData || []);
       }
 
       // Fetch team members if selected
       if (options.teamMembers) {
-        const { data: teamData } = await supabase
+        const { data: teamData, error: teamError } = await supabase
           .from('users')
           .select('id, name, email, role_id, status, active')
           .eq('project_id', shareInfo.project_id);
+        if (teamError) {
+          console.error('Error fetching team members:', teamError);
+        }
         setTeamMembers(teamData || []);
       }
 
       // Fetch phase photos if selected
       if (options.phasePhotos) {
-        const { data: photoData } = await supabase
+        const { data: photoData, error: photoError } = await supabase
           .from('phase_photos')
           .select(`
-            *,
-            phases!inner(name)
+            id, photo_url, created_at,
+            phases!inner(id, name)
           `)
           .eq('project_id', shareInfo.project_id);
+        if (photoError) {
+          console.error('Error fetching phase photos:', photoError);
+        }
         setPhasePhotos(photoData || []);
       }
+
+      // Fetch comments for this share
+      await fetchComments(shareInfo.id);
 
       setLoading(false);
     } catch (error) {
       console.error('Error fetching project data:', error);
       setError('Failed to load project data');
       setLoading(false);
+    }
+  };
+
+  // Fetch comments for this share
+  const fetchComments = async (shareId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('project_shares')
+        .select('comments')
+        .eq('id', shareId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching comments:', error);
+        return;
+      }
+
+      // Parse the JSONB comments array
+      const commentsArray = data?.comments || [];
+      setComments(commentsArray);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    }
+  };
+
+  // Submit a new comment
+  const submitComment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!shareData || !newComment.trim() || !commentAuthorName.trim()) {
+      alert('Please fill in all fields');
+      return;
+    }
+
+    setSubmittingComment(true);
+    
+    try {
+      // Create new comment object
+      const newCommentObj = {
+        id: crypto.randomUUID(),
+        comment: newComment.trim(),
+        author_name: commentAuthorName.trim(),
+        created_at: new Date().toISOString()
+      };
+
+      // Get current comments and append new one
+      const { data: currentData, error: fetchError } = await supabase
+        .from('project_shares')
+        .select('comments')
+        .eq('id', shareData.id)
+        .single();
+
+      if (fetchError) {
+        console.error('Error fetching current comments:', fetchError);
+        alert('Failed to submit comment. Please try again.');
+        return;
+      }
+
+      const currentComments = currentData?.comments || [];
+      const updatedComments = [...currentComments, newCommentObj];
+
+      console.log('Updating comments for share:', shareData.id);
+      console.log('Updated comments array:', updatedComments);
+
+      // Update the comments array in the database
+      const { error } = await supabase
+        .from('project_shares')
+        .update({ comments: updatedComments })
+        .eq('id', shareData.id);
+
+      if (error) {
+        console.error('Error submitting comment:', error);
+        console.error('Error details:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        });
+        alert(`Failed to submit comment: ${error.message}`);
+        return;
+      }
+
+      // Clear form and refresh comments
+      setNewComment('');
+      setCommentAuthorName('');
+      await fetchComments(shareData.id);
+      
+    } catch (error) {
+      console.error('Error submitting comment:', error);
+      alert('Failed to submit comment. Please try again.');
+    } finally {
+      setSubmittingComment(false);
     }
   };
 
@@ -648,6 +834,92 @@ export function SharedProject() {
                 <p className="text-gray-500">No team members assigned</p>
               )}
             </div>
+          )}
+
+          {/* Comments Section */}
+          {shareData.share_options.allowComments && (
+            <div className="bg-white rounded-lg shadow-sm p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+              <MessageCircle className="h-5 w-5 mr-2 text-blue-600" />
+              Comments
+            </h2>
+            
+            {/* Existing Comments */}
+            {comments.length > 0 && (
+              <div className="mb-6">
+                <h3 className="text-lg font-medium text-gray-800 mb-4">
+                  {comments.length} comment{comments.length !== 1 ? 's' : ''}
+                </h3>
+                <div className="space-y-4">
+                  {comments.map((comment) => (
+                    <div key={comment.id} className="border-l-4 border-blue-200 pl-4 py-2 bg-gray-50 rounded-r-lg">
+                      <div className="flex items-center justify-between mb-2">
+                        <div>
+                          <p className="font-medium text-gray-900">{comment.author_name}</p>
+                        </div>
+                        <p className="text-xs text-gray-400">
+                          {new Date(comment.created_at).toLocaleString()}
+                        </p>
+                      </div>
+                      <p className="text-gray-700">{comment.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Comment Form */}
+            <div className="border-t pt-6">
+              <h3 className="text-lg font-medium text-gray-800 mb-4">Add a Comment</h3>
+              <form onSubmit={submitComment} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Your Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={commentAuthorName}
+                    onChange={(e) => setCommentAuthorName(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter your name"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Comment *
+                  </label>
+                  <textarea
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Share your thoughts about this project..."
+                    rows={4}
+                    required
+                  />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={submittingComment || !newComment.trim() || !commentAuthorName.trim()}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {submittingComment ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Submitting...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="h-4 w-4 mr-2" />
+                        Submit Comment
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
           )}
         </div>
 

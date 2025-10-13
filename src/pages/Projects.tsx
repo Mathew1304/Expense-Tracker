@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle, Clock, Link as LinkIcon, Trash2, ExternalLink } from "lucide-react";
+import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle, Clock, Link as LinkIcon, Trash2, ExternalLink, MessageCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -50,7 +50,8 @@ export function Projects() {
     materialsDetails: true,
     incomeDetails: true,
     phasePhotos: true,
-    teamMembers: true
+    teamMembers: true,
+    allowComments: true
   });
 
   // Manage Links modal states
@@ -58,6 +59,12 @@ export function Projects() {
   const [managingLinksProject, setManagingLinksProject] = useState<any | null>(null);
   const [projectLinks, setProjectLinks] = useState<any[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
+  
+  // Comments modal states
+  const [commentsModalOpen, setCommentsModalOpen] = useState(false);
+  const [selectedLinkComments, setSelectedLinkComments] = useState<any | null>(null);
+  const [linkComments, setLinkComments] = useState<any[]>([]);
+  const [loadingComments, setLoadingComments] = useState(false);
 
   const [newProject, setNewProject] = useState({
     name: "",
@@ -413,6 +420,7 @@ export function Projects() {
   };
 
   // ✅ PDF Download with Phase Photos and separate expense/income sections
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleDownloadReport = async (project: any) => {
     console.log("Starting PDF generation for project:", project.name);
     
@@ -603,6 +611,7 @@ export function Projects() {
       }, {} as { [key: string]: any[] });
 
       for (const [phaseName, photos] of Object.entries(photosByPhase)) {
+        const photosArray = photos as any[];
         // Check if we need a new page
         if (currentY > pageHeight - 100) {
           doc.addPage();
@@ -619,8 +628,8 @@ export function Projects() {
         currentY += 15;
 
         // Display photos in a grid
-        for (let i = 0; i < photos.length; i++) {
-          const photo = photos[i];
+        for (let i = 0; i < photosArray.length; i++) {
+          const photo = photosArray[i];
           
           // Check if we need a new page
           if (photosPerPage >= maxPhotosPerPage) {
@@ -677,7 +686,7 @@ export function Projects() {
         }
 
         // Update currentY for next phase
-        const rows = Math.ceil(photos.length / 2);
+        const rows = Math.ceil(photosArray.length / 2);
         currentY += rows * (photoHeight + photoSpacing + 15) + 20;
       }
       
@@ -905,7 +914,7 @@ export function Projects() {
     
     if (projectData.teamMembers.length > 0) {
       const teamRows = projectData.teamMembers.map((t) => [
-        t.name || t.full_name || 'Unknown Member',
+        t.name || 'Unknown Member',
         t.email || 'No Email',
         t.status || 'pending',
         t.active ? 'Active' : 'Inactive'
@@ -1034,14 +1043,13 @@ export function Projects() {
   // ✅ FIXED: Generate share link with proper share_options handling
   const generateShareLink = async (project: any, type: 'public' | 'private', password?: string) => {
     try {
-      console.log('🔍 generateShareLink called with:', { 
-        project: project?.name, 
-        type, 
+      console.log('🔍 generateShareLink called with:', {
+        project: project?.name,
+        type,
         hasPassword: !!password,
-        shareOptions 
+        shareOptions
       });
-      
-      const shareId = crypto.randomUUID();
+
       const expiresAt = new Date();
       const expiryValue = parseInt(expiryAmount) || 24;
 
@@ -1051,31 +1059,31 @@ export function Projects() {
         expiresAt.setHours(expiresAt.getHours() + expiryValue);
       }
 
-      // ✅ CRITICAL FIX: Ensure share_options is properly structured
       const shareData = {
-        id: shareId,
         project_id: project.id,
         created_by: profileId,
         share_type: type,
         password: password || null,
         expires_at: expiresAt.toISOString(),
-        share_options: shareOptions, // This should be a JSON object
+        share_options: shareOptions,
         is_active: true
       };
 
       console.log('🔍 Inserting share data:', shareData);
-      const { error } = await supabase
+      const { data: insertedShare, error } = await supabase
         .from('project_shares')
-        .insert([shareData]);
+        .insert([shareData])
+        .select('id')
+        .single();
 
-      if (error) {
+      if (error || !insertedShare) {
         console.error('Database error:', error);
         throw error;
       }
 
       const baseUrl = window.location.origin;
-      const shareUrl = `${baseUrl}/shared/${shareId}`;
-      
+      const shareUrl = `${baseUrl}/shared/${insertedShare.id}`;
+
       console.log('✅ Share link generated successfully:', shareUrl);
       setGeneratedLink(shareUrl);
 
@@ -1110,7 +1118,8 @@ export function Projects() {
       materialsDetails: true,
       incomeDetails: true,
       phasePhotos: true,
-      teamMembers: true
+      teamMembers: true,
+      allowComments: true
     });
   };
 
@@ -1175,7 +1184,8 @@ export function Projects() {
       materialsDetails: true,
       incomeDetails: true,
       phasePhotos: true,
-      teamMembers: true
+      teamMembers: true,
+      allowComments: true
     });
   };
 
@@ -1267,6 +1277,41 @@ export function Projects() {
     return new Date(expiresAt) < new Date();
   };
 
+  // Fetch comments for a specific share link
+  const fetchLinkComments = async (shareId: string) => {
+    setLoadingComments(true);
+    try {
+      const { data, error } = await supabase
+        .from('project_shares')
+        .select('comments')
+        .eq('id', shareId)
+        .single();
+
+      if (error) {
+        console.error('Error fetching comments:', error);
+        return;
+      }
+
+      // Parse the JSONB comments array and sort by created_at descending
+      const commentsArray = data?.comments || [];
+      const sortedComments = commentsArray.sort((a: any, b: any) => 
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setLinkComments(sortedComments);
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    } finally {
+      setLoadingComments(false);
+    }
+  };
+
+  // Handle view comments button click
+  const handleViewComments = async (link: any) => {
+    setSelectedLinkComments(link);
+    setCommentsModalOpen(true);
+    await fetchLinkComments(link.id);
+  };
+
   // Deselect all share options
   const selectNoneOptions = () => {
     setShareOptions({
@@ -1275,7 +1320,8 @@ export function Projects() {
       materialsDetails: false,
       incomeDetails: false,
       phasePhotos: false,
-      teamMembers: false
+      teamMembers: false,
+      allowComments: false
     });
   };
 
@@ -1302,6 +1348,7 @@ export function Projects() {
   return (
     <Layout title="Projects">
       <div className="space-y-6">
+        <StorageBar />
         {/* Search + Add + Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
@@ -1730,7 +1777,7 @@ export function Projects() {
                   {teamMembers.map((t) => (
                     <li key={t.id} className="flex items-center">
                       <User className="h-4 w-4 mr-2 text-gray-500" />
-                      {t.name || t.full_name || "Unknown"} -{" "}
+                      {t.name || "Unknown"} -{" "}
                       {t.role_id || t.role ? "Role Assigned" : "No Role"}
                     </li>
                   ))}
@@ -1844,6 +1891,16 @@ export function Projects() {
                         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                       />
                       <span className="text-sm text-gray-700">Team Members</span>
+                    </label>
+                    
+                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={shareOptions.allowComments}
+                        onChange={() => handleShareOptionChange('allowComments')}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">Allow Comments</span>
                     </label>
                   </div>
                 </div>
@@ -2004,6 +2061,9 @@ export function Projects() {
                     )}
                     {shareOptions.teamMembers && (
                       <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-1 rounded">Team</span>
+                    )}
+                    {shareOptions.allowComments && (
+                      <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">Comments</span>
                     )}
                   </div>
                 </div>
@@ -2245,6 +2305,18 @@ export function Projects() {
                           >
                             <ExternalLink className="w-4 h-4" />
                           </button>
+                          <button
+                            onClick={() => handleViewComments(link)}
+                            disabled={expired}
+                            className={`p-2 rounded-lg transition-colors ${
+                              expired
+                                ? 'text-slate-400 cursor-not-allowed'
+                                : 'text-blue-600 hover:bg-blue-50'
+                            }`}
+                            title="View Comments"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
                     );
@@ -2273,6 +2345,100 @@ export function Projects() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Comments Modal */}
+      {commentsModalOpen && selectedLinkComments && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setCommentsModalOpen(false);
+            }
+          }}
+        >
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-blue-600 rounded-lg">
+                  <MessageCircle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-slate-900">Share Link Comments</h2>
+                  <p className="text-sm text-slate-600">
+                    {selectedLinkComments.share_type === 'public' ? 'Public' : 'Private'} Link
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setCommentsModalOpen(false)}
+                className="p-2 hover:bg-white rounded-lg transition-colors"
+              >
+                <X className="w-5 h-5 text-slate-500" />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingComments ? (
+                <div className="flex justify-center items-center h-32">
+                  <div className="text-slate-600">Loading comments...</div>
+                </div>
+              ) : linkComments.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-32 text-center">
+                  <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mb-3">
+                    <MessageCircle className="w-6 h-6 text-slate-400" />
+                  </div>
+                  <h3 className="text-lg font-medium text-slate-900 mb-1">No Comments Yet</h3>
+                  <p className="text-slate-600">
+                    No comments have been added to this share link.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-slate-900">
+                      {linkComments.length} comment{linkComments.length !== 1 ? 's' : ''}
+                    </h3>
+                  </div>
+                  {linkComments.map((comment) => (
+                    <div key={comment.id} className="border border-slate-200 rounded-lg p-4 bg-slate-50">
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="font-medium text-slate-900">{comment.author_name}</p>
+                        </div>
+                        <p className="text-xs text-slate-400">
+                          {formatDate(comment.created_at)}
+                        </p>
+                      </div>
+                      <p className="text-slate-700">{comment.comment}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-slate-200 bg-slate-50">
+              <div className="flex items-center justify-between">
+                <div className="text-sm text-slate-600">
+                  Comments are visible to anyone with the share link
+                </div>
+                <button
+                  onClick={() => {
+                    const shareUrl = `${window.location.origin}/shared/${selectedLinkComments.id}`;
+                    window.open(shareUrl, '_blank');
+                  }}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  View Share Link
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
