@@ -1,23 +1,14 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Lock, Globe, Crown, AlertTriangle, Clock, Link as LinkIcon, Trash2, ExternalLink, MessageCircle } from "lucide-react";
+import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Lock, Globe, Clock, Link as LinkIcon, Trash2, ExternalLink, MessageCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
-// Storage limits by plan type (in MB)
-const STORAGE_LIMITS = {
-  free: 800,
-  basic: 3072, // 3GB
-  pro: -1 // unlimited
-};
-
 export function Projects() {
   const { user } = useAuth();
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [userPlan, setUserPlan] = useState<'free' | 'basic' | 'pro'>('free');
-  const [storageUsed, setStorageUsed] = useState(0);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [projects, setProjects] = useState<any[]>([]);
@@ -50,8 +41,7 @@ export function Projects() {
     materialsDetails: true,
     incomeDetails: true,
     phasePhotos: true,
-    teamMembers: true,
-    allowComments: true
+    teamMembers: true
   });
 
   // Manage Links modal states
@@ -77,142 +67,14 @@ export function Projects() {
 
   const [filterStatus, setFilterStatus] = useState("All");
 
-  // ✅ Fetch current admin ID and user plan
+  // Fetch current admin ID
   useEffect(() => {
     if (user) {
       setProfileId(user.id);
-      fetchUserPlanAndStorage(user.id);
     }
   }, [user]);
 
-  // ✅ Fetch user plan and calculate storage usage
-  const fetchUserPlanAndStorage = async (userId: string) => {
-    try {
-      // Fetch user profile to get plan
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('plan_type')
-        .eq('id', userId)
-        .single();
-
-      if (profileError) {
-        console.error('Profile fetch error:', profileError);
-        setUserPlan('free'); // Default to free
-      } else {
-        setUserPlan(profile?.plan_type || 'free');
-      }
-
-      // Calculate storage usage (sum of all project files, photos, etc.)
-      // This is a simplified calculation - in production you'd track actual file sizes
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('created_by', userId);
-
-      const { data: photosData } = await supabase
-        .from('phase_photos')
-        .select('id')
-        .eq('created_by', userId);
-
-      // Estimate storage: 10MB per project + 2MB per photo
-      const projectStorage = (projectsData?.length || 0) * 10;
-      const photoStorage = (photosData?.length || 0) * 2;
-      const totalStorage = projectStorage + photoStorage;
-
-      setStorageUsed(totalStorage);
-    } catch (error) {
-      console.error('Error fetching user plan and storage:', error);
-    }
-  };
-
-  // ✅ Check storage limit before creating project
-  const checkStorageLimit = (): boolean => {
-    const limit = STORAGE_LIMITS[userPlan];
-    if (limit === -1) return true; // Unlimited for pro users
-    
-    const estimatedNewProjectSize = 10; // MB
-    return (storageUsed + estimatedNewProjectSize) <= limit;
-  };
-
-  // ✅ Get storage limit text
-  const getStorageLimitText = (): string => {
-    const limit = STORAGE_LIMITS[userPlan];
-    if (limit === -1) return 'Unlimited';
-    return `${limit} MB`;
-  };
-
-  // ✅ Get storage percentage
-  const getStoragePercentage = (): number => {
-    const limit = STORAGE_LIMITS[userPlan];
-    if (limit === -1) return 0; // Unlimited
-    return Math.min((storageUsed / limit) * 100, 100);
-  };
-
-  // ✅ Storage bar component
-  const StorageBar = () => {
-    const percentage = getStoragePercentage();
-    const limit = STORAGE_LIMITS[userPlan];
-    const isOverLimit = limit !== -1 && storageUsed > limit;
-    const isNearLimit = limit !== -1 && percentage > 80;
-
-    return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center space-x-2">
-            <div className={`p-1 rounded ${userPlan === 'pro' ? 'bg-purple-100' : userPlan === 'basic' ? 'bg-blue-100' : 'bg-orange-100'}`}>
-              {userPlan === 'pro' && <Crown className="h-4 w-4 text-purple-600" />}
-              {userPlan === 'basic' && <File className="h-4 w-4 text-blue-600" />}
-              {userPlan === 'free' && <AlertTriangle className="h-4 w-4 text-orange-600" />}
-            </div>
-            <div>
-              <h3 className="font-semibold text-gray-800">
-                {userPlan === 'pro' && 'Pro Plan - Unlimited Access'}
-                {userPlan === 'basic' && 'Basic Plan - Enhanced Access'}
-                {userPlan === 'free' && 'Free Plan - Limited Access'}
-              </h3>
-              <p className="text-sm text-gray-600">
-                {userPlan === 'pro' && 'Unlimited projects and storage'}
-                {userPlan === 'basic' && `You can manage unlimited projects with up to 3GB storage`}
-                {userPlan === 'free' && `You can manage 1 project with up to ${STORAGE_LIMITS.free}MB storage`}
-              </p>
-            </div>
-          </div>
-          {userPlan !== 'pro' && (
-            <button className="">
-              
-              
-            </button>
-          )}
-        </div>
-
-        {userPlan !== 'pro' && (
-          <>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-sm font-medium text-gray-700">Storage Used</span>
-              <span className={`text-sm font-medium ${isOverLimit ? 'text-red-600' : isNearLimit ? 'text-yellow-600' : 'text-gray-700'}`}>
-                {storageUsed} MB / {getStorageLimitText()}
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-2">
-              <div 
-                className={`h-2 rounded-full transition-all duration-300 ${
-                  isOverLimit ? 'bg-red-500' : isNearLimit ? 'bg-yellow-500' : 'bg-green-500'
-                }`}
-                style={{ width: `${Math.min(percentage, 100)}%` }}
-              />
-            </div>
-            {isOverLimit && (
-              <p className="text-xs text-red-600 mt-2">
-                ⚠️ You've exceeded your storage limit. Upgrade to continue adding content.
-              </p>
-            )}
-          </>
-        )}
-      </div>
-    );
-  };
-
-  // ✅ Fetch projects created by this admin only
+  // Fetch projects created by this admin only
   const fetchProjects = async () => {
     if (!profileId) return;
     setLoading(true);
@@ -239,12 +101,6 @@ export function Projects() {
   const handleSaveProject = async () => {
     if (!profileId) return;
 
-    // Check storage limit for new projects
-    if (!editingProject && !checkStorageLimit()) {
-      alert(`Storage limit exceeded! You can use up to ${getStorageLimitText()} on your ${userPlan} plan. Please upgrade to continue.`);
-      return;
-    }
-
     try {
       if (editingProject) {
         // Update existing project
@@ -261,9 +117,6 @@ export function Projects() {
           .insert([{ ...newProject, created_by: profileId }]);
 
         if (error) throw error;
-        
-        // Update storage usage
-        setStorageUsed(prev => prev + 10); // Estimate 10MB per project
       }
 
       setIsModalOpen(false);
@@ -277,7 +130,6 @@ export function Projects() {
         end_date: "",
       });
       fetchProjects();
-      fetchUserPlanAndStorage(profileId); // Refresh storage
     } catch (error: any) {
       console.error("Save project error:", error.message);
       alert("Error saving project: " + error.message);
@@ -1065,7 +917,7 @@ export function Projects() {
         share_type: type,
         password: password || null,
         expires_at: expiresAt.toISOString(),
-        share_options: shareOptions,
+        share_options: { ...shareOptions, allowComments: true },
         is_active: true
       };
 
@@ -1118,8 +970,7 @@ export function Projects() {
       materialsDetails: true,
       incomeDetails: true,
       phasePhotos: true,
-      teamMembers: true,
-      allowComments: true
+      teamMembers: true
     });
   };
 
@@ -1184,8 +1035,7 @@ export function Projects() {
       materialsDetails: true,
       incomeDetails: true,
       phasePhotos: true,
-      teamMembers: true,
-      allowComments: true
+      teamMembers: true
     });
   };
 
@@ -1320,8 +1170,7 @@ export function Projects() {
       materialsDetails: false,
       incomeDetails: false,
       phasePhotos: false,
-      teamMembers: false,
-      allowComments: false
+      teamMembers: false
     });
   };
 
@@ -1348,7 +1197,6 @@ export function Projects() {
   return (
     <Layout title="Projects">
       <div className="space-y-6">
-        <StorageBar />
         {/* Search + Add + Filter */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div className="flex flex-col sm:flex-row gap-4 sm:items-center">
@@ -1377,10 +1225,6 @@ export function Projects() {
 
           <button
             onClick={() => {
-              if (!checkStorageLimit()) {
-                alert(`Storage limit exceeded! You can use up to ${getStorageLimitText()} on your ${userPlan} plan. Please upgrade to continue.`);
-                return;
-              }
               setEditingProject(null);
               setNewProject({
                 name: "",
@@ -1892,16 +1736,6 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Team Members</span>
                     </label>
-                    
-                    <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={shareOptions.allowComments}
-                        onChange={() => handleShareOptionChange('allowComments')}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700">Allow Comments</span>
-                    </label>
                   </div>
                 </div>
 
@@ -2061,9 +1895,6 @@ export function Projects() {
                     )}
                     {shareOptions.teamMembers && (
                       <span className="text-xs bg-indigo-200 text-indigo-800 px-2 py-1 rounded">Team</span>
-                    )}
-                    {shareOptions.allowComments && (
-                      <span className="text-xs bg-blue-200 text-blue-800 px-2 py-1 rounded">Comments</span>
                     )}
                   </div>
                 </div>
