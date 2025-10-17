@@ -24,13 +24,22 @@ interface Transaction {
   phase_id: string;
   category: string;
   amount: number;
-  gst_amount?: number;
+  gst_amount: number;
   date: string;
   phase_name: string;
   project_name: string;
   payment_method: string;
   bill_path: string | null;
+  bill_file: any | null;
   type: 'expense' | 'income';
+  source: string | null;
+  custom_category: string | null;
+  created_at: string;
+  created_by: string;
+  project_id: string;
+  reference_id: string | null;
+  description: string | null;
+  tags: string | null;
   vendor_name?: string;
 }
 
@@ -141,6 +150,9 @@ export function Expenses() {
     gstAmount: "",
     source: "",
     customCategory: "",
+    referenceId: "",
+    description: "",
+    tags: "",
   });
   const [paymentLinkData, setPaymentLinkData] = useState({
     businessName: "",
@@ -215,7 +227,7 @@ export function Expenses() {
     const { data, error } = await supabase
       .from("expenses")
       .select(
-        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source,
+        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source, reference_id, description, tags,
         phases (id, name, project_id, projects (id, name))`
       )
       .in(
@@ -239,6 +251,9 @@ export function Expenses() {
           phase_name: e.phases?.name || "No Phase",
           project_name: e.phases?.projects?.name || "No Project",
           vendor_name: e.source,
+          reference_id: e.reference_id,
+          description: e.description,
+          tags: e.tags,
         }))
       );
     }
@@ -600,7 +615,7 @@ export function Expenses() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount, source, customCategory } = formData;
+    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount, source, customCategory, referenceId, description, tags } = formData;
 
     // Use custom category if "Other" is selected and customCategory is provided
     const finalCategory = category === "Other" && customCategory ? customCategory : category;
@@ -632,14 +647,18 @@ export function Expenses() {
       project_id: projectId,
       phase_id: phaseId,
       category: finalCategory,
+      custom_category: finalCategory === 'Other' ? customCategory : null,
       amount: parseFloat(amount),
-      gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : null,
+      gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : 0,
       date,
       payment_method: paymentMethod,
       bill_path,
       type: formType,
       created_by: user?.id,
       source: source || null,
+      reference_id: referenceId || null,
+      description: description || null,
+      tags: tags || null,
     };
 
     const { error } = editingId
@@ -666,6 +685,9 @@ export function Expenses() {
         gstAmount: "",
         source: "",
         customCategory: "",
+        referenceId: "",
+        description: "",
+        tags: "",
       });
       setSuccessMessage(`${formType === 'income' ? 'Income' : 'Expense'} saved successfully!`);
       setTimeout(() => setSuccessMessage(null), 5000);
@@ -687,6 +709,9 @@ export function Expenses() {
       gstAmount: (transaction.gst_amount || 0).toString(),
       source: transaction.vendor_name || "",
       customCategory: "",
+      referenceId: transaction.reference_id || "",
+      description: transaction.description || "",
+      tags: transaction.tags || "",
     });
     setFormType(transaction.type);
     setEditingId(transaction.id);
@@ -725,6 +750,9 @@ export function Expenses() {
       gstAmount: "",
       source: "",
       customCategory: "",
+      referenceId: "",
+      description: "",
+      tags: "",
     });
     setShowForm(true);
   };
@@ -1066,7 +1094,6 @@ export function Expenses() {
                     <th className="p-3 text-left font-medium text-gray-700 border-b">GST</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Total</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Payment Method</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Bill</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Date</th>
                     <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
                   </tr>
@@ -1118,21 +1145,6 @@ export function Expenses() {
                           {t.type === 'income' ? '' : ''}₹{totalAmount.toFixed(2)}
                         </td>
                         <td className="p-3 text-gray-900">{t.payment_method}</td>
-                        <td className="p-3">
-                          {t.bill_path ? (
-                            <a
-                              href={`${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/public/bills/${t.bill_path}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800 underline"
-                              onClick={(event) => event.stopPropagation()}
-                            >
-                              View Bill
-                            </a>
-                          ) : (
-                            <span className="text-gray-500">No Bill</span>
-                          )}
-                        </td>
                         <td className="p-3 text-gray-900">
                           {format(new Date(t.date), "dd/MM/yyyy")}
                         </td>
@@ -1176,7 +1188,7 @@ export function Expenses() {
                   })}
                   {currentTransactions.length === 0 && (
                     <tr>
-                      <td colSpan={12} className="p-8 text-center text-gray-500">
+                      <td colSpan={11} className="p-8 text-center text-gray-500">
                         No transactions found
                       </td>
                     </tr>
@@ -1470,6 +1482,38 @@ export function Expenses() {
                 </div>
               </div>
 
+              {/* Vendor and Reference ID */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Vendor Name</p>
+                  <p className="text-base font-semibold text-gray-900">{detailsTransaction.vendor_name || 'Not specified'}</p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-1">Reference ID</p>
+                  <p className="text-base font-semibold text-gray-900">{detailsTransaction.reference_id || 'Not specified'}</p>
+                </div>
+              </div>
+
+              {/* Description */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <p className="text-sm text-gray-600 mb-1">Description</p>
+                <p className="text-base text-gray-900">{detailsTransaction.description || 'No description provided'}</p>
+              </div>
+
+              {/* Tags */}
+              {detailsTransaction.tags && (
+                <div className="bg-gray-50 p-4 rounded-lg">
+                  <p className="text-sm text-gray-600 mb-2">Tags</p>
+                  <div className="flex flex-wrap gap-2">
+                    {detailsTransaction.tags.split(',').map((tag, index) => (
+                      <span key={index} className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-full text-sm font-medium">
+                        {tag.trim()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Bill/Receipt */}
               <div className="bg-yellow-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600 mb-2">
@@ -1609,6 +1653,16 @@ export function Expenses() {
                   />
                 </div>
                 <div>
+                  <label className="block font-medium text-gray-700 mb-1">Reference ID</label>
+                  <input
+                    type="text"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter reference ID"
+                    value={formData.referenceId}
+                    onChange={(e) => handleChange("referenceId", e.target.value)}
+                  />
+                </div>
+                <div>
                   <label className="block font-medium text-gray-700 mb-1">Amount</label>
                   <input
                     type="number"
@@ -1617,6 +1671,26 @@ export function Expenses() {
                     value={formData.amount}
                     onChange={(e) => handleChange("amount", e.target.value)}
                     required
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    rows={3}
+                    placeholder="Enter description"
+                    value={formData.description}
+                    onChange={(e) => handleChange("description", e.target.value)}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block font-medium text-gray-700 mb-1">Tags (comma-separated, e.g. #tag1,#tag2)</label>
+                  <input
+                    type="text"
+                    className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter tags separated by commas"
+                    value={formData.tags}
+                    onChange={(e) => handleChange("tags", e.target.value)}
                   />
                 </div>
                 <div className="col-span-2">

@@ -51,11 +51,8 @@ export function LoginForm() {
         if (error) throw error;
 
         if (data?.user?.id) {
-          setMessage('Sign-up successful! Redirecting to dashboard...');
-
-          setTimeout(() => {
-            navigate('/', { replace: true });
-          }, 1500);
+          setMessage('Sign-up successful! Please check your email to confirm your account.');
+          // Don't redirect immediately - wait for email confirmation
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({
@@ -89,12 +86,38 @@ export function LoginForm() {
     setMessage('');
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      // First, send the built-in Supabase reset email
+      const { error: supabaseError } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
 
-      if (error) throw error;
-      setMessage('Password reset email sent. Please check your inbox.');
+      if (supabaseError) throw supabaseError;
+
+      // Then send our custom branded email via Resend
+      try {
+        const resetUrl = `${window.location.origin}/reset-password?email=${encodeURIComponent(forgotEmail)}`;
+        
+        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-password-reset`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            email: forgotEmail,
+            resetUrl: resetUrl,
+          }),
+        });
+
+        const result = await response.json();
+        if (!result.success) {
+          console.warn('Custom email failed, but Supabase email was sent:', result.error);
+        }
+      } catch (customEmailError) {
+        console.warn('Custom email failed, but Supabase email was sent:', customEmailError);
+      }
+
+      setMessage('Password reset email sent. Please check your inbox and spam folder.');
       setForgotEmail('');
       setShowForgotPassword(false);
     } catch (err: any) {

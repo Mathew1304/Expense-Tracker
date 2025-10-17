@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Search, ListFilter as Filter, Eye, CreditCard as Edit, Trash2, Clock, User, Building, MapPin } from 'lucide-react';
+import { Calendar as CalendarIcon, ChevronLeft, ChevronRight, Plus, Edit, Trash2, Clock, User, Building, MapPin } from 'lucide-react';
 import { Layout } from '../components/Layout/Layout';
 import CreateEditEventModal from '../components/modals/CreateEditEventModal';
 import { supabase } from '../lib/supabase';
@@ -26,19 +26,31 @@ interface CalendarEvent {
   created_at: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
+}
+
 export const Calendar: React.FC = () => {
   const { user } = useAuth();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [users, setUsers] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(new Date('2025-10-15T11:57:00+05:30'));
   const [viewType, setViewType] = useState<'month' | 'week' | 'day'>('month');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState<string | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedDate, setSelectedDate] = useState<string>('');
-  const [searchTerm, setSearchTerm] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const [statusFilter, setStatusFilter] = useState('all');
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -47,9 +59,54 @@ export const Calendar: React.FC = () => {
 
   const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  const toDisplayDateFormat = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  };
+
+  const toDatabaseDateFormat = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [day, month, year] = dateStr.split('-');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatDateToISO = (date: Date): string => {
+    const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const year = istDate.getFullYear().toString().padStart(4, '0');
+    const month = (istDate.getMonth() + 1).toString().padStart(2, '0');
+    const day = istDate.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatTimeToIST = (time: string): string => {
+    if (!time) return '';
+    const [hours, minutes] = time.split(':');
+    const date = new Date();
+    date.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Asia/Kolkata'
+    });
+  };
+
+  const getProjectName = (projectId?: string): string => {
+    if (!projectId) return '';
+    const project = projects.find(p => p.id === projectId);
+    return project ? project.name : projectId;
+  };
+
   useEffect(() => {
-    if (user) {
+    if (user?.id) {
       fetchEvents();
+      fetchProjects();
+      fetchUsers();
+    } else {
+      console.warn('No authenticated user found, skipping data fetch');
+      setLoading(false);
+      setShowSuccessModal('Please log in to view calendar data.');
     }
   }, [user]);
 
@@ -62,19 +119,131 @@ export const Calendar: React.FC = () => {
         .eq('created_by', user?.id)
         .order('start_date', { ascending: true });
 
-      if (error) throw error;
+      if (error) throw new Error(`Failed to fetch events: ${error.message}`);
 
       setEvents(data || []);
-    } catch (error) {
-      console.error('Error fetching events:', error);
+    } catch (error: any) {
+      console.error('Error fetching events:', error.message);
+      setShowSuccessModal('Failed to fetch events. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchProjects = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, name')
+        .eq('created_by', user?.id);
+
+      if (error) throw new Error(`Failed to fetch projects: ${error.message}`);
+
+      setProjects(data || []);
+    } catch (error: any) {
+      console.error('Error fetching projects:', error.message);
+      setShowSuccessModal('Failed to fetch projects. Please try again.');
+    }
+  };
+
+  const fetchUsers = async () => {
+    try {
+      if (!user?.id) {
+        console.warn('No authenticated user found, skipping user fetch');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('id, name, email')
+        .eq('created_by', user.id);
+
+      if (error) throw new Error(`Failed to fetch users: ${error.message} (code: ${error.code})`);
+
+      if (!data || data.length === 0) {
+        console.warn('No users found created by:', user.id);
+      }
+
+      setUsers(data || []);
+    } catch (error: any) {
+      console.error('Detailed error fetching users:', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
+      setShowSuccessModal('Failed to fetch users. Please ensure the users table is set up correctly.');
+    }
+  };
+
+  const sendEventEmail = async (
+    attendeeEmail: string,
+    eventData: {
+      title: string;
+      description?: string;
+      start_date: string;
+      end_date: string;
+      start_time?: string;
+      end_time?: string;
+      location?: string;
+      all_day: boolean;
+      type: string;
+      priority: string;
+    }
+  ) => {
+    try {
+      // Get attendee name from users list
+      const attendeeUser = users.find(u => u.email === attendeeEmail);
+      const attendeeName = attendeeUser?.name || '';
+
+      // Get organizer details
+      const organizerName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'Event Organizer';
+      const organizerEmail = user?.email || '';
+
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-calendar-invite`;
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          attendeeEmail,
+          attendeeName,
+          eventTitle: eventData.title,
+          eventDescription: eventData.description,
+          startDate: eventData.start_date,
+          endDate: eventData.end_date,
+          startTime: eventData.start_time,
+          endTime: eventData.end_time,
+          location: eventData.location,
+          allDay: eventData.all_day,
+          eventType: eventData.type,
+          priority: eventData.priority,
+          organizerName,
+          organizerEmail,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to send email: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('Email sent successfully:', data);
+    } catch (error: any) {
+      console.error('Error sending email:', error.message);
+      // Don't show error to user, just log it
+      console.warn('Event created but email notification failed');
+    }
+  };
+
   const getMonthData = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
+    const istDate = new Date(date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+    const year = istDate.getFullYear();
+    const month = istDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     const startDate = new Date(firstDay);
@@ -102,15 +271,13 @@ export const Calendar: React.FC = () => {
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    setCurrentDate(new Date('2025-10-15T11:57:00+05:30'));
   };
 
   const getEventsForDate = (date: Date) => {
-    const dateString = date.toISOString().split('T')[0];
+    const dateString = formatDateToISO(date);
     return events.filter(event => {
-      const eventStart = event.start_date;
-      const eventEnd = event.end_date;
-      return dateString >= eventStart && dateString <= eventEnd;
+      return dateString >= event.start_date && dateString <= event.end_date;
     });
   };
 
@@ -145,25 +312,85 @@ export const Calendar: React.FC = () => {
     return colors[status] || 'bg-gray-100 text-gray-800';
   };
 
+  const normalizeDate = (dateStr: string): string => {
+    if (!dateStr) return '';
+    
+    // Regular expressions to match date formats
+    const yyyymmdd = /^(\d{4})-(\d{2})-(\d{2})$/;
+    const ddmmyyyy = /^(\d{2})-(\d{2})-(\d{4})$/;
+
+    if (yyyymmdd.test(dateStr)) {
+      // Input is YYYY-MM-DD, return as is
+      return dateStr;
+    } else if (ddmmyyyy.test(dateStr)) {
+      // Input is DD-MM-YYYY, convert to YYYY-MM-DD
+      const [day, month, year] = dateStr.split('-');
+      return `${year}-${month}-${day}`;
+    } else {
+      throw new Error(`Invalid date format: ${dateStr}. Expected YYYY-MM-DD or DD-MM-YYYY.`);
+    }
+  };
+
   const handleCreateEvent = async (eventData: Omit<CalendarEvent, 'id' | 'created_at' | 'created_by'>) => {
     try {
+      const startDateInput = eventData.start_date;
+      const endDateInput = eventData.end_date;
+      console.log('Input start_date:', startDateInput);
+      console.log('Input end_date:', endDateInput);
+
+      // Normalize dates to YYYY-MM-DD
+      const startDate = normalizeDate(startDateInput);
+      const endDate = normalizeDate(endDateInput);
+      console.log('Normalized start_date:', startDate);
+      console.log('Normalized end_date:', endDate);
+
+      // Validate dates
+      if (!startDate || isNaN(new Date(startDate).getTime())) {
+        throw new Error('Invalid start date format after normalization. Expected valid date, got: ' + startDate);
+      }
+      if (!endDate || isNaN(new Date(endDate).getTime())) {
+        throw new Error('Invalid end date format after normalization. Expected valid date, got: ' + endDate);
+      }
+
       const { data, error } = await supabase
         .from('calendar_events')
         .insert([{
           ...eventData,
+          start_date: startDate,
+          end_date: endDate,
+          start_time: eventData.start_time ? formatTimeToIST(eventData.start_time) : null,
+          end_time: eventData.end_time ? formatTimeToIST(eventData.end_time) : null,
           created_by: user?.id
         }])
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) throw new Error(`Failed to create event: ${error.message}`);
 
       setEvents([...events, data]);
+
+      // Send email invitations to all attendees
+      for (const attendeeEmail of eventData.attendees) {
+        await sendEventEmail(attendeeEmail, {
+          title: eventData.title,
+          description: eventData.description,
+          start_date: data.start_date,
+          end_date: data.end_date,
+          start_time: eventData.start_time,
+          end_time: eventData.end_time,
+          location: eventData.location,
+          all_day: eventData.all_day,
+          type: eventData.type,
+          priority: eventData.priority,
+        });
+      }
+
       setShowCreateModal(false);
       setSelectedDate('');
-    } catch (error) {
-      console.error('Error creating event:', error);
-      alert('Failed to create event. Please try again.');
+      setShowSuccessModal('Event created successfully!');
+    } catch (error: any) {
+      console.error('Error creating event:', error.message);
+      setShowSuccessModal('Failed to create event. Please try again.');
     }
   };
 
@@ -171,76 +398,101 @@ export const Calendar: React.FC = () => {
     if (!selectedEvent) return;
 
     try {
+      const startDate = normalizeDate(eventData.start_date);
+      const endDate = normalizeDate(eventData.end_date);
+
       const { data, error } = await supabase
         .from('calendar_events')
-        .update(eventData)
+        .update({
+          ...eventData,
+          start_date: startDate,
+          end_date: endDate,
+          start_time: eventData.start_time ? formatTimeToIST(eventData.start_time) : null,
+          end_time: eventData.end_time ? formatTimeToIST(eventData.end_time) : null
+        })
         .eq('id', selectedEvent.id)
         .select()
         .single();
 
-      if (error) throw error;
+      if (error) throw new Error(`Failed to update event: ${error.message}`);
 
       setEvents(events.map(event => event.id === selectedEvent.id ? data : event));
+
+      // Send email invitations only to newly added attendees
+      const newAttendees = eventData.attendees.filter(a => !selectedEvent.attendees.includes(a));
+      for (const attendeeEmail of newAttendees) {
+        await sendEventEmail(attendeeEmail, {
+          title: eventData.title,
+          description: eventData.description,
+          start_date: data.start_date,
+          end_date: data.end_date,
+          start_time: eventData.start_time,
+          end_time: eventData.end_time,
+          location: eventData.location,
+          all_day: eventData.all_day,
+          type: eventData.type,
+          priority: eventData.priority,
+        });
+      }
+
       setShowEditModal(false);
       setSelectedEvent(null);
-    } catch (error) {
-      console.error('Error updating event:', error);
-      alert('Failed to update event. Please try again.');
+      setShowSuccessModal('Event updated successfully!');
+    } catch (error: any) {
+      console.error('Error updating event:', error.message);
+      setShowSuccessModal('Failed to update event. Please try again.');
     }
   };
 
   const handleDeleteEvent = async (eventId: string) => {
-    if (!window.confirm('Are you sure you want to delete this event?')) return;
-
     try {
       const { error } = await supabase
         .from('calendar_events')
         .delete()
         .eq('id', eventId);
 
-      if (error) throw error;
+      if (error) throw new Error(`Failed to delete event: ${error.message}`);
 
       setEvents(events.filter(event => event.id !== eventId));
-    } catch (error) {
-      console.error('Error deleting event:', error);
-      alert('Failed to delete event. Please try again.');
+      setShowDeleteModal(null);
+      setShowSuccessModal('Event deleted successfully!');
+    } catch (error: any) {
+      console.error('Error deleting event:', error.message);
+      setShowSuccessModal('Failed to delete event. Please try again.');
     }
   };
 
   const handleDayClick = (date: Date) => {
-    const dateString = date.toISOString().split('T')[0];
+    const dateString = toDisplayDateFormat(formatDateToISO(date));
     setSelectedDate(dateString);
     setShowCreateModal(true);
   };
 
   const handleEventClick = (event: CalendarEvent) => {
-    setSelectedEvent(event);
+    setSelectedEvent({
+      ...event,
+      start_date: toDisplayDateFormat(event.start_date),
+      end_date: toDisplayDateFormat(event.end_date)
+    });
     setShowEditModal(true);
   };
 
-  const filteredEvents = events.filter(event => {
-    const matchesSearch = event.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         event.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         event.client?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         event.location?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesType = typeFilter === 'all' || event.type === typeFilter;
-    const matchesStatus = statusFilter === 'all' || event.status === statusFilter;
-    return matchesSearch && matchesType && matchesStatus;
-  });
+  const todayEvents = getEventsForDate(new Date('2025-10-15T11:57:00+05:30'));
 
-  const todayEvents = getEventsForDate(new Date());
   const upcomingEvents = events
-    .filter(event => new Date(event.start_date) > new Date())
+    .filter(event => {
+      const eventDate = new Date(event.start_date);
+      const today = new Date('2025-10-15T11:57:00+05:30');
+      today.setHours(0, 0, 0, 0);
+      eventDate.setHours(0, 0, 0, 0);
+      return eventDate > today;
+    })
     .sort((a, b) => new Date(a.start_date).getTime() - new Date(b.start_date).getTime())
     .slice(0, 5);
 
   const formatTime = (time: string) => {
     if (!time) return '';
-    const [hours, minutes] = time.split(':');
-    const hour = parseInt(hours);
-    const ampm = hour >= 12 ? 'PM' : 'AM';
-    const displayHour = hour % 12 || 12;
-    return `${displayHour}:${minutes} ${ampm}`;
+    return formatTimeToIST(time);
   };
 
   if (loading) {
@@ -301,48 +553,6 @@ export const Calendar: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-          <div className="flex items-center space-x-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search events..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Filter className="w-4 h-4 text-slate-500" />
-              <select
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              >
-                <option value="all">All Types</option>
-                <option value="meeting">Meetings</option>
-                <option value="site_visit">Site Visits</option>
-                <option value="inspection">Inspections</option>
-                <option value="deadline">Deadlines</option>
-                <option value="delivery">Deliveries</option>
-                <option value="other">Other</option>
-              </select>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              >
-                <option value="all">All Status</option>
-                <option value="scheduled">Scheduled</option>
-                <option value="confirmed">Confirmed</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-3">
             <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -384,7 +594,7 @@ export const Calendar: React.FC = () => {
                 <div className="grid grid-cols-7 gap-1">
                   {days.map((day, index) => {
                     const isCurrentMonth = day.getMonth() === currentDate.getMonth();
-                    const isToday = day.toDateString() === new Date().toDateString();
+                    const isToday = formatDateToISO(day) === formatDateToISO(new Date('2025-10-15T11:57:00+05:30'));
                     const dayEvents = getEventsForDate(day);
 
                     return (
@@ -487,7 +697,7 @@ export const Calendar: React.FC = () => {
                       <div className="flex items-center space-x-2 mt-1">
                         <div className="flex items-center space-x-1 text-xs text-slate-600">
                           <CalendarIcon className="w-3 h-3" />
-                          <span>{new Date(event.start_date).toLocaleDateString('en-IN')}</span>
+                          <span>{toDisplayDateFormat(event.start_date)}</span>
                         </div>
                         {!event.all_day && (
                           <div className="flex items-center space-x-1 text-xs text-slate-600">
@@ -499,9 +709,22 @@ export const Calendar: React.FC = () => {
                       {event.project && (
                         <div className="flex items-center space-x-1 text-xs text-slate-500 mt-1">
                           <Building className="w-3 h-3" />
-                          <span>{event.project}</span>
+                          <span>{getProjectName(event.project)}</span>
                         </div>
                       )}
+                      <div className="flex items-center space-x-1 text-xs text-slate-500 mt-1">
+                        <User className="w-3 h-3" />
+                        <span>
+                          {event.attendees.length > 0
+                            ? event.attendees
+                                .map((email) => {
+                                  const user = users.find((u) => u.email === email);
+                                  return user ? user.name : email;
+                                })
+                                .join(', ')
+                            : 'No attendees'}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -529,10 +752,13 @@ export const Calendar: React.FC = () => {
                   <span className="font-bold text-green-600">
                     {events.filter(event => {
                       const eventDate = new Date(event.start_date);
-                      const today = new Date();
-                      const weekStart = new Date(today.setDate(today.getDate() - today.getDay()));
+                      const today = new Date('2025-10-15T11:57:00+05:30');
+                      const weekStart = new Date(today);
+                      weekStart.setDate(today.getDate() - today.getDay());
+                      weekStart.setHours(0, 0, 0, 0);
                       const weekEnd = new Date(weekStart);
                       weekEnd.setDate(weekStart.getDate() + 6);
+                      weekEnd.setHours(23, 59, 59, 999);
                       return eventDate >= weekStart && eventDate <= weekEnd;
                     }).length}
                   </span>
@@ -551,11 +777,11 @@ export const Calendar: React.FC = () => {
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
             <h3 className="text-lg font-semibold text-slate-900">All Events</h3>
-            <span className="text-sm text-slate-600">Showing {filteredEvents.length} of {events.length} events</span>
+            <span className="text-sm text-slate-600">Showing {events.length} events</span>
           </div>
 
           <div className="divide-y divide-slate-200 max-h-96 overflow-y-auto">
-            {filteredEvents.map((event) => (
+            {events.map((event) => (
               <div key={event.id} className="px-6 py-4 hover:bg-slate-50 transition-colors">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-3 flex-1">
@@ -570,7 +796,7 @@ export const Calendar: React.FC = () => {
                           <div className="flex items-center space-x-4 mt-2 text-xs text-slate-500">
                             <div className="flex items-center space-x-1">
                               <CalendarIcon className="w-3 h-3" />
-                              <span>{new Date(event.start_date).toLocaleDateString('en-IN')}</span>
+                              <span>{toDisplayDateFormat(event.start_date)}</span>
                             </div>
                             {!event.all_day && (
                               <div className="flex items-center space-x-1">
@@ -581,7 +807,7 @@ export const Calendar: React.FC = () => {
                             {event.project && (
                               <div className="flex items-center space-x-1">
                                 <Building className="w-3 h-3" />
-                                <span>{event.project}</span>
+                                <span>{getProjectName(event.project)}</span>
                               </div>
                             )}
                             {event.client && (
@@ -622,7 +848,7 @@ export const Calendar: React.FC = () => {
                       <Edit className="w-4 h-4" />
                     </button>
                     <button
-                      onClick={() => handleDeleteEvent(event.id)}
+                      onClick={() => setShowDeleteModal(event.id)}
                       className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                       title="Delete Event"
                     >
@@ -634,26 +860,19 @@ export const Calendar: React.FC = () => {
             ))}
           </div>
 
-          {filteredEvents.length === 0 && (
+          {events.length === 0 && (
             <div className="p-12 text-center">
               <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CalendarIcon className="w-8 h-8 text-slate-400" />
               </div>
               <h3 className="text-lg font-medium text-slate-900 mb-2">No events found</h3>
-              <p className="text-slate-600 mb-4">
-                {searchTerm || typeFilter !== 'all' || statusFilter !== 'all'
-                  ? 'Try adjusting your search or filter criteria.'
-                  : 'Create your first event to get started.'
-                }
-              </p>
-              {(!searchTerm && typeFilter === 'all' && statusFilter === 'all') && (
-                <button
-                  onClick={() => setShowCreateModal(true)}
-                  className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
-                >
-                  Create Event
-                </button>
-              )}
+              <p className="text-slate-600 mb-4">Create your first event to get started.</p>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+              >
+                Create Event
+              </button>
             </div>
           )}
         </div>
@@ -661,6 +880,8 @@ export const Calendar: React.FC = () => {
         {showCreateModal && (
           <CreateEditEventModal
             initialDate={selectedDate}
+            projects={projects}
+            users={users}
             onClose={() => {
               setShowCreateModal(false);
               setSelectedDate('');
@@ -672,12 +893,56 @@ export const Calendar: React.FC = () => {
         {showEditModal && selectedEvent && (
           <CreateEditEventModal
             event={selectedEvent}
+            projects={projects}
+            users={users}
             onClose={() => {
               setShowEditModal(false);
               setSelectedEvent(null);
             }}
             onSave={handleEditEvent}
           />
+        )}
+
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">Confirm Delete</h3>
+              <p className="text-sm text-slate-600 mb-6">Are you sure you want to delete this event?</p>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowDeleteModal(null)}
+                  className="px-4 py-2 bg-gray-200 text-slate-900 rounded-lg hover:bg-gray-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteEvent(showDeleteModal)}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showSuccessModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-sm w-full shadow-xl">
+              <h3 className="text-lg font-semibold text-slate-900 mb-4">
+                {showSuccessModal.includes('Failed') ? 'Error' : 'Success'}
+              </h3>
+              <p className="text-sm text-slate-600 mb-6">{showSuccessModal}</p>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => setShowSuccessModal(null)}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </Layout>

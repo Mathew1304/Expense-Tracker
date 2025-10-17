@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { X, Calendar, Clock, MapPin, User, Building, Bell, CircleAlert as AlertCircle } from 'lucide-react';
 
 interface CalendarEvent {
@@ -22,9 +22,22 @@ interface CalendarEvent {
   created_at: string;
 }
 
+interface Project {
+  id: string;
+  name: string;
+}
+
+interface Profile {
+  id: string;
+  name: string;
+  email: string;
+}
+
 interface CreateEditEventModalProps {
   event?: CalendarEvent;
   initialDate?: string;
+  projects: Project[];
+  users: Profile[];
   onClose: () => void;
   onSave: (event: Omit<CalendarEvent, 'id' | 'created_at' | 'created_by'>) => void;
 }
@@ -32,14 +45,18 @@ interface CreateEditEventModalProps {
 const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
   event,
   initialDate,
+  projects,
+  users,
   onClose,
   onSave
 }) => {
+  const modalRef = useRef<HTMLDivElement>(null);
+
   const [formData, setFormData] = useState({
     title: event?.title || '',
     description: event?.description || '',
-    start_date: event?.start_date || initialDate || new Date().toISOString().split('T')[0],
-    end_date: event?.end_date || initialDate || new Date().toISOString().split('T')[0],
+    start_date: event?.start_date || initialDate || '',
+    end_date: event?.end_date || initialDate || '',
     start_time: event?.start_time || '09:00',
     end_time: event?.end_time || '10:00',
     all_day: event?.all_day || false,
@@ -53,8 +70,50 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
     status: event?.status || 'scheduled' as const
   });
 
-  const [attendeeInput, setAttendeeInput] = useState('');
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const toDisplayDateFormat = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [year, month, day] = dateStr.split('-');
+    return `${day}-${month}-${year}`;
+  };
+
+  const toDatabaseDateFormat = (dateStr: string): string => {
+    if (!dateStr) return '';
+    const [day, month, year] = dateStr.split('-');
+    return `${year}-${month}-${day}`;
+  };
+
+  useEffect(() => {
+    if (event) {
+      setFormData(prev => ({
+        ...prev,
+        start_date: toDisplayDateFormat(event.start_date),
+        end_date: toDisplayDateFormat(event.end_date),
+        start_time: event.start_time || '09:00', // Ensure start_time is set
+        end_time: event.end_time || '10:00'     // Ensure end_time is set
+      }));
+    } else if (initialDate) {
+      setFormData(prev => ({
+        ...prev,
+        start_date: initialDate,
+        end_date: initialDate
+      }));
+    }
+  }, [event, initialDate]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modalRef.current && !modalRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [onClose]);
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -65,14 +124,22 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
 
     if (!formData.start_date) {
       newErrors.start_date = 'Start date is required';
+    } else if (!/^\d{2}-\d{2}-\d{4}$/.test(formData.start_date)) {
+      newErrors.start_date = 'Start date must be in DD-MM-YYYY format';
     }
 
     if (!formData.end_date) {
       newErrors.end_date = 'End date is required';
+    } else if (!/^\d{2}-\d{2}-\d{4}$/.test(formData.end_date)) {
+      newErrors.end_date = 'End date must be in DD-MM-YYYY format';
     }
 
-    if (new Date(formData.end_date) < new Date(formData.start_date)) {
-      newErrors.end_date = 'End date must be after start date';
+    if (formData.start_date && formData.end_date) {
+      const start = new Date(toDatabaseDateFormat(formData.start_date));
+      const end = new Date(toDatabaseDateFormat(formData.end_date));
+      if (end < start) {
+        newErrors.end_date = 'End date must be after start date';
+      }
     }
 
     if (!formData.all_day) {
@@ -82,7 +149,12 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
       if (!formData.end_time) {
         newErrors.end_time = 'End time is required';
       }
-      if (formData.start_date === formData.end_date && formData.start_time >= formData.end_time) {
+      if (
+        formData.start_date === formData.end_date &&
+        formData.start_time &&
+        formData.end_time &&
+        formData.start_time >= formData.end_time
+      ) {
         newErrors.end_time = 'End time must be after start time';
       }
     }
@@ -93,9 +165,14 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-
     if (validateForm()) {
-      onSave(formData);
+      onSave({
+        ...formData,
+        start_date: toDatabaseDateFormat(formData.start_date),
+        end_date: toDatabaseDateFormat(formData.end_date)
+      });
+    } else {
+      console.log('Validation failed with errors:', errors); // Debug validation failure
     }
   };
 
@@ -110,33 +187,17 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
     }
   };
 
-  const handleAddAttendee = () => {
-    if (attendeeInput.trim() && !formData.attendees.includes(attendeeInput.trim())) {
-      setFormData(prev => ({
-        ...prev,
-        attendees: [...prev.attendees, attendeeInput.trim()]
-      }));
-      setAttendeeInput('');
-    }
-  };
-
-  const handleRemoveAttendee = (attendee: string) => {
-    setFormData(prev => ({
-      ...prev,
-      attendees: prev.attendees.filter(a => a !== attendee)
-    }));
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      handleAddAttendee();
-    }
+  const handleAttendeesChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedOptions = Array.from(e.target.selectedOptions).map(option => {
+      const user = users.find(u => u.email === option.value);
+      return user ? user.email : option.value;
+    });
+    setFormData(prev => ({ ...prev, attendees: selectedOptions }));
   };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+      <div ref={modalRef} className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
         <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between">
           <h2 className="text-2xl font-bold text-slate-900">
             {event ? 'Edit Event' : 'Create New Event'}
@@ -240,12 +301,13 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
                 <input
-                  type="date"
+                  type="text"
                   value={formData.start_date}
                   onChange={(e) => handleChange('start_date', e.target.value)}
                   className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors ${
                     errors.start_date ? 'border-red-500' : 'border-slate-300'
                   }`}
+                  placeholder="DD-MM-YYYY"
                 />
               </div>
               {errors.start_date && (
@@ -263,12 +325,13 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
               <div className="relative">
                 <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
                 <input
-                  type="date"
+                  type="text"
                   value={formData.end_date}
                   onChange={(e) => handleChange('end_date', e.target.value)}
                   className={`w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors ${
                     errors.end_date ? 'border-red-500' : 'border-slate-300'
                   }`}
+                  placeholder="DD-MM-YYYY"
                 />
               </div>
               {errors.end_date && (
@@ -337,13 +400,16 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
               </label>
               <div className="relative">
                 <Building className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input
-                  type="text"
+                <select
                   value={formData.project}
                   onChange={(e) => handleChange('project', e.target.value)}
                   className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
-                  placeholder="Select or enter project"
-                />
+                >
+                  <option value="">Select Project</option>
+                  {projects.map(project => (
+                    <option key={project.id} value={project.id}>{project.name}</option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -421,40 +487,39 @@ const CreateEditEventModal: React.FC<CreateEditEventModalProps> = ({
             <label className="block text-sm font-medium text-slate-700 mb-2">
               Attendees
             </label>
-            <div className="flex space-x-2 mb-2">
-              <input
-                type="text"
-                value={attendeeInput}
-                onChange={(e) => setAttendeeInput(e.target.value)}
-                onKeyPress={handleKeyPress}
-                className="flex-1 px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
-                placeholder="Add attendee name"
-              />
-              <button
-                type="button"
-                onClick={handleAddAttendee}
-                className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <select
+                multiple
+                value={formData.attendees}
+                onChange={handleAttendeesChange}
+                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
               >
-                Add
-              </button>
+                {users.map(user => (
+                  <option key={user.id} value={user.email}>{user.name}</option>
+                ))}
+              </select>
             </div>
             {formData.attendees.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {formData.attendees.map((attendee, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
-                  >
-                    <span>{attendee}</span>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveAttendee(attendee)}
-                      className="text-blue-600 hover:text-blue-800"
+              <div className="flex flex-wrap gap-2 mt-2">
+                {formData.attendees.map((attendee, index) => {
+                  const user = users.find(u => u.email === attendee);
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center space-x-1 px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm"
                     >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
+                      <span>{user ? user.name : attendee}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleChange('attendees', formData.attendees.filter(a => a !== attendee))}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
