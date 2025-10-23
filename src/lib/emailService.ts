@@ -75,6 +75,7 @@ export const sendConfirmationEmail = async (email: string, name: string): Promis
     return false;
   }
 };
+
 export const sendPasswordResetEmail = async (data: PasswordResetEmailData): Promise<boolean> => {
   try {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-password-reset`, {
@@ -137,7 +138,7 @@ export const sendCredentialsEmailFallback = async (emailParams: {
   return `Please provide the following credentials manually: Email: ${emailParams.to_email}, Password: ${emailParams.password}, Role: ${emailParams.role}${emailParams.project ? `, Project: ${emailParams.project}` : ''}`;
 };
 
-// Function for sending user credentials email (used by Users.tsx)
+// ✅ FIXED: Function for sending user credentials email (used by Users.tsx)
 export const sendUserCredentialsEmail = async (emailParams: {
   to_email: string;
   to_name: string;
@@ -146,16 +147,44 @@ export const sendUserCredentialsEmail = async (emailParams: {
   project?: string;
 }): Promise<{ success: boolean; error?: string }> => {
   try {
-    const result = await sendWelcomeEmail({
-      email: emailParams.to_email,
-      name: emailParams.to_name,
-      password: emailParams.password,
-      role: emailParams.role,
-      project: emailParams.project,
+    // ✅ FIXED: Changed from /user-setup to /first-login
+    const setupUrl = `${window.location.origin}/first-login?email=${encodeURIComponent(emailParams.to_email)}`;
+    
+    console.log('📧 Generated setup URL:', setupUrl);
+    console.log('📤 Sending email to:', emailParams.to_email);
+    
+    // Send custom email with setup link
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-user-credentials`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        to_email: emailParams.to_email,
+        to_name: emailParams.to_name,
+        password: emailParams.password,
+        role: emailParams.role,
+        project: emailParams.project,
+        setup_url: setupUrl, // This is the correct URL now
+      }),
     });
 
-    return { success: result };
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Email API error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📬 Email service response:', result);
+    
+    return { 
+      success: result.success,
+      error: result.success ? undefined : result.error 
+    };
   } catch (error) {
+    console.error('Email service error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error occurred' 
@@ -182,6 +211,7 @@ export const createAdminWithWelcomeEmail = async (
       user_metadata: {
         full_name: fullName,
         role: role,
+        setup_completed: false,
       },
     });
 
@@ -200,8 +230,10 @@ export const createAdminWithWelcomeEmail = async (
         {
           id: authData.user.id,
           full_name: fullName,
+          email: email,
           role: role,
           status: 'active',
+          setup_completed: false,
           created_by: (await supabase.auth.getUser()).data.user?.id,
         },
       ]);
@@ -220,6 +252,10 @@ export const createAdminWithWelcomeEmail = async (
       project: projectName,
     });
 
+    // ✅ FIXED: Changed from /user-setup to /first-login
+    const setupUrl = `${window.location.origin}/first-login?email=${encodeURIComponent(email)}`;
+    console.log('User setup URL:', setupUrl);
+    
     if (!emailSent) {
       console.warn('Welcome email failed to send, but user was created successfully');
     }

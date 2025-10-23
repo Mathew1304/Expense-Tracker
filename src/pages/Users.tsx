@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { sendUserCredentialsEmail, sendCredentialsEmailFallback } from "../lib/emailService";
+import { sendUserCredentialsEmail } from "../lib/emailService";
 import { Layout } from "../components/Layout/Layout";
 import { Users as UsersIcon, Plus, Search, Mail, Phone, Shield, MoveVertical as MoreVertical, ListFilter as Filter, CreditCard as Edit2, Trash2, Eye, Grid2x2 as Grid, List, Building, Calendar, Clock, X, Check, User, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 
@@ -97,70 +97,70 @@ export function Users() {
 
   // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        console.error("No logged-in admin found");
-        setLoading(false);
-        return;
-      }
-
-      // Fetch only users created by this admin
-      const { data: usersData, error: usersError } = await supabase
-        .from("users")
-        .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
-        .eq("created_by", user.id)
-        .order("created_at", { ascending: false });
-
-      if (usersError) {
-        console.error("Error fetching users:", usersError.message);
-      } else if (usersData) {
-        // Transform data to match UI expectations
-        const transformedUsers = usersData.map(u => ({
-          ...u,
-          phone: u.phone || '',
-          department: u.roles?.role_name || 'No Department',
-          status: 'Active', // Default status
-          lastLogin: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-          joinDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-        }));
-        setUsers(transformedUsers as User[]);
-      }
-
-      // Fetch roles created by this admin only
-      const { data: rolesData, error: rolesError } = await supabase
-        .from("roles")
-        .select("id, role_name")
-        .eq("created_by", user.id);
-
-      if (rolesError) {
-        console.error("Error fetching roles:", rolesError.message);
-      } else if (rolesData) {
-        setRoles(rolesData as Role[]);
-      }
-
-      // Fetch projects created by this admin
-      const { data: projectsData, error: projectsError } = await supabase
-        .from("projects")
-        .select("id, name")
-        .eq("created_by", user.id);
-
-      if (projectsError) {
-        console.error("Error fetching projects:", projectsError.message);
-      } else if (projectsData) {
-        setProjects(projectsData as Project[]);
-      }
-
-      setLoading(false);
-    }
-
     fetchData();
   }, []);
+
+  async function fetchData() {
+    setLoading(true);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      console.error("No logged-in admin found");
+      setLoading(false);
+      return;
+    }
+
+    // Fetch only users created by this admin
+    const { data: usersData, error: usersError } = await supabase
+      .from("users")
+      .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+      .eq("created_by", user.id)
+      .order("created_at", { ascending: false });
+
+    if (usersError) {
+      console.error("Error fetching users:", usersError.message);
+    } else if (usersData) {
+      // Transform data to match UI expectations
+      const transformedUsers = usersData.map(u => ({
+        ...u,
+        phone: u.phone || '',
+        department: u.roles?.role_name || 'No Department',
+        status: 'Active', // Default status
+        lastLogin: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        joinDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+      }));
+      setUsers(transformedUsers as User[]);
+    }
+
+    // Fetch roles created by this admin only
+    const { data: rolesData, error: rolesError } = await supabase
+      .from("roles")
+      .select("id, role_name")
+      .eq("created_by", user.id);
+
+    if (rolesError) {
+      console.error("Error fetching roles:", rolesError.message);
+    } else if (rolesData) {
+      setRoles(rolesData as Role[]);
+    }
+
+    // Fetch projects created by this admin
+    const { data: projectsData, error: projectsError } = await supabase
+      .from("projects")
+      .select("id, name")
+      .eq("created_by", user.id);
+
+    if (projectsError) {
+      console.error("Error fetching projects:", projectsError.message);
+    } else if (projectsData) {
+      setProjects(projectsData as Project[]);
+    }
+
+    setLoading(false);
+  }
 
   // Filter users
   const filteredUsers = users.filter(user => {
@@ -191,10 +191,44 @@ export function Users() {
     setShowConfirmModal(true);
   }
 
-  async function sendWelcomeEmail() {
+  // Confirm and add user
+  async function confirmAddUser() {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      console.error("No logged-in admin found");
+      showNotification('error', 'No logged-in admin found');
+      return;
+    }
+
     setSendingEmail(true);
 
     try {
+      // 1. Insert user into database first
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert([
+          {
+            name: formData.name,
+            email: formData.email,
+            phone: formData.phone || null,
+            role_id: formData.role_id || null,
+            project_id: formData.project_id || null,
+            created_by: user.id,
+          },
+        ])
+        .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+        .single();
+
+      if (insertError) {
+        console.error("Insert failed:", insertError.message);
+        showNotification('error', `Failed to add user: ${insertError.message}`);
+        setSendingEmail(false);
+        return;
+      }
+
+      // 2. Send welcome email
       const emailParams = {
         to_email: formData.email,
         to_name: formData.name,
@@ -206,76 +240,35 @@ export function Users() {
       const result = await sendUserCredentialsEmail(emailParams);
 
       if (result.success) {
-        showNotification('success', 'Welcome email sent successfully!');
+        showNotification('success', 'User created and welcome email sent successfully!');
       } else {
-        throw new Error(result.error || 'Failed to send email');
+        console.error('Email failed:', result.error);
+        showNotification('error', `User created but email failed: ${result.error}. Credentials - Email: ${emailParams.to_email}, Password: ${generatedPassword}`);
       }
-    } catch (error) {
-      console.error('Email Error:', error);
 
-      const emailParams = {
-        to_email: formData.email,
-        to_name: formData.name,
-        password: generatedPassword,
-        role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
-        project: projects.find(p => p.id === formData.project_id)?.name,
+      // 3. Transform new user data and update UI
+      const transformedUser = {
+        ...newUser,
+        phone: newUser.phone || '',
+        department: newUser.roles?.role_name || 'No Department',
+        status: 'Active',
+        lastLogin: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        joinDate: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
       };
 
-      const fallbackMessage = await sendCredentialsEmailFallback(emailParams);
-      showNotification('error', `Email service unavailable. ${fallbackMessage}. Password: ${generatedPassword}`);
+      setUsers((prev) => [transformedUser, ...prev]);
+      
+      // Reset form
+      setShowConfirmModal(false);
+      setFormData({ name: "", email: "", phone: "", role_id: "", project_id: "", department: "", status: "Active" });
+      setGeneratedPassword("");
+
+    } catch (error) {
+      console.error('Error creating user:', error);
+      showNotification('error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setSendingEmail(false);
     }
-
-    setSendingEmail(false);
-  }
-
-  // Confirm and add user
-  async function confirmAddUser() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      console.error("No logged-in admin found");
-      return;
-    }
-
-    const { data: newUser, error: insertError } = await supabase
-      .from("users")
-      .insert([
-        {
-          name: formData.name,
-          email: formData.email,
-          phone: formData.phone || null,
-          role_id: formData.role_id || null,
-          project_id: formData.project_id || null,
-          created_by: user.id,
-        },
-      ])
-      .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
-      .single();
-
-    if (insertError) {
-      console.error("Insert failed:", insertError.message);
-      showNotification('error', 'Failed to add user. Please try again.');
-      return;
-    }
-
-    // Send welcome email
-    await sendWelcomeEmail();
-
-    // Transform new user data
-    const transformedUser = {
-      ...newUser,
-      phone: newUser.phone || '',
-      department: newUser.roles?.role_name || 'No Department',
-      status: 'Active',
-      lastLogin: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-      joinDate: newUser.created_at ? new Date(newUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
-    };
-
-    setUsers((prev) => [transformedUser, ...prev]);
-    setShowConfirmModal(false);
-    setFormData({ name: "", email: "", phone: "", role_id: "", project_id: "", department: "", status: "Active" });
-    setGeneratedPassword("");
   }
 
   // Delete user
@@ -284,12 +277,14 @@ export function Users() {
       const { error } = await supabase.from("users").delete().eq("id", userId);
       if (error) {
         console.error("Delete failed:", error.message);
+        showNotification('error', 'Failed to delete user');
         return;
       }
       setUsers(users.filter((u) => u.id !== userId));
       if (selectedUser?.id === userId) {
         setSelectedUser(null);
       }
+      showNotification('success', 'User deleted successfully');
     }
   }
 
@@ -919,7 +914,7 @@ export function Users() {
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Mail size={16} />
-                {sendingEmail ? 'Sending...' : 'Add User & Send Email'}
+                {sendingEmail ? 'Creating User...' : 'Add User & Send Email'}
               </button>
             </div>
           </div>

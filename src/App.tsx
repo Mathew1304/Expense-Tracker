@@ -1,7 +1,7 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
-import { ThemeProvider } from "./contexts/ThemeContext"; // ✅ added
+import { ThemeProvider } from "./contexts/ThemeContext";
 import { LoginForm } from "./components/Auth/LoginForm";
 import { Dashboard } from "./pages/Dashboard";
 import { Projects } from "./pages/Projects";
@@ -23,6 +23,7 @@ import Support from "./pages/Support";
 import { SharedProject } from './pages/SharedProject';
 import { Settings } from './pages/Settings';
 import { Calendar } from './pages/Calender';
+import { UserFirstLogin } from './pages/UserFirstLogin';
 
 // Generalized ProtectedRoute for roles
 function ProtectedRoute({
@@ -54,7 +55,7 @@ function ProtectedRoute({
 function App() {
   return (
     <AuthProvider>
-      <ThemeProvider> {/* ✅ Wrap with ThemeProvider */}
+      <ThemeProvider>
         <Router>
           <Routes>
             {/* Public pages */}
@@ -67,6 +68,9 @@ function App() {
             
             {/* Shared project page - accessible without authentication */}
             <Route path="/shared/:shareId" element={<SharedProject />} />
+
+            {/* ✅ FIXED: Changed from /user-setup to /first-login to match emailService.ts */}
+            <Route path="/first-login" element={<UserFirstLogin />} />
 
             {/* Dashboard accessible by all roles */}
             <Route
