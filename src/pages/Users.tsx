@@ -29,6 +29,7 @@ type User = {
 type Role = {
   id: string;
   role_name: string;
+  permissions?: string[];
 };
 
 type Project = {
@@ -43,7 +44,7 @@ type Notification = {
 };
 
 export function Users() {
-  const { profile } = useAuth();
+  const { profile, permissions } = useAuth();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -94,6 +95,11 @@ export function Users() {
       setNotifications(prev => prev.filter(n => n.id !== id));
     }, 3000);
   };
+
+  // Check permissions
+  const canAddUser = permissions.includes('add_user');
+  const canEditUser = permissions.includes('edit_user');
+  const canDeleteUser = permissions.includes('delete_user');
 
   // Fetch users + roles + projects filtered by current admin
   useEffect(() => {
@@ -462,13 +468,15 @@ export function Users() {
                     <List className="w-4 h-4" />
                   </button>
                 </div>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200 transform hover:scale-105"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Add User</span>
-                </button>
+                {canAddUser && (
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200 transform hover:scale-105"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add User</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -605,20 +613,24 @@ export function Users() {
                         <Eye className="w-4 h-4" />
                         <span>View</span>
                       </button>
-                      <button
-                        onClick={() => startEdit(user)}
-                        className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(user.id)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {canEditUser && (
+                        <button
+                          onClick={() => startEdit(user)}
+                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
+                      {canDeleteUser && (
+                        <button
+                          onClick={() => handleDelete(user.id)}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -696,26 +708,30 @@ export function Users() {
                               >
                                 <Eye className="w-4 h-4" />
                               </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  startEdit(user);
-                                }}
-                                className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
-                                title="Edit"
-                              >
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDelete(user.id);
-                                }}
-                                className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
-                                title="Delete"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
+                              {canEditUser && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEdit(user);
+                                  }}
+                                  className="p-1 text-green-600 hover:bg-green-50 rounded transition-colors"
+                                  title="Edit"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                              )}
+                              {canDeleteUser && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDelete(user.id);
+                                  }}
+                                  className="p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Delete"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>

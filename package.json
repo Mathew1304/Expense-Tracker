@@ -10,6 +10,9 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@react-three/drei": "^9.108.3",
+    "@react-three/fiber": "^8.15.12",
+    "@react-three/postprocessing": "^2.16.2",
     "@supabase/supabase-js": "^2.55.0",
     "@types/papaparse": "^5.3.16",
     "body-parser": "^2.2.0",
@@ -18,9 +21,11 @@
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.1",
     "framer-motion": "^12.23.12",
+    "framer-motion-3d": "^12.4.13",
     "gantt-chart": "^1.1.0",
     "jspdf": "^2.5.1",
     "jspdf-autotable": "^3.8.0",
+    "leva": "^0.10.0",
     "lucide-react": "^0.539.0",
     "papaparse": "^5.5.3",
     "razorpay": "^2.9.6",
@@ -28,8 +33,10 @@
     "react-datepicker": "^8.7.0",
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.62.0",
+    "react-is": "^19.2.0",
     "react-router-dom": "^7.8.0",
     "recharts": "^3.2.1",
+    "three": "^0.160.0",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

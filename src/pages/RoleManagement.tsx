@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Plus, Edit, Trash2, Eye, X } from "lucide-react";
+import { Plus, CreditCard as Edit, Trash2, Eye, X } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -18,19 +18,66 @@ export function RoleManagement() {
   const { user } = useAuth();
 
   const ALL_PERMISSIONS = [
-    "Add Project",
-    "Edit Project",
-    "Delete Project",
-    "View Project Status",
-    "Update Progress",
-    "Upload Site Updates",
-    "View Expenses",
-    "Manage Expenses",
-    "Manage Materials",
-    "View Reports",
-    "Generate Reports",
-    "Manage Users",
-    "Manage Roles",
+    // Dashboard permissions
+    "view_dashboard",
+    
+    // Project permissions
+    "view_projects",
+    "add_project",
+    "edit_project",
+    "delete_project",
+    
+    // Phase permissions
+    "view_phases",
+    "add_phase",
+    "edit_phase",
+    "delete_phase",
+    "update_progress",
+    "upload_site_updates",
+    
+    // Expense permissions
+    "view_expenses",
+    "add_income",
+    "add_expense",
+    "edit_expense",
+    "delete_expense",
+    
+    // Material permissions
+    "view_materials",
+    "add_material",
+    "edit_material",
+    "delete_material",
+    
+    // Report permissions
+    "view_reports",
+    "generate_reports",
+    "export_reports",
+    
+    // Calendar permissions
+    "view_calendar",
+    "add_event",
+    "edit_event",
+    
+    // Document permissions
+    "view_documents",
+    "upload_documents",
+    "delete_documents",
+    
+    // User management permissions
+    "view_users",
+    "add_user",
+    "edit_user",
+    "delete_user",
+    
+    // Role management permissions
+    "view_roles",
+    "add_role",
+    "edit_role",
+    "delete_role",
+    
+    // Settings permissions
+    "view_settings",
+    "edit_settings",
   ];
 
   useEffect(() => {
@@ -82,7 +129,7 @@ export function RoleManagement() {
         role_name: roleName,
         permissions: permissions,
         is_active: true,
-        created_by: user?.id, // ✅ link role to creator
+        created_by: user?.id,
         created_at: new Date(),
       },
     ]);
@@ -114,11 +161,11 @@ export function RoleManagement() {
     }
   }
 
-  async function markRoleInactive() {
+  async function deleteRole() {
     if (!roleToDelete) return;
     const { error } = await supabase
       .from("roles")
-      .update({ is_active: false })
+      .delete()
       .eq("id", roleToDelete.id);
     if (error) console.error(error);
     else {
@@ -262,8 +309,14 @@ export function RoleManagement() {
 
       {/* Create Role Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Create New Role</h2>
               <button
@@ -316,8 +369,14 @@ export function RoleManagement() {
 
       {/* Edit Role Modal */}
       {showEditModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowEditModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-900">Edit Role</h2>
               <button
@@ -370,8 +429,14 @@ export function RoleManagement() {
 
       {/* View Role Modal */}
       {showViewModal && selectedRole && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowViewModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-md shadow-lg p-6 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold text-gray-900">View Role</h2>
               <button
@@ -424,8 +489,14 @@ export function RoleManagement() {
 
       {/* Delete Confirmation Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg w-full max-w-md shadow-lg p-6">
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={() => setShowDeleteModal(false)}
+        >
+          <div 
+            className="bg-white rounded-lg w-full max-w-md shadow-lg p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="text-center">
               <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
                 <Trash2 className="h-6 w-6 text-red-600" />
@@ -444,7 +515,7 @@ export function RoleManagement() {
                   Cancel
                 </button>
                 <button
-                  onClick={markRoleInactive}
+                  onClick={deleteRole}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
                 >
                   Delete Role

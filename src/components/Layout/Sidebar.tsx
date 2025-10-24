@@ -1,36 +1,68 @@
 // src/components/Layout/Sidebar.tsx
 import React, { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Chrome as Home, FolderOpen, DollarSign, Package, FileText, Users, Archive, Settings, User, IndianRupee, Layers, ShieldCheck, Hammer, Calendar, HardDrive } from "lucide-react";
+import {
+  Chrome as Home,
+  FolderOpen,
+  DollarSign,
+  Package,
+  FileText,
+  Users,
+  Archive,
+  Settings,
+  User,
+  IndianRupee,
+  Layers,
+  ShieldCheck,
+  Hammer,
+  Calendar,
+  HardDrive,
+  LayoutDashboard,
+} from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 
 const STORAGE_LIMITS = {
   free: 800,
   basic: 3072,
-  pro: -1
+  pro: -1,
 };
 
 export function Sidebar() {
   const location = useLocation();
   const { userRole, permissions, user } = useAuth();
   const [rolePermissions, setRolePermissions] = useState<string[]>([]);
-  const [userPlan, setUserPlan] = useState<'free' | 'basic' | 'pro'>('free');
+  const [userPlan, setUserPlan] = useState<"free" | "basic" | "pro">("free");
   const [storageUsed, setStorageUsed] = useState(0);
+  const [isLoadingPermissions, setIsLoadingPermissions] = useState(true);
 
   useEffect(() => {
     async function fetchRolePermissions() {
       if (userRole && user) {
+        setIsLoadingPermissions(true);
+
+        // ✅ Updated query: include created_by filter
         const { data, error } = await supabase
           .from("roles")
-          .select("permissions")
+          .select("permissions, role_name")
           .eq("role_name", userRole)
+          .eq("created_by", user.id) // Added this line
           .eq("is_active", true)
           .maybeSingle();
 
-        if (!error && data) {
-          setRolePermissions(data.permissions || []);
+        console.log("Fetching permissions for role:", userRole);
+        console.log("Role data:", data);
+        console.log("Role error:", error);
+
+        if (!error && data && Array.isArray(data.permissions)) {
+          setRolePermissions(data.permissions);
+          console.log("Loaded permissions:", data.permissions);
+        } else {
+          console.error("Failed to load role permissions:", error);
+          setRolePermissions([]);
         }
+
+        setIsLoadingPermissions(false);
       }
     }
 
@@ -46,148 +78,86 @@ export function Sidebar() {
   const fetchStorageInfo = async (userId: string) => {
     try {
       const { data: profile } = await supabase
-        .from('profiles')
-        .select('plan_type')
-        .eq('id', userId)
+        .from("profiles")
+        .select("plan_type")
+        .eq("id", userId)
         .single();
 
-      setUserPlan(profile?.plan_type || 'free');
+      setUserPlan(profile?.plan_type || "free");
 
       const { data: projectsData } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('created_by', userId);
+        .from("projects")
+        .select("id")
+        .eq("created_by", userId);
 
       const { data: photosData } = await supabase
-        .from('phase_photos')
-        .select('id')
-        .eq('created_by', userId);
+        .from("phase_photos")
+        .select("id")
+        .eq("created_by", userId);
 
       const projectStorage = (projectsData?.length || 0) * 10;
       const photoStorage = (photosData?.length || 0) * 2;
       setStorageUsed(projectStorage + photoStorage);
     } catch (error) {
-      console.error('Error fetching storage:', error);
+      console.error("Error fetching storage:", error);
     }
   };
 
   const hasPermission = (requiredPermission: string | string[]) => {
-    if (userRole === "Admin") return true;
-
-    if (Array.isArray(requiredPermission)) {
-      return requiredPermission.some(perm => rolePermissions.includes(perm));
+    // Admin always has access
+    if (userRole === "Admin") {
+      console.log("Admin user - granting access to:", requiredPermission);
+      return true;
     }
 
-    return rolePermissions.includes(requiredPermission);
+    // Check if loading
+    if (isLoadingPermissions) {
+      return false;
+    }
+
+    // Check permissions
+    if (Array.isArray(requiredPermission)) {
+      const hasAccess = requiredPermission.some((perm) =>
+        rolePermissions.includes(perm)
+      );
+      console.log(
+        "Checking array permissions:",
+        requiredPermission,
+        "Has access:",
+        hasAccess
+      );
+      return hasAccess;
+    }
+
+    const hasAccess = rolePermissions.includes(requiredPermission);
+    console.log("Checking permission:", requiredPermission, "Has access:", hasAccess);
+    return hasAccess;
   };
 
   const navigationItems = [
-    {
-      name: "Dashboard",
-      href: "/",
-      icon: Home,
-      allowedRoles: ["Admin", "Accounts", "Project Manager", "Site Engineer", "Client"],
-      permission: null,
-    },
-    {
-      name: "Projects",
-      href: "/projects",
-      icon: FolderOpen,
-      allowedRoles: ["Admin", "Project Manager", "Site Engineer"],
-      permission: ["Add Project", "Edit Project", "View Project Status"],
-    },
-    {
-      name: "Phases",
-      href: "/phases",
-      icon: Layers,
-      allowedRoles: ["Admin", "Project Manager", "Site Engineer", "Client"],
-      permission: ["View Project Status", "Update Progress"],
-    },
-    {
-      name: "Expenses",
-      href: "/expenses",
-      icon: IndianRupee,
-      allowedRoles: ["Admin", "Accounts"],
-      permission: ["View Expenses", "Manage Expenses"],
-    },
-    {
-      name: "Materials",
-      href: "/materials",
-      icon: Package,
-      allowedRoles: ["Admin", "Project Manager"],
-      permission: "Manage Materials",
-    },
-    {
-      name: "Reports",
-      href: "/reports",
-      icon: FileText,
-      allowedRoles: ["Admin", "Project Manager"],
-      permission: ["View Reports", "Generate Reports"],
-    },
-    {
-      name: "Calendar",
-      href: "/calendar",
-      icon: Calendar,
-      allowedRoles: ["Admin", "Project Manager", "Site Engineer", "Client"],
-      permission: null,
-    },
-    {
-      name: "Document Archive",
-      href: "/documents",
-      icon: Archive,
-      allowedRoles: ["Admin", "Accounts", "Project Manager", "Site Engineer"],
-      permission: null,
-    },
-    {
-      name: "Profile",
-      href: "/profile",
-      icon: User,
-      allowedRoles: ["Admin", "Accounts", "Project Manager", "Site Engineer", "Client"],
-      permission: null,
-    },
-    {
-      name: "Users",
-      href: "/users",
-      icon: Users,
-      allowedRoles: ["Admin"],
-      permission: "Manage Users",
-    },
-    {
-      name: "Role Management",
-      href: "/roles",
-      icon: Settings,
-      allowedRoles: ["Admin"],
-      permission: "Manage Roles",
-    },
-    {
-      name: "Settings",
-      href: "/settings",
-      icon: Settings,
-      allowedRoles: ["Admin", "Project Manager"],
-      permission: null,
-    },
-    {
-      name: "Super Admin",
-      href: "/super-admin",
-      icon: ShieldCheck,
-      allowedRoles: ["super_admin"],
-      permission: null,
-    },
+    { name: "Dashboard", href: "/dashboard", icon: Home, permission: "view_dashboard" },
+    { name: "Projects", href: "/projects", icon: FolderOpen, permission: "view_projects" },
+    { name: "Phases", href: "/phases", icon: Layers, permission: "view_phases" },
+    { name: "Expenses", href: "/expenses", icon: IndianRupee, permission: "view_expenses" },
+    { name: "Materials", href: "/materials", icon: Package, permission: "view_materials" },
+    { name: "Reports", href: "/reports", icon: FileText, permission: "view_reports" },
+    { name: "Calendar", href: "/calendar", icon: Calendar, permission: "view_calendar" },
+    { name: "Document Archive", href: "/documents", icon: Archive, permission: "view_documents" },
+    { name: "Profile", href: "/profile", icon: User, permission: null },
+    { name: "Users", href: "/users", icon: Users, permission: "view_users" },
+    { name: "Role Management", href: "/roles", icon: ShieldCheck, permission: "view_roles" },
+    { name: "Dashboard Builder", href: "/dashboard-builder", icon: LayoutDashboard, permission: "view_roles" },
+    { name: "Settings", href: "/settings", icon: Settings, permission: "view_settings" },
   ];
 
   const filteredItems = navigationItems.filter((item) => {
-    const roleAllowed = item.allowedRoles.includes(userRole ?? "");
-
-    if (!roleAllowed) return false;
-
     if (!item.permission) return true;
-
     return hasPermission(item.permission);
   });
 
   const getStorageLimit = () => {
     const limit = STORAGE_LIMITS[userPlan];
-    return limit === -1 ? '∞' : `${limit}MB`;
+    return limit === -1 ? "∞" : `${limit}MB`;
   };
 
   const getStoragePercentage = () => {
@@ -195,6 +165,22 @@ export function Sidebar() {
     if (limit === -1) return 0;
     return Math.min((storageUsed / limit) * 100, 100);
   };
+
+  if (isLoadingPermissions) {
+    return (
+      <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30 flex flex-col">
+        <div className="p-6">
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="BuildMyHomes Logo" className="w-10 h-10 object-contain" />
+            <h2 className="text-xl font-bold text-gray-800">Buildmyhomes</h2>
+          </div>
+        </div>
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-gray-500">Loading...</div>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30 flex flex-col">
@@ -230,7 +216,6 @@ export function Sidebar() {
         </ul>
       </nav>
 
-      {/* Storage Indicator */}
       <div className="p-4 border-t border-gray-200 bg-gray-50">
         <div className="flex items-center gap-2 mb-2">
           <HardDrive className="w-4 h-4 text-gray-600" />
@@ -241,11 +226,11 @@ export function Sidebar() {
             <span>{storageUsed}MB</span>
             <span>{getStorageLimit()}</span>
           </div>
-          {userPlan !== 'pro' && (
+          {userPlan !== "pro" && (
             <div className="w-full bg-gray-200 rounded-full h-1.5">
               <div
                 className={`h-1.5 rounded-full transition-all ${
-                  getStoragePercentage() > 80 ? 'bg-red-500' : 'bg-blue-500'
+                  getStoragePercentage() > 80 ? "bg-red-500" : "bg-blue-500"
                 }`}
                 style={{ width: `${getStoragePercentage()}%` }}
               />

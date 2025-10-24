@@ -70,7 +70,7 @@ export function Dashboard() {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [projectStatusData, setProjectStatusData] = useState<ProjectStatusData[]>([]);
   const [expenseCategoryData, setExpenseCategoryData] = useState<ExpenseCategoryData[]>([]);
-  const { user } = useAuth();
+  const { user, permissions } = useAuth();
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -529,7 +529,7 @@ export function Dashboard() {
           </div>
 
           {/* Quick Actions */}
-          {role !== "client" && (
+          {permissions.length > 0 && (
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Quick Actions</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -540,6 +540,7 @@ export function Dashboard() {
                     icon: FolderOpen,
                     href: "/projects",
                     color: "bg-blue-600 hover:bg-blue-700",
+                    permission: "add_project",
                   },
                   {
                     name: "Add Transaction",
@@ -547,6 +548,7 @@ export function Dashboard() {
                     icon: IndianRupee,
                     href: "/expenses",
                     color: "bg-green-600 hover:bg-green-700",
+                    permission: "add_expense",
                   },
                   {
                     name: "Manage Materials",
@@ -554,6 +556,7 @@ export function Dashboard() {
                     icon: Package,
                     href: "/materials",
                     color: "bg-yellow-600 hover:bg-yellow-700",
+                    permission: "add_material",
                   },
                   {
                     name: "View Reports",
@@ -561,8 +564,9 @@ export function Dashboard() {
                     icon: FileText,
                     href: "/reports",
                     color: "bg-purple-600 hover:bg-purple-700",
+                    permission: "view_reports",
                   },
-                ].map((action) => {
+                ].filter(action => permissions.includes(action.permission)).map((action) => {
                   const Icon = action.icon;
                   return (
                     <Link

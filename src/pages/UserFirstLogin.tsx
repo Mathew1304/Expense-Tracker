@@ -4,37 +4,9 @@ import { Building2, User, Shield, Briefcase, Calculator, Wrench, AlertCircle } f
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
-const ROLE_OPTIONS = [
-  {
-    value: 'Project Manager',
-    label: 'Project Manager',
-    icon: Briefcase,
-    description: 'Manage projects, phases, and team coordination'
-  },
-  {
-    value: 'Site Engineer',
-    label: 'Site Engineer',
-    icon: Wrench,
-    description: 'Handle on-site operations and progress updates'
-  },
-  {
-    value: 'Accounts',
-    label: 'Accounts',
-    icon: Calculator,
-    description: 'Manage financial transactions and expenses'
-  },
-  {
-    value: 'Client',
-    label: 'Client',
-    icon: User,
-    description: 'View project progress and reports'
-  }
-];
-
 export function UserFirstLogin() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState('');
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
@@ -43,6 +15,8 @@ export function UserFirstLogin() {
   const [isValidUser, setIsValidUser] = useState(false);
   const [checkingUser, setCheckingUser] = useState(true);
   const [userData, setUserData] = useState<any>(null);
+  const [assignedRole, setAssignedRole] = useState<string>('');
+  const [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -73,7 +47,6 @@ export function UserFirstLogin() {
     
     try {
       // Check if user exists in users table
-      // Note: This requires RLS policy to allow SELECT on users table
       const { data: users, error: userError } = await supabase
         .from('users')
         .select('*')
@@ -81,7 +54,6 @@ export function UserFirstLogin() {
         .limit(1);
 
       console.log('Users query result:', { users, userError });
-      console.log('Query details - Email:', emailParam, 'Found:', users?.length || 0);
 
       if (userError) {
         console.error('User query error:', userError);
@@ -97,6 +69,7 @@ export function UserFirstLogin() {
       }
 
       const user = users[0];
+      console.log('Found user:', user);
 
       // Check if auth user already exists by checking profiles table
       const { data: existingProfiles, error: profileError } = await supabase
@@ -122,21 +95,29 @@ export function UserFirstLogin() {
       setFullName(user.name || '');
       setPhone(user.phone || '');
       
-      // Pre-select role if available
+      // Fetch assigned role name and permissions if available
       if (user.role_id) {
-        try {
-          const { data: roleData, error: roleError } = await supabase
-            .from('roles')
-            .select('role_name')
-            .eq('id', user.role_id)
-            .single();
-          
-          if (roleData?.role_name && !roleError) {
-            setSelectedRole(roleData.role_name);
-          }
-        } catch (err) {
-          console.log('Could not fetch role, user can select manually');
+        console.log('Fetching role for role_id:', user.role_id);
+        
+        const { data: roleData, error: roleError } = await supabase
+          .from('roles')
+          .select('role_name, permissions')
+          .eq('id', user.role_id)
+          .single();
+        
+        console.log('Role fetch result:', { roleData, roleError });
+        
+        if (roleData && !roleError) {
+          setAssignedRole(roleData.role_name);
+          setRolePermissions(roleData.permissions || []);
+          console.log('Role assigned:', roleData.role_name);
+        } else {
+          console.error('Failed to fetch role:', roleError);
+          setAssignedRole('Role not found');
         }
+      } else {
+        console.log('No role_id found for user');
+        setAssignedRole('No role assigned');
       }
 
       showMessage('Welcome! Please complete your account setup below.', 'info');
@@ -152,7 +133,7 @@ export function UserFirstLogin() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedRole || !fullName.trim()) {
+    if (!fullName.trim()) {
       showMessage('Please fill in all required fields.', 'error');
       return;
     }
@@ -174,7 +155,7 @@ export function UserFirstLogin() {
           emailRedirectTo: `${window.location.origin}/dashboard`,
           data: {
             full_name: fullName,
-            role: selectedRole,
+            role: assignedRole,
           },
         },
       });
@@ -189,7 +170,7 @@ export function UserFirstLogin() {
 
       console.log('Auth user created:', authData.user.id);
 
-      // 2. Create profile record
+      // 2. Create profile record with role and permissions
       const { error: profileInsertError } = await supabase
         .from('profiles')
         .insert({
@@ -197,7 +178,8 @@ export function UserFirstLogin() {
           email: email,
           full_name: fullName,
           phone: phone || null,
-          role: selectedRole,
+          role: assignedRole,
+          permissions: rolePermissions, // Store role permissions if your profiles table has this column
           status: 'active',
           setup_completed: true,
           created_at: new Date().toISOString()
@@ -210,12 +192,13 @@ export function UserFirstLogin() {
 
       console.log('Profile created successfully');
 
-      // 3. Update users table (optional - link auth user ID if column exists)
+      // 3. Update users table
       const { error: updateUsersError } = await supabase
         .from('users')
         .update({
           name: fullName,
           phone: phone || null,
+          auth_user_id: authData.user.id, // Link to auth user if column exists
         })
         .eq('email', email);
 
@@ -311,7 +294,7 @@ export function UserFirstLogin() {
             </h1>
             <p className="text-white/80 leading-relaxed max-w-sm">
               You're just one step away from accessing your personalized dashboard. 
-              Choose your role and complete your profile setup.
+              Your role has been assigned and you can complete your profile setup below.
             </p>
           </div>
         </div>
@@ -405,58 +388,35 @@ export function UserFirstLogin() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Select Your Role *
+                  Your Assigned Role
                 </label>
-                <div className="grid grid-cols-1 gap-3">
-                  {ROLE_OPTIONS.map((role) => {
-                    const Icon = role.icon;
-                    return (
-                      <motion.label
-                        key={role.value}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.98 }}
-                        className={`flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all ${
-                          selectedRole === role.value
-                            ? 'border-blue-500 bg-blue-50'
-                            : 'border-gray-200 hover:border-gray-300'
-                        }`}
-                      >
-                        <input
-                          type="radio"
-                          name="role"
-                          value={role.value}
-                          checked={selectedRole === role.value}
-                          onChange={(e) => setSelectedRole(e.target.value)}
-                          className="sr-only"
-                        />
-                        <div className={`p-2 rounded-lg mr-3 ${
-                          selectedRole === role.value ? 'bg-blue-500' : 'bg-gray-100'
-                        }`}>
-                          <Icon className={`w-5 h-5 ${
-                            selectedRole === role.value ? 'text-white' : 'text-gray-600'
-                          }`} />
+                <div className="p-4 border-2 border-blue-200 bg-blue-50 rounded-lg">
+                  <div className="flex items-center space-x-3">
+                    <div className="p-2 bg-blue-500 rounded-lg">
+                      <Briefcase className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-medium text-blue-900">
+                        {assignedRole || 'Loading role...'}
+                      </div>
+                      <div className="text-sm text-blue-700">
+                        {assignedRole && assignedRole !== 'Loading role...' && assignedRole !== 'No role assigned' && assignedRole !== 'Role not found'
+                          ? 'This role has been assigned to you by your administrator'
+                          : 'Please contact your administrator if role is missing'}
+                      </div>
+                      {rolePermissions.length > 0 && (
+                        <div className="text-xs text-blue-600 mt-1">
+                          {rolePermissions.length} permissions assigned
                         </div>
-                        <div className="flex-1">
-                          <div className={`font-medium ${
-                            selectedRole === role.value ? 'text-blue-900' : 'text-gray-900'
-                          }`}>
-                            {role.label}
-                          </div>
-                          <div className={`text-sm ${
-                            selectedRole === role.value ? 'text-blue-700' : 'text-gray-500'
-                          }`}>
-                            {role.description}
-                          </div>
-                        </div>
-                      </motion.label>
-                    );
-                  })}
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
 
               <motion.button
                 type="submit"
-                disabled={loading || !selectedRole || !fullName.trim() || password.length < 8}
+                disabled={loading || !fullName.trim() || password.length < 8}
                 whileHover={{ scale: loading ? 1 : 1.02 }}
                 whileTap={{ scale: loading ? 1 : 0.98 }}
                 className="w-full bg-blue-500 text-white font-bold py-4 rounded-full hover:bg-blue-600 disabled:bg-blue-300 disabled:cursor-not-allowed transition-colors text-lg tracking-wide"

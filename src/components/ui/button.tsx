@@ -1,31 +1,41 @@
-import * as React from "react";
-import { cn } from "../../lib/utils"; // helper for conditional classes (optional)
+import React from 'react';
+import { motion } from 'framer-motion';
 
-export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: "default" | "outline";
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'outline';
+  size?: 'sm' | 'md' | 'lg';
+  children: React.ReactNode;
 }
 
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = "default", ...props }, ref) => {
-    const baseClasses =
-      "px-4 py-2 rounded-lg font-medium transition focus:outline-none focus:ring-2 focus:ring-offset-2";
+export function Button({ 
+  variant = 'primary', 
+  size = 'md', 
+  children, 
+  className = '', 
+  ...props 
+}: ButtonProps) {
+  const baseClasses = 'inline-flex items-center justify-center font-medium rounded-xl transition-all duration-200 transform';
+  
+  const variants = {
+    primary: 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:from-blue-700 hover:to-purple-700 shadow-lg hover:shadow-xl',
+    secondary: 'bg-white text-gray-800 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50',
+    outline: 'border-2 border-white/20 text-white hover:bg-white/10 backdrop-blur-sm'
+  };
+  
+  const sizes = {
+    sm: 'px-4 py-2 text-sm',
+    md: 'px-6 py-3 text-base',
+    lg: 'px-8 py-4 text-lg'
+  };
 
-    const variants: Record<string, string> = {
-      default:
-        "bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500",
-      outline:
-        "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 focus:ring-gray-400",
-    };
-
-    return (
-      <button
-        ref={ref}
-        className={cn(baseClasses, variants[variant], className)}
-        {...props}
-      />
-    );
-  }
-);
-
-Button.displayName = "Button";
+  return (
+    <motion.button
+      className={`${baseClasses} ${variants[variant]} ${sizes[size]} ${className}`}
+      whileHover={{ scale: 1.05, y: -2 }}
+      whileTap={{ scale: 0.95 }}
+      {...props}
+    >
+      {children}
+    </motion.button>
+  );
+}
