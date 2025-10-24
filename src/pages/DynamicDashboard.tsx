@@ -2,20 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Layout } from '../components/Layout/Layout';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import { 
-  FolderOpen, 
-  Layers, 
-  IndianRupee, 
-  Package, 
-  TrendingUp, 
-  TrendingDown,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  FileText,
-  Calendar,
-  Users
-} from 'lucide-react';
+import { FolderOpen, Layers, IndianRupee, Package, TrendingUp, TrendingDown, Clock, CircleCheck as CheckCircle, CircleAlert as AlertCircle, FileText, Calendar, Users } from 'lucide-react';
 
 interface DashboardWidget {
   id: string;
@@ -41,14 +28,28 @@ export function DynamicDashboard() {
   });
 
   useEffect(() => {
+    console.log('=== DynamicDashboard Mounted ===');
+    console.log('User:', user);
+    console.log('UserRole:', userRole);
+    
     if (user && userRole) {
+      console.log('Loading permissions for user...');
       loadRolePermissions();
+    } else {
+      console.warn('Missing user or userRole:', { user: !!user, userRole });
     }
   }, [user, userRole]);
 
   useEffect(() => {
+    console.log('Permissions changed:', permissions);
+    console.log('Permissions length:', permissions.length);
+    
     if (permissions.length > 0) {
+      console.log('Loading dashboard data...');
       loadDashboardData();
+    } else {
+      console.log('No permissions - skipping dashboard data load');
+      setLoading(false);
     }
   }, [permissions]);
 
@@ -58,6 +59,7 @@ export function DynamicDashboard() {
       
       // Admin gets all permissions
       if (userRole === 'Admin') {
+        console.log('User is Admin - granting all permissions');
         setPermissions([
           'view_dashboard',
           'view_projects',
@@ -68,6 +70,7 @@ export function DynamicDashboard() {
           'view_calendar',
           'view_users'
         ]);
+        setLoading(false);
         return;
       }
 
@@ -84,18 +87,23 @@ export function DynamicDashboard() {
       if (error) {
         console.error('Error loading role:', error);
         setPermissions([]);
+        setLoading(false);
         return;
       }
 
       if (roleData && roleData.permissions) {
+        console.log('Setting permissions:', roleData.permissions);
         setPermissions(roleData.permissions);
-        console.log('Loaded permissions:', roleData.permissions);
       } else {
+        console.warn('No permissions found for role:', userRole);
         setPermissions([]);
       }
+      
+      setLoading(false);
     } catch (err) {
       console.error('Error in loadRolePermissions:', err);
       setPermissions([]);
+      setLoading(false);
     }
   };
 
@@ -104,12 +112,38 @@ export function DynamicDashboard() {
     try {
       const dashboardWidgets: DashboardWidget[] = [];
 
-      // Projects Widget
+      // Get user's assigned project from users table
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('project_id, role_id')
+        .eq('email', user?.email)
+        .single();
+
+      const assignedProjectId = userProfile?.project_id;
+      
+      console.log('User assigned project:', assignedProjectId);
+      console.log('User profile data:', userProfile);
+
+      // Projects Widget - only show assigned project
       if (hasPermission('view_projects')) {
-        const { data: projects } = await supabase
+        let projectsQuery = supabase
           .from('projects')
-          .select('id, name, status')
-          .eq('created_by', user?.id);
+          .select('id, name, status');
+
+        if (userRole !== 'Admin') {
+          // Non-admin users only see their assigned project
+          if (assignedProjectId) {
+            projectsQuery = projectsQuery.eq('id', assignedProjectId);
+          } else {
+            // If no project assigned, return empty result
+            projectsQuery = projectsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+          }
+        } else {
+          // Admin sees all their projects
+          projectsQuery = projectsQuery.eq('created_by', user?.id);
+        }
+
+        const { data: projects } = await projectsQuery;
 
         dashboardWidgets.push({
           id: 'projects',
@@ -119,7 +153,7 @@ export function DynamicDashboard() {
           type: 'stat',
           data: {
             value: projects?.length || 0,
-            subtitle: 'Active projects',
+            subtitle: userRole === 'Admin' ? 'Active projects' : assignedProjectId ? 'Assigned project' : 'No project assigned',
             color: 'blue'
           }
         });
@@ -127,12 +161,22 @@ export function DynamicDashboard() {
         setStats(prev => ({ ...prev, totalProjects: projects?.length || 0 }));
       }
 
-      // Phases Widget
+      // Phases Widget - only for assigned project
       if (hasPermission('view_phases')) {
-        const { data: phases } = await supabase
+        let phasesQuery = supabase
           .from('phases')
-          .select('id, phase_name, status')
-          .eq('created_by', user?.id);
+          .select('id, phase_name, status, project_id');
+
+        if (userRole !== 'Admin' && assignedProjectId) {
+          phasesQuery = phasesQuery.eq('project_id', assignedProjectId);
+        } else if (userRole === 'Admin') {
+          phasesQuery = phasesQuery.eq('created_by', user?.id);
+        } else {
+          // No project assigned, return empty result
+          phasesQuery = phasesQuery.eq('project_id', '00000000-0000-0000-0000-000000000000');
+        }
+
+        const { data: phases } = await phasesQuery;
 
         const activePhases = phases?.filter(p => p.status === 'in_progress')?.length || 0;
 
@@ -152,12 +196,22 @@ export function DynamicDashboard() {
         setStats(prev => ({ ...prev, activePhases }));
       }
 
-      // Expenses Widget
+      // Expenses Widget - only for assigned project
       if (hasPermission('view_expenses')) {
-        const { data: expenses } = await supabase
+        let expensesQuery = supabase
           .from('expenses')
-          .select('amount, type')
-          .eq('created_by', user?.id);
+          .select('amount, type, project_id');
+
+        if (userRole !== 'Admin' && assignedProjectId) {
+          expensesQuery = expensesQuery.eq('project_id', assignedProjectId);
+        } else if (userRole === 'Admin') {
+          expensesQuery = expensesQuery.eq('created_by', user?.id);
+        } else {
+          // No project assigned, return empty result
+          expensesQuery = expensesQuery.eq('project_id', '00000000-0000-0000-0000-000000000000');
+        }
+
+        const { data: expenses } = await expensesQuery;
 
         const totalExpenses = expenses
           ?.filter(e => e.type === 'expense')
@@ -175,7 +229,7 @@ export function DynamicDashboard() {
           type: 'stat',
           data: {
             value: `₹${totalExpenses.toLocaleString()}`,
-            subtitle: 'This month',
+            subtitle: assignedProjectId ? 'This project' : 'No data',
             color: 'red'
           }
         });
@@ -188,7 +242,7 @@ export function DynamicDashboard() {
           type: 'stat',
           data: {
             value: `₹${totalIncome.toLocaleString()}`,
-            subtitle: 'This month',
+            subtitle: assignedProjectId ? 'This project' : 'No data',
             color: 'green'
           }
         });
@@ -196,12 +250,22 @@ export function DynamicDashboard() {
         setStats(prev => ({ ...prev, totalExpenses, totalIncome }));
       }
 
-      // Materials Widget
+      // Materials Widget - only for assigned project
       if (hasPermission('view_materials')) {
-        const { data: materials } = await supabase
+        let materialsQuery = supabase
           .from('materials')
-          .select('id, material_name, quantity')
-          .eq('created_by', user?.id);
+          .select('id, material_name, quantity, project_id');
+
+        if (userRole !== 'Admin' && assignedProjectId) {
+          materialsQuery = materialsQuery.eq('project_id', assignedProjectId);
+        } else if (userRole === 'Admin') {
+          materialsQuery = materialsQuery.eq('created_by', user?.id);
+        } else {
+          // No project assigned, return empty result
+          materialsQuery = materialsQuery.eq('project_id', '00000000-0000-0000-0000-000000000000');
+        }
+
+        const { data: materials } = await materialsQuery;
 
         dashboardWidgets.push({
           id: 'materials',
@@ -211,7 +275,7 @@ export function DynamicDashboard() {
           type: 'stat',
           data: {
             value: materials?.length || 0,
-            subtitle: 'Items tracked',
+            subtitle: assignedProjectId ? 'Items tracked' : 'No data',
             color: 'orange'
           }
         });
@@ -219,6 +283,7 @@ export function DynamicDashboard() {
         setStats(prev => ({ ...prev, materialsCount: materials?.length || 0 }));
       }
 
+      console.log('Dashboard widgets loaded:', dashboardWidgets.length);
       setWidgets(dashboardWidgets);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
@@ -249,6 +314,45 @@ export function DynamicDashboard() {
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
             <p className="text-gray-600">Loading your dashboard...</p>
+            <p className="text-xs text-gray-400 mt-2">User: {user?.email}</p>
+            <p className="text-xs text-gray-400">Role: {userRole || 'Not set'}</p>
+            <p className="text-xs text-gray-400">Permissions: {permissions.length}</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  // Show debug info if no widgets but we have user/role
+  if (widgets.length === 0 && user && userRole) {
+    return (
+      <Layout title="Dashboard">
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center max-w-md bg-white p-8 rounded-xl shadow-lg">
+            <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-800 mb-2">Dashboard Loading Issue</h2>
+            <div className="text-left space-y-2 mb-4 text-sm">
+              <p><strong>User Email:</strong> {user.email}</p>
+              <p><strong>Role:</strong> {userRole || 'Not set'}</p>
+              <p><strong>Permissions Count:</strong> {permissions.length}</p>
+              {permissions.length > 0 && (
+                <div>
+                  <strong>Permissions:</strong>
+                  <ul className="list-disc list-inside">
+                    {permissions.map(p => <li key={p}>{p}</li>)}
+                  </ul>
+                </div>
+              )}
+            </div>
+            {permissions.length === 0 ? (
+              <p className="text-gray-600 mb-4">
+                No permissions found for your role. Please contact your administrator.
+              </p>
+            ) : (
+              <p className="text-gray-600 mb-4">
+                Permissions loaded but no dashboard data available.
+              </p>
+            )}
           </div>
         </div>
       </Layout>
@@ -276,7 +380,7 @@ export function DynamicDashboard() {
   }
 
   return (
-    <Layout title="Dashboard" subtitle={`Welcome, ${userRole}`}>
+    <Layout title="Dashboard" subtitle={`Welcome, ${userRole} - Project Dashboard`}>
       <div className="p-6 space-y-6">
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl p-6 text-white">
@@ -284,7 +388,7 @@ export function DynamicDashboard() {
             Welcome back! 👋
           </h1>
           <p className="text-blue-100">
-            Here's what's happening with your projects today.
+            Here's what's happening with your assigned project today.
           </p>
         </div>
 
@@ -349,17 +453,33 @@ export function DynamicDashboard() {
 
         {/* Recent Activity */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Your Permissions</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {permissions.map((permission) => (
-              <div
-                key={permission}
-                className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg"
-              >
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-sm text-gray-700">{permission}</span>
+          <h2 className="text-lg font-semibold text-gray-900 mb-4">Project Information</h2>
+          <div className="space-y-4">
+            {/* Project Assignment Info */}
+            <div className="bg-blue-50 rounded-lg p-4">
+              <h3 className="font-medium text-blue-900 mb-2">Your Assignment</h3>
+              <div className="text-sm text-blue-700">
+                <p><strong>Role:</strong> {userRole}</p>
+                <p><strong>Access Level:</strong> Project-specific data only</p>
+                <p><strong>Permissions:</strong> {permissions.length} active permissions</p>
               </div>
-            ))}
+            </div>
+            
+            {/* Permissions Grid */}
+            <div>
+              <h3 className="font-medium text-gray-900 mb-3">Your Permissions</h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {permissions.map((permission) => (
+                  <div
+                    key={permission}
+                    className="flex items-center gap-2 px-3 py-2 bg-green-50 rounded-lg"
+                  >
+                    <CheckCircle className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-gray-700">{permission}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>

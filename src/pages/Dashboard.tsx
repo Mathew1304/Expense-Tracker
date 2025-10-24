@@ -1,22 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import {
-  FolderOpen,
-  Package,
-  Users,
-  CheckCircle,
-  IndianRupee,
-  FileText,
-  TrendingUp,
-  TrendingDown,
-  Calendar,
-  Activity,
-  DollarSign,
-  BarChart3,
-  PieChart,
-  ArrowUpRight,
-  ArrowDownRight,
-} from "lucide-react";
+import { FolderOpen, Package, Users, CircleCheck as CheckCircle, IndianRupee, FileText, TrendingUp, TrendingDown, Calendar, Activity, DollarSign, ChartBar as BarChart3, ChartPie as PieChart, ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
@@ -349,8 +333,8 @@ export function Dashboard() {
           <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl shadow-lg text-white p-8 mb-8">
             <div className="flex justify-between items-center">
               <div>
-                <h1 className="text-3xl font-bold mb-2">Welcome back, {name}!</h1>
-                <p className="text-blue-100">Here's what's happening with your projects today.</p>
+                <h1 className="text-3xl font-bold mb-2">Admin Dashboard - Welcome back, {name}!</h1>
+                <p className="text-blue-100">Complete overview of all projects and system management.</p>
               </div>
               <div className="flex items-center space-x-4">
                 <select

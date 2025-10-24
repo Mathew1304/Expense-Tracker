@@ -69,7 +69,7 @@ function ProtectedRoute({
 
 // App Routes Component
 function AppRoutes() {
-  const { user, loading } = useAuth();
+  const { user, loading, userRole } = useAuth();
 
   if (loading) {
     return <LoadingScreen />;
@@ -97,7 +97,7 @@ function AppRoutes() {
         path="/dashboard"
         element={
           <ProtectedRoute>
-            <DynamicDashboard />
+            {userRole === 'Admin' ? <Dashboard /> : <DynamicDashboard />}
           </ProtectedRoute>
         }
       />
@@ -112,11 +112,11 @@ function AppRoutes() {
         }
       />
 
-      {/* Old dashboard - keep for backward compatibility if needed */}
+      {/* Admin dashboard - Admin only */}
       <Route
-        path="/old-dashboard"
+        path="/admin-dashboard"
         element={
-          <ProtectedRoute>
+          <ProtectedRoute requiredPermission="view_roles">
             <Dashboard />
           </ProtectedRoute>
         }
