@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { LogOut, Check, X, Calendar, Clock, Menu, User } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
+import { NotificationIcon } from "../Notifications/NotificationIcon";
 
 interface HeaderProps {
   title: string;
@@ -11,7 +12,7 @@ interface HeaderProps {
 }
 
 export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false }: HeaderProps) {
-  const { user, signOut } = useAuth();
+  const { user, signOut, userRole } = useAuth();
   const navigate = useNavigate();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -139,6 +140,11 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                 <span className="text-sm font-medium hidden md:inline">Calendar</span>
               </button>
             </div>
+
+            {/* Notifications - Only show for Admin users */}
+            {userRole === 'Admin' && (
+              <NotificationIcon />
+            )}
 
             {/* Upgrade */}
             <button

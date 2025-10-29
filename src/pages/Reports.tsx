@@ -7,7 +7,7 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 
 export function Reports() {
-  const { user } = useAuth();
+  const { user, userRole, permissions } = useAuth();
   const [profileId, setProfileId] = useState<string | null>(null);
   const [projects, setProjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -17,6 +17,21 @@ export function Reports() {
     startDate: "",
     endDate: ""
   });
+
+  // Permission helper function
+  const hasPermission = (requiredPermission: string | string[]) => {
+    // Admin always has access
+    if (userRole === "Admin") {
+      return true;
+    }
+
+    // Check permissions
+    if (Array.isArray(requiredPermission)) {
+      return requiredPermission.some(perm => permissions.includes(perm));
+    }
+
+    return permissions.includes(requiredPermission);
+  };
 
   useEffect(() => {
     if (user) setProfileId(user.id);
@@ -620,13 +635,15 @@ export function Reports() {
         <div className="bg-white rounded-lg shadow p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Quick Actions</h2>
           <div className="flex flex-wrap gap-4">
-            <button
-              onClick={generateConsolidatedReport}
-              className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Download Consolidated Report
-            </button>
+            {hasPermission('generate_reports') && (
+              <button
+                onClick={generateConsolidatedReport}
+                className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Download className="h-4 w-4 mr-2" />
+                Download Consolidated Report
+              </button>
+            )}
           </div>
         </div>
 
@@ -665,13 +682,15 @@ export function Reports() {
                       <p className="mt-2 text-sm text-gray-600">{project.description || 'No description'}</p>
                     </div>
                     <div className="ml-4">
-                      <button
-                        onClick={() => generateProjectReport(project)}
-                        className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-                      >
-                        <FileText className="h-4 w-4 mr-2" />
-                        Generate Report
-                      </button>
+                      {hasPermission('generate_reports') && (
+                        <button
+                          onClick={() => generateProjectReport(project)}
+                          className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                        >
+                          <FileText className="h-4 w-4 mr-2" />
+                          Generate Report
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>

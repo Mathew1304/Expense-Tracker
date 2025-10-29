@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
-import { sendUserCredentialsEmail } from "../lib/emailService";
+import { sendUserCredentialsEmail, createUserWithoutEmailConfirmation } from "../lib/emailService";
 import { Layout } from "../components/Layout/Layout";
 import { Users as UsersIcon, Plus, Search, Mail, Phone, Shield, MoveVertical as MoreVertical, ListFilter as Filter, CreditCard as Edit2, Trash2, Eye, Grid2x2 as Grid, List, Building, Calendar, Clock, X, Check, User, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 
@@ -62,6 +62,8 @@ export function Users() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
   const [generatedPassword, setGeneratedPassword] = useState("");
   const [sendingEmail, setSendingEmail] = useState(false);
   const [formData, setFormData] = useState({
@@ -211,7 +213,25 @@ export function Users() {
     setSendingEmail(true);
 
     try {
-      // 1. Insert user into database first
+      // 1. Create auth user first
+      const roleName = roles.find(r => r.id === formData.role_id)?.role_name || 'User';
+      const authUserResult = await createUserWithoutEmailConfirmation(
+        formData.email,
+        generatedPassword,
+        formData.name,
+        roleName
+      );
+
+      if (!authUserResult.success) {
+        console.error("Auth user creation failed:", authUserResult.error);
+        showNotification('error', `Failed to create auth user: ${authUserResult.error}`);
+        setSendingEmail(false);
+        return;
+      }
+
+      console.log('✅ Auth user created successfully:', authUserResult.user.id);
+
+      // 2. Insert user into database with auth_user_id
       const { data: newUser, error: insertError } = await supabase
         .from("users")
         .insert([
@@ -222,9 +242,10 @@ export function Users() {
             role_id: formData.role_id || null,
             project_id: formData.project_id || null,
             created_by: user.id,
+            auth_user_id: authUserResult.user.id, // Link to auth user
           },
         ])
-        .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+        .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at, auth_user_id")
         .single();
 
       if (insertError) {
@@ -234,7 +255,7 @@ export function Users() {
         return;
       }
 
-      // 2. Send welcome email
+      // 3. Send welcome email
       const emailParams = {
         to_email: formData.email,
         to_name: formData.name,
@@ -252,7 +273,7 @@ export function Users() {
         showNotification('error', `User created but email failed: ${result.error}. Credentials - Email: ${emailParams.to_email}, Password: ${generatedPassword}`);
       }
 
-      // 3. Transform new user data and update UI
+      // 4. Transform new user data and update UI
       const transformedUser = {
         ...newUser,
         phone: newUser.phone || '',
@@ -277,21 +298,41 @@ export function Users() {
     }
   }
 
-  // Delete user
-  async function handleDelete(userId: string) {
-    if (window.confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
-      const { error } = await supabase.from("users").delete().eq("id", userId);
-      if (error) {
-        console.error("Delete failed:", error.message);
-        showNotification('error', 'Failed to delete user');
-        return;
-      }
-      setUsers(users.filter((u) => u.id !== userId));
-      if (selectedUser?.id === userId) {
-        setSelectedUser(null);
-      }
-      showNotification('success', 'User deleted successfully');
+  // Show delete confirmation modal
+  function handleDelete(userId: string) {
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      setUserToDelete(user);
+      setShowDeleteModal(true);
     }
+  }
+
+  // Confirm and delete user
+  async function confirmDelete() {
+    if (!userToDelete) return;
+
+    const { error } = await supabase.from("users").delete().eq("id", userToDelete.id);
+    if (error) {
+      console.error("Delete failed:", error.message);
+      showNotification('error', 'Failed to delete user');
+      setShowDeleteModal(false);
+      setUserToDelete(null);
+      return;
+    }
+    
+    setUsers(users.filter((u) => u.id !== userToDelete.id));
+    if (selectedUser?.id === userToDelete.id) {
+      setSelectedUser(null);
+    }
+    showNotification('success', 'User deleted successfully');
+    setShowDeleteModal(false);
+    setUserToDelete(null);
+  }
+
+  // Cancel delete
+  function cancelDelete() {
+    setShowDeleteModal(false);
+    setUserToDelete(null);
   }
 
   // Start editing
@@ -1148,6 +1189,61 @@ export function Users() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && userToDelete && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+          onClick={(e) => handleModalBackdropClick(e, cancelDelete)}
+        >
+          <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertCircle className="h-6 w-6 text-red-600" />
+                </div>
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-medium text-gray-900">Delete User</h3>
+                <p className="text-sm text-gray-500">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <div className="mb-6">
+              <p className="text-gray-700 mb-4">
+                Are you sure you want to delete <span className="font-semibold text-gray-900">{userToDelete.name}</span>? 
+                This will permanently remove the user and all associated data.
+              </p>
+              
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <h4 className="font-medium text-gray-900 mb-2">User Details:</h4>
+                <div className="space-y-1 text-sm text-gray-600">
+                  <p><strong>Name:</strong> {userToDelete.name}</p>
+                  <p><strong>Email:</strong> {userToDelete.email}</p>
+                  <p><strong>Role:</strong> {userToDelete.roles?.role_name || 'No Role'}</p>
+                  <p><strong>Project:</strong> {userToDelete.projects?.name || 'No Project'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={cancelDelete}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete User
+              </button>
+            </div>
           </div>
         </div>
       )}

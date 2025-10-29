@@ -3,6 +3,7 @@ import { Package, Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, Buildin
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { sendMaterialNotificationSMS, getAdminPhoneNumbers, SMSNotificationData } from "../lib/smsService";
 
 type Material = {
   id: string;
@@ -28,7 +29,8 @@ type Project = {
 };
 
 export function Materials() {
-  const { user } = useAuth();
+  const { user, userRole, permissions } = useAuth();
+  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -85,10 +87,119 @@ export function Materials() {
 
   const units = ['Kg', 'Ton', 'Bag', 'Cubic Meter', 'Square Meter', 'Piece', 'Liter', 'Meter'];
 
+  // Permission helper function
+  const hasPermission = (requiredPermission: string | string[]) => {
+    // Admin always has access
+    if (userRole === "Admin") {
+      return true;
+    }
+
+    // Check permissions
+    if (Array.isArray(requiredPermission)) {
+      return requiredPermission.some(perm => permissions.includes(perm));
+    }
+
+    return permissions.includes(requiredPermission);
+  };
+
+  // SMS notification helper function
+  const sendSMSNotification = async (action: 'add' | 'edit' | 'delete', material: any, projectName?: string) => {
+    try {
+      // Only send SMS if user is not an admin (to avoid self-notifications)
+      if (userRole === 'Admin') {
+        return;
+      }
+
+      // Get admin phone numbers
+      const adminPhoneNumbers = await getAdminPhoneNumbers();
+      
+      if (adminPhoneNumbers.length === 0) {
+        console.log('No admin phone numbers found for SMS notifications');
+        return;
+      }
+
+      // Create notification data
+      const notificationData: SMSNotificationData = {
+        action,
+        materialName: material.name,
+        userName: user?.user_metadata?.full_name || user?.email || 'Unknown User',
+        userEmail: user?.email || 'Unknown Email',
+        projectName: projectName,
+        quantity: material.qty_required,
+        unitCost: material.unit_cost,
+        timestamp: new Date().toISOString()
+      };
+
+      // Send SMS notification
+      const result = await sendMaterialNotificationSMS(adminPhoneNumbers, notificationData);
+      
+      if (result.success) {
+        console.log('SMS notification sent successfully');
+      } else {
+        console.error('Failed to send SMS notification:', result.error);
+      }
+    } catch (error) {
+      console.error('Error sending SMS notification:', error);
+    }
+  };
+
   useEffect(() => {
-    fetchMaterials();
-    fetchProjects();
+    const fetchUserData = async () => {
+      if (!user?.id) return;
+
+      // Get user's assigned project from users table
+      const { data: userProfile } = await supabase
+        .from('users')
+        .select('project_id')
+        .eq('email', user.email)
+        .single();
+
+      if (userProfile?.project_id) {
+        console.log('Materials - Found assigned project:', userProfile.project_id);
+        setAssignedProjectId(userProfile.project_id);
+        // Trigger fetch immediately after setting the project ID
+        setTimeout(() => {
+          console.log('Materials - Triggering fetchMaterials after state update');
+          fetchMaterials();
+        }, 100);
+      } else {
+        console.log('Materials - No project assigned to user in users table');
+        console.log('This means the user either:');
+        console.log('1. Does not exist in the users table, OR');
+        console.log('2. Exists in users table but has no project_id assigned');
+        console.log('Check if the user was properly created in the Users page with a project assignment');
+        
+        // Try to find user by auth_user_id as fallback
+        console.log('Materials - Trying fallback lookup by auth_user_id:', user?.id);
+        const { data: fallbackUser, error: fallbackError } = await supabase
+          .from('users')
+          .select('project_id, id, name, email')
+          .eq('auth_user_id', user?.id)
+          .single();
+          
+        if (fallbackUser?.project_id) {
+          console.log('Materials - Found user by auth_user_id:', fallbackUser);
+          setAssignedProjectId(fallbackUser.project_id);
+          // Trigger fetch immediately after setting the project ID
+          setTimeout(() => {
+            console.log('Materials - Triggering fetchMaterials after fallback state update');
+            fetchMaterials();
+          }, 100);
+        } else {
+          console.log('Materials - Fallback lookup also failed:', fallbackError);
+          setAssignedProjectId(null);
+        }
+      }
+    };
+    fetchUserData();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (assignedProjectId !== null || userRole === 'Admin') {
+      fetchMaterials();
+      fetchProjects();
+    }
+  }, [user?.id, assignedProjectId, userRole]);
 
   useEffect(() => {
     if (showSuccessMessage) {
@@ -106,7 +217,9 @@ export function Materials() {
     setLoading(true);
     setError(null);
 
-    const { data, error } = await supabase
+    console.log('Materials - fetchMaterials called with:', { userRole, assignedProjectId, userId: user?.id });
+
+    let query = supabase
       .from("materials")
       .select(`
         id,
@@ -117,31 +230,117 @@ export function Materials() {
         qty_required,
         unit_cost,
         project_id,
-        projects ( name ),
         supplier,
         hsn,
         specifications,
         status,
         updated_at,
         created_by
-      `)
-      .eq("created_by", user.id)
-      .order("updated_at", { ascending: false });
+      `);
+
+    if (userRole === 'Admin') {
+      console.log('Materials - Admin user, filtering by created_by:', user.id);
+      query = query.eq("created_by", user.id);
+    } else if (assignedProjectId) {
+      console.log('Materials - Non-admin user, filtering by assigned project:', assignedProjectId);
+      query = query.eq("project_id", assignedProjectId);
+    } else {
+      setMaterials([]);
+      setLoading(false);
+      return;
+    }
+
+    console.log('Materials - About to execute query...');
+    const { data, error } = await query.order("updated_at", { ascending: false });
+
+    console.log('Materials - Query result:', { data, error, dataLength: data?.length });
 
     if (error) {
-      console.error("Fetch error:", error);
+      console.error("Materials - Fetch error:", error);
+      console.error("Materials - Error details:", {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code
+      });
+      
+      // Check if it's a permissions issue
+      if (error.message.includes('permission') || error.message.includes('policy')) {
+        console.log('Materials - This appears to be a Row Level Security (RLS) permissions issue');
+        console.log('Materials - The user may not have permission to access materials for this project');
+        
+        // For non-admin users, try to fetch materials directly without the join
+        if (assignedProjectId && userRole !== 'Admin') {
+          console.log('Materials - Trying direct fetch without projects join...');
+          const { data: directData, error: directError } = await supabase
+            .from("materials")
+            .select('id, name, description, category, unit, qty_required, unit_cost, project_id, supplier, hsn, specifications, status, updated_at, created_by')
+            .eq("project_id", assignedProjectId)
+            .order("updated_at", { ascending: false });
+          
+          console.log('Materials - Direct fetch result:', { directData, directError });
+          
+          if (!directError && directData) {
+            // Get project name for fallback data
+            const { data: projectData } = await supabase
+              .from("projects")
+              .select("name")
+              .eq("id", assignedProjectId)
+              .single();
+            const projectName = projectData?.name || "Assigned Project";
+
+            const mapped = directData.map((m: any) => ({
+              id: m.id,
+              name: m.name,
+              description: m.description || `Construction material for ${projectName}`,
+              category: m.category || 'Cement & Concrete',
+              unit: m.unit || 'Kg',
+              qty_required: m.qty_required || 0,
+              unit_cost: m.unit_cost || 0,
+              project_id: m.project_id,
+              project_name: projectName,
+              supplier: m.supplier || 'Not Specified',
+              hsn: m.hsn || '',
+              specifications: m.specifications || 'Standard construction grade material',
+              status: m.status || "In Stock",
+              updated_at: m.updated_at,
+              created_by: m.created_by,
+            }));
+            console.log('Materials - Setting materials data from direct fetch:', mapped);
+            setMaterials(mapped);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+      
       setError(error.message);
     } else {
+      console.log('Materials - Processing materials data...');
+      
+      // Get project name separately for better reliability
+      let projectName = "Unknown";
+      if (assignedProjectId) {
+        const { data: projectData } = await supabase
+          .from("projects")
+          .select("name")
+          .eq("id", assignedProjectId)
+          .single();
+        projectName = projectData?.name || "Unknown";
+      }
+
+      console.log('Materials - Project name for materials:', projectName);
+      
       const mapped = (data || []).map((m: any) => ({
         id: m.id,
         name: m.name,
-        description: m.description || `Construction material for ${m.projects?.name || 'project'}`,
+        description: m.description || `Construction material for ${projectName}`,
         category: m.category || 'Cement & Concrete',
         unit: m.unit || 'Kg',
         qty_required: m.qty_required || 0,
         unit_cost: m.unit_cost || 0,
         project_id: m.project_id,
-        project_name: m.projects?.name || "Unknown",
+        project_name: projectName,
         supplier: m.supplier || 'Not Specified',
         hsn: m.hsn || '',
         specifications: m.specifications || 'Standard construction grade material',
@@ -149,6 +348,7 @@ export function Materials() {
         updated_at: m.updated_at,
         created_by: m.created_by,
       }));
+      console.log('Materials - Setting materials data:', mapped);
       setMaterials(mapped);
     }
     setLoading(false);
@@ -157,11 +357,20 @@ export function Materials() {
   const fetchProjects = async () => {
     if (!user?.id) return;
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("projects")
-      .select("id, name")
-      .eq("created_by", user.id)
-      .order("created_at", { ascending: false });
+      .select("id, name");
+
+    if (userRole === 'Admin') {
+      query = query.eq("created_by", user.id);
+    } else if (assignedProjectId) {
+      query = query.eq("id", assignedProjectId);
+    } else {
+      setProjects([]);
+      return;
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
 
     if (error) {
       console.error("Fetch projects error:", error);
@@ -202,6 +411,10 @@ export function Materials() {
       console.error("Insert error:", error);
       alert("Error adding material: " + error.message);
     } else {
+      // Send SMS notification to admins
+      const projectName = projects.find(p => p.id === newMaterial.project_id)?.name;
+      await sendSMSNotification('add', materialData, projectName);
+
       setShowModal(false);
       setNewMaterial({
         name: "",
@@ -278,6 +491,10 @@ export function Materials() {
       console.error("Update error:", error);
       alert("Error updating material: " + error.message);
     } else {
+      // Send SMS notification to admins
+      const projectName = projects.find(p => p.id === editMaterial.project_id)?.name;
+      await sendSMSNotification('edit', { ...updateData, name: editMaterial.name }, projectName);
+
       setShowEditModal(false);
       setSelectedMaterial(null);
       setSuccessMessage("Material updated successfully!");
@@ -295,6 +512,9 @@ export function Materials() {
   };
 
   const handleDeleteMaterials = async () => {
+    // Get material details before deletion for SMS notification
+    const materialsToDelete = materials.filter(m => selectedMaterials.includes(m.id));
+    
     const { error } = await supabase
       .from("materials")
       .delete()
@@ -304,6 +524,12 @@ export function Materials() {
     if (error) {
       alert("Error deleting materials: " + error.message);
     } else {
+      // Send SMS notification to admins for each deleted material
+      for (const material of materialsToDelete) {
+        const projectName = projects.find(p => p.id === material.project_id)?.name;
+        await sendSMSNotification('delete', material, projectName);
+      }
+
       const deletedCount = selectedMaterials.length;
       setSelectedMaterials([]);
       setShowDeleteConfirm(false);
@@ -417,13 +643,15 @@ export function Materials() {
                 <h1 className="text-3xl font-bold text-slate-900">Material Catalog</h1>
                 <p className="text-slate-600 mt-1">Manage your construction materials with rates and specifications</p>
               </div>
-              <button
-                onClick={() => setShowModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Add Material</span>
-              </button>
+              {hasPermission('add_material') && (
+                <button
+                  onClick={() => setShowModal(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Add Material</span>
+                </button>
+              )}
             </div>
 
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -528,7 +756,7 @@ export function Materials() {
 
             <div className="flex items-center justify-between text-sm text-slate-600">
               <span>Showing {filteredMaterials.length} of {materials.length} materials</span>
-              {selectedMaterials.length > 0 && (
+              {selectedMaterials.length > 0 && hasPermission('delete_material') && (
                 <button
                   onClick={showDeleteConfirmation}
                   className="flex items-center space-x-2 px-3 py-1 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors"
@@ -556,7 +784,7 @@ export function Materials() {
                       : 'Start building your material catalog by adding your first material.'
                     }
                   </p>
-                  {(!searchTerm && categoryFilter === 'all' && supplierFilter === 'all') && (
+                  {(!searchTerm && categoryFilter === 'all' && supplierFilter === 'all') && hasPermission('add_material') && (
                     <button
                       onClick={() => setShowModal(true)}
                       className="px-4 py-2 bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 transition-colors"
@@ -661,26 +889,30 @@ export function Materials() {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleEditClick(material);
-                            }}
-                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                            title="Edit"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteMaterial(material.id);
-                            }}
-                            className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {hasPermission('edit_material') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleEditClick(material);
+                              }}
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              title="Edit"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                          )}
+                          {hasPermission('delete_material') && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteMaterial(material.id);
+                              }}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1104,15 +1336,17 @@ export function Materials() {
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
-              <button
-                onClick={() => {
-                  setShowViewModal(false);
-                  handleEditClick(selectedMaterial);
-                }}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Edit Material
-              </button>
+              {hasPermission('edit_material') && (
+                <button
+                  onClick={() => {
+                    setShowViewModal(false);
+                    handleEditClick(selectedMaterial);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Edit Material
+                </button>
+              )}
               <button
                 className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
                 onClick={() => setShowViewModal(false)}

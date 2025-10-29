@@ -19,12 +19,14 @@ import {
   Hash,
   Calendar,
   Crown,
-  Coins
+  Coins,
+  AlertCircle
 } from 'lucide-react';
 import { Layout } from '../components/Layout/Layout';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { format } from 'date-fns';
+import { testSMSService } from '../lib/smsService';
 
 interface Profile {
   id: string;
@@ -96,6 +98,9 @@ export function Settings() {
     currency: 'INR',
     timezone: 'Asia/Kolkata'
   });
+  const [smsTestPhone, setSmsTestPhone] = useState('');
+  const [smsTestLoading, setSmsTestLoading] = useState(false);
+  const [smsTestResult, setSmsTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -223,12 +228,40 @@ export function Settings() {
     }
   };
 
+  const handleTestSMS = async () => {
+    if (!smsTestPhone.trim()) {
+      setSmsTestResult({ success: false, message: 'Please enter a phone number' });
+      return;
+    }
+
+    setSmsTestLoading(true);
+    setSmsTestResult(null);
+
+    try {
+      const result = await testSMSService(smsTestPhone);
+      setSmsTestResult({
+        success: result.success,
+        message: result.success 
+          ? 'Test SMS sent successfully! Check your phone.' 
+          : `Failed to send SMS: ${result.error}`
+      });
+    } catch (error) {
+      setSmsTestResult({
+        success: false,
+        message: `Error: ${error.message}`
+      });
+    } finally {
+      setSmsTestLoading(false);
+    }
+  };
+
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'appearance', label: 'Appearance', icon: Palette },
     { id: 'system', label: 'System', icon: SettingsIcon },
+    { id: 'sms', label: 'SMS Testing', icon: Phone },
     { id: 'billing', label: 'Billing', icon: CreditCard }
   ];
 
@@ -771,6 +804,119 @@ export function Settings() {
                   <div className="p-6 border border-gray-200 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Billing History</h3>
                     <p className="text-gray-600">No billing history available</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'sms' && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">SMS Testing</h2>
+                
+                <div className="space-y-6">
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                      <Phone className="w-5 h-5 text-blue-600" />
+                      Test SMS Notifications
+                    </h3>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Phone Number
+                        </label>
+                        <input
+                          type="tel"
+                          placeholder="+1234567890"
+                          value={smsTestPhone}
+                          onChange={(e) => setSmsTestPhone(e.target.value)}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Include country code (e.g., +1 for US, +91 for India)
+                        </p>
+                      </div>
+                      
+                      <button
+                        onClick={handleTestSMS}
+                        disabled={smsTestLoading || !smsTestPhone.trim()}
+                        className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {smsTestLoading ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                            Sending...
+                          </>
+                        ) : (
+                          <>
+                            <Phone className="w-4 h-4" />
+                            Send Test SMS
+                          </>
+                        )}
+                      </button>
+                      
+                      {smsTestResult && (
+                        <div className={`p-4 rounded-lg ${
+                          smsTestResult.success 
+                            ? 'bg-green-100 text-green-800 border border-green-200' 
+                            : 'bg-red-100 text-red-800 border border-red-200'
+                        }`}>
+                          <div className="flex items-center gap-2">
+                            {smsTestResult.success ? (
+                              <CheckCircle className="w-5 h-5" />
+                            ) : (
+                              <AlertCircle className="w-5 h-5" />
+                            )}
+                            <span className="font-medium">
+                              {smsTestResult.success ? 'Success!' : 'Error'}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm">{smsTestResult.message}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">SMS Configuration</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Server-side SMS Service</span>
+                        <span className="text-xs text-green-600">Active</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Edge Function</span>
+                        <span className="text-xs text-green-600">Deployed</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-gray-600">Twilio Integration</span>
+                        <span className="text-xs text-green-600">Server-side</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-3">
+                      SMS notifications are handled server-side via Supabase Edge Functions for security and reliability.
+                    </p>
+                  </div>
+                  
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">SMS Notifications</h3>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                        <span className="text-sm text-gray-600">Material Added</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                        <span className="text-sm text-gray-600">Material Updated</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                        <span className="text-sm text-gray-600">Material Deleted</span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-500 mt-3">
+                      Admins will receive SMS notifications when users perform these actions.
+                    </p>
                   </div>
                 </div>
               </div>

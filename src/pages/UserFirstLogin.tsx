@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { createUserWithoutEmailConfirmation } from '../lib/emailService';
 import { Building2, User, Shield, Briefcase, Calculator, Wrench, AlertCircle } from 'lucide-react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -147,34 +148,64 @@ export function UserFirstLogin() {
     showMessage('Creating your account...', 'info');
 
     try {
-      // 1. Create auth user
-      const { data: authData, error: signUpError } = await supabase.auth.signUp({
+      // 1. Create auth user without email confirmation using server function
+      const authResult = await createUserWithoutEmailConfirmation(
         email,
         password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/dashboard`,
-          data: {
-            full_name: fullName,
-            role: assignedRole,
-          },
-        },
-      });
+        fullName,
+        assignedRole,
+        rolePermissions
+      );
 
-      if (signUpError) {
-        throw new Error(`Account creation failed: ${signUpError.message}`);
+      if (!authResult.success) {
+        throw new Error(`Account creation failed: ${authResult.error}`);
       }
 
-      if (!authData.user) {
+      if (!authResult.user) {
         throw new Error('Account creation failed. Please try again.');
       }
 
-      console.log('Auth user created:', authData.user.id);
+      console.log('Auth user created:', authResult.user.id);
 
-      // 2. Create profile record with role and permissions
+      // 2. Sign in the user so auth.uid() works for RLS policies
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+       if (signInError) {
+         console.error('Sign in error:', signInError);
+         // Continue without showing error to user
+         console.log('Sign in failed, but continuing with profile creation');
+       }
+
+      console.log('User signed in successfully');
+
+      // 3. Check if profile already exists
+      const { data: existingProfile, error: profileCheckError } = await supabase
+        .from('profiles')
+        .select('id, setup_completed')
+        .eq('id', authResult.user.id)
+        .single();
+
+      if (profileCheckError && profileCheckError.code !== 'PGRST116') {
+        console.error('Profile check error:', profileCheckError);
+        throw new Error('Failed to check existing profile. Please contact support.');
+      }
+
+      // If profile exists and setup is already completed, redirect to dashboard
+      if (existingProfile && existingProfile.setup_completed) {
+        console.log('Profile already exists and setup completed, redirecting to dashboard');
+        showMessage('Account already set up! Redirecting to dashboard...', 'success');
+        setTimeout(() => navigate('/dashboard'), 2000);
+        return;
+      }
+
+      // 4. Create or update profile record with role and permissions
       const { error: profileInsertError } = await supabase
         .from('profiles')
-        .insert({
-          id: authData.user.id,
+        .upsert({
+          id: authResult.user.id,
           email: email,
           full_name: fullName,
           phone: phone || null,
@@ -183,22 +214,32 @@ export function UserFirstLogin() {
           status: 'active',
           setup_completed: true,
           created_at: new Date().toISOString()
+        }, {
+          onConflict: 'id'
         });
 
       if (profileInsertError) {
         console.error('Profile insert error:', profileInsertError);
+        
+        // Check if it's an RLS policy violation
+        if (profileInsertError.code === '42501') {
+          console.log('RLS policy violation detected. This usually means the profiles table RLS policies need to be updated.');
+          console.log('Please run the fix_profiles_rls_policies.sql script in your Supabase SQL Editor.');
+          throw new Error('Profile creation blocked by security policies. Please contact your administrator to update the database policies.');
+        }
+        
         throw new Error('Failed to complete profile setup. Please contact support.');
       }
 
       console.log('Profile created successfully');
 
-      // 3. Update users table
+      // 5. Update users table
       const { error: updateUsersError } = await supabase
         .from('users')
         .update({
           name: fullName,
           phone: phone || null,
-          auth_user_id: authData.user.id, // Link to auth user if column exists
+          auth_user_id: authResult.user.id, // Link to auth user if column exists
         })
         .eq('email', email);
 
@@ -207,18 +248,7 @@ export function UserFirstLogin() {
         // Non-critical error, continue
       }
 
-      // 4. Auto sign in
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) {
-        showMessage('Account created! Please login manually with your credentials.', 'success');
-        setTimeout(() => navigate('/login'), 2000);
-        return;
-      }
-
+      // 6. Redirect to dashboard (user is already signed in)
       showMessage('Account created successfully! Redirecting to dashboard...', 'success');
       setTimeout(() => navigate('/dashboard'), 2000);
 

@@ -6,6 +6,10 @@ import { format } from "date-fns";
 import { useAuth } from "../contexts/AuthContext";
 import Papa from "papaparse";
 import { downloadCSVTemplate, parseCSVFile, validateCSVData, mapCSVRowsToExpenses, ValidationError } from "../lib/csvUtils";
+import { NotificationService } from "../lib/notificationService";
+import { NotificationServiceServiceRole } from "../lib/notificationServiceServiceRole";
+import { NotificationServiceSimple } from "../lib/notificationServiceSimple";
+import { NotificationDebugger } from "../lib/notificationDebugger";
 import {
   LineChart,
   Line,
@@ -118,7 +122,8 @@ const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID;
 const RAZORPAY_KEY_SECRET = import.meta.env.VITE_RAZORPAY_KEY_SECRET;
 
 export function Expenses() {
-  const { user } = useAuth();
+  const { user, userRole, permissions } = useAuth();
+  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -176,86 +181,251 @@ export function Expenses() {
   const [validRowCount, setValidRowCount] = useState(0);
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    fetchProjects();
-    fetchPaymentLinks();
-  }, []);
+  // Permission helper function
+  const hasPermission = (requiredPermission: string | string[]) => {
+    // Admin always has access
+    if (userRole === "Admin") {
+      return true;
+    }
+
+    // Check permissions
+    if (Array.isArray(requiredPermission)) {
+      return requiredPermission.some(perm => permissions.includes(perm));
+    }
+
+    return permissions.includes(requiredPermission);
+  };
 
   useEffect(() => {
-    if (projects.length > 0) {
-      fetchPhases();
+    const fetchUserData = async () => {
+      if (user) {
+        // Get user's assigned project from users table
+        const { data: userProfile, error: userError } = await supabase
+          .from('users')
+          .select('project_id')
+          .eq('email', user.email)
+          .single();
+
+        console.log('Expenses - User profile lookup:', { userProfile, userError, userEmail: user.email });
+
+        if (userProfile?.project_id) {
+          console.log('Expenses - Found assigned project:', userProfile.project_id);
+          setAssignedProjectId(userProfile.project_id);
+        } else {
+          console.log('Expenses - No project assigned to user in users table');
+          console.log('Expenses - This means the user either:');
+          console.log('1. Does not exist in the users table, OR');
+          console.log('2. Exists in users table but has no project_id assigned');
+          console.log('Expenses - Check if the user was properly created in the Users page with a project assignment');
+          
+          // Try to find user by auth_user_id as fallback
+          console.log('Expenses - Trying fallback lookup by auth_user_id:', user?.id);
+          const { data: fallbackUser, error: fallbackError } = await supabase
+            .from('users')
+            .select('project_id, id, name, email')
+            .eq('auth_user_id', user?.id)
+            .single();
+            
+          if (fallbackUser?.project_id) {
+            console.log('Expenses - Found user by auth_user_id:', fallbackUser);
+            setAssignedProjectId(fallbackUser.project_id);
+          } else {
+            console.log('Expenses - Fallback lookup also failed:', fallbackError);
+            setAssignedProjectId(null);
+          }
+        }
+      }
+    };
+    fetchUserData();
+  }, [user]);
+
+  useEffect(() => {
+    console.log('Expenses - useEffect triggered with:', { assignedProjectId, userRole });
+    if (assignedProjectId !== null || userRole === 'Admin') {
+      console.log('Expenses - Calling fetch functions...');
+      fetchProjects();
+      // Don't fetch phases initially - they will be loaded dynamically when project is selected
       fetchTransactions();
+      fetchPaymentLinks();
+    } else {
+      console.log('Expenses - Not calling fetch functions - no assigned project and not admin');
     }
-  }, [projects]);
+  }, [assignedProjectId, userRole]);
 
   async function fetchProjects() {
-    const { data, error } = await supabase
+    console.log('Expenses - fetchProjects called with:', { userRole, assignedProjectId, userId: user?.id });
+    
+    let query = supabase
       .from("projects")
-      .select("id, name")
-      .eq("created_by", user?.id);
+      .select("id, name");
 
+    if (userRole === 'Admin') {
+      console.log('Expenses - Admin user, filtering by created_by:', user?.id);
+      query = query.eq("created_by", user?.id);
+    } else if (assignedProjectId) {
+      console.log('Expenses - Non-admin user, filtering by assigned project:', assignedProjectId);
+      query = query.eq("id", assignedProjectId);
+    } else {
+      console.log('Expenses - No assigned project, returning empty projects');
+      setProjects([]);
+      return;
+    }
+
+    const { data, error } = await query;
+    console.log('Expenses - Projects query result:', { data, error });
     if (!error && data) setProjects(data);
   }
 
   async function fetchPhases() {
-    if (projects.length === 0) return;
+    console.log('Expenses - Fetching phases for assigned project:', assignedProjectId);
 
-    const { data, error } = await supabase
+    let query = supabase
       .from("phases")
-      .select("id, name, project_id, projects (id, name)")
-      .in(
-        "project_id",
-        projects.map((p) => p.id)
-      );
+      .select("id, name, project_id");
 
+    if (userRole === 'Admin') {
+      query = query.eq("created_by", user?.id);
+    } else if (assignedProjectId) {
+      query = query.eq("project_id", assignedProjectId);
+    } else {
+      // No project assigned, return empty result
+      query = query.eq("project_id", "00000000-0000-0000-0000-000000000000");
+    }
+
+    const { data, error } = await query;
+    console.log('Expenses - Phases query result:', { data, error });
     if (!error && data) {
+      // Get project names for all unique project IDs in the phases
+      const projectIds = [...new Set(data.map((p: any) => p.project_id).filter(Boolean))];
+      console.log('Expenses - Unique project IDs for phases:', projectIds);
+      
+      let projectNameMap: Record<string, string> = {};
+      
+      if (projectIds.length > 0) {
+        const { data: projectsData, error: projectsError } = await supabase
+          .from("projects")
+          .select("id, name")
+          .in("id", projectIds);
+        
+        if (!projectsError && projectsData) {
+          projectsData.forEach(proj => {
+            projectNameMap[proj.id] = proj.name;
+          });
+        }
+      }
+
+      console.log('Expenses - Project name map for phases:', projectNameMap);
       setPhases(
         data.map((p: any) => ({
           id: p.id,
           name: p.name,
           project_id: p.project_id,
-          project_name: p.projects?.name || "No Project",
+          project_name: projectNameMap[p.project_id] || "No Project",
         }))
       );
     }
   }
 
   async function fetchTransactions() {
-    if (projects.length === 0) return;
     setLoading(true);
 
-    const { data, error } = await supabase
+    console.log('Expenses - Fetching transactions for assigned project:', assignedProjectId);
+
+    let query = supabase
       .from("expenses")
       .select(
         `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source, reference_id, description, tags,
-        phases (id, name, project_id, projects (id, name))`
-      )
-      .in(
-        "project_id",
-        projects.map((p) => p.id)
-      )
-      .order("date", { ascending: false });
+        phases (id, name, project_id)`
+      );
+
+    console.log('Expenses - Query conditions:', { userRole, assignedProjectId, userId: user?.id });
+
+    if (userRole === 'Admin') {
+      console.log('Expenses - Admin user, getting expenses from projects they created');
+      // For Admin users, get expenses from projects they created
+      // First get project IDs that the admin created
+      const { data: adminProjects, error: projectsError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("created_by", user?.id);
+      
+      if (projectsError) {
+        console.error("Expenses - Error fetching admin projects:", projectsError);
+        setTransactions([]);
+        return;
+      }
+      
+      if (!adminProjects || adminProjects.length === 0) {
+        console.log('Expenses - Admin has no projects, returning empty transactions');
+        setTransactions([]);
+        return;
+      }
+      
+      const projectIds = adminProjects.map(p => p.id);
+      console.log('Expenses - Admin project IDs:', projectIds);
+      query = query.in("project_id", projectIds);
+    } else if (assignedProjectId) {
+      console.log('Expenses - Non-admin user, filtering by project_id:', assignedProjectId);
+      query = query.eq("project_id", assignedProjectId);
+    } else {
+      console.log('Expenses - No project assigned, using empty filter');
+      // No project assigned, return empty result
+      query = query.eq("project_id", "00000000-0000-0000-0000-000000000000");
+    }
+
+    console.log('Expenses - About to execute query...');
+    const { data, error } = await query.order("date", { ascending: false });
+
+    console.log('Expenses - Raw transactions data:', { data, error, dataLength: data?.length });
 
     if (!error && data) {
-      setTransactions(
-        data.map((e: any) => ({
-          id: e.id,
-          phase_id: e.phase_id,
-          category: e.category,
-          amount: e.amount,
-          gst_amount: e.gst_amount || 0,
-          date: e.date,
-          payment_method: e.payment_method,
-          bill_path: e.bill_path,
-          type: e.type || 'expense',
-          phase_name: e.phases?.name || "No Phase",
-          project_name: e.phases?.projects?.name || "No Project",
-          vendor_name: e.source,
-          reference_id: e.reference_id,
-          description: e.description,
-          tags: e.tags,
-        }))
-      );
+      // Get project names for all unique project IDs in the transactions
+      const projectIds = [...new Set(data.map((e: any) => e.phases?.project_id).filter(Boolean))];
+      console.log('Expenses - Unique project IDs:', projectIds);
+      
+      let projectNameMap: Record<string, string> = {};
+      
+      if (projectIds.length > 0) {
+        const { data: projectsData, error: projectsError } = await supabase
+          .from("projects")
+          .select("id, name")
+          .in("id", projectIds);
+        
+        if (!projectsError && projectsData) {
+          projectsData.forEach(proj => {
+            projectNameMap[proj.id] = proj.name;
+          });
+        }
+      }
+
+      console.log('Expenses - Project name map:', projectNameMap);
+      
+      const mappedTransactions = data.map((e: any) => ({
+        id: e.id,
+        phase_id: e.phase_id,
+        category: e.category,
+        amount: e.amount,
+        gst_amount: e.gst_amount || 0,
+        date: e.date,
+        payment_method: e.payment_method,
+        bill_path: e.bill_path,
+        bill_file: null,
+        type: e.type || 'expense',
+        source: e.source,
+        custom_category: null,
+        created_at: e.created_at || new Date().toISOString(),
+        created_by: e.created_by || user?.id,
+        project_id: e.phases?.project_id || assignedProjectId,
+        phase_name: e.phases?.name || "No Phase",
+        project_name: projectNameMap[e.phases?.project_id] || "No Project",
+        vendor_name: e.source,
+        reference_id: e.reference_id,
+        description: e.description,
+        tags: e.tags,
+      }));
+      
+      console.log('Expenses - Mapped transactions:', mappedTransactions);
+      setTransactions(mappedTransactions);
     }
     setLoading(false);
   }
@@ -576,12 +746,55 @@ export function Expenses() {
     doc.save(`Invoice_${paymentLinkData.productName?.replace(/[^a-z0-9]/gi, '_') || 'invoice'}_${format(new Date(), 'yyyyMMdd')}.pdf`);
   };
 
-  const filteredPhases = phases.filter(
-    (p) => !formData.projectId || p.project_id === formData.projectId
-  );
+  // Since we now fetch phases dynamically for the selected project,
+  // we can use all phases in the state
+  const filteredPhases = phases;
+
+  // Function to fetch phases for a specific project
+  const fetchPhasesForProject = async (projectId: string) => {
+    if (!projectId) {
+      setPhases([]);
+      return;
+    }
+
+    console.log('Expenses - Fetching phases for project:', projectId);
+    
+    const { data, error } = await supabase
+      .from("phases")
+      .select("id, name, project_id")
+      .eq("project_id", projectId);
+
+    if (!error && data) {
+      // Get project name for the phases
+      const { data: projectData } = await supabase
+        .from("projects")
+        .select("name")
+        .eq("id", projectId)
+        .single();
+
+      const projectName = projectData?.name || "No Project";
+      
+      setPhases(
+        data.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          project_id: p.project_id,
+          project_name: projectName,
+        }))
+      );
+    } else {
+      console.error('Expenses - Error fetching phases for project:', error);
+      setPhases([]);
+    }
+  };
 
   const handleChange = (field: keyof typeof formData, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    
+    // If project is changed, fetch phases for that project
+    if (field === 'projectId') {
+      fetchPhasesForProject(value);
+    }
   };
 
   const handlePaymentLinkChange = (field: keyof typeof paymentLinkData, value: string | boolean) => {
@@ -647,7 +860,7 @@ export function Expenses() {
       project_id: projectId,
       phase_id: phaseId,
       category: finalCategory,
-      custom_category: finalCategory === 'Other' ? customCategory : null,
+      custom_category: customCategory || null,
       amount: parseFloat(amount),
       gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : 0,
       date,
@@ -670,6 +883,51 @@ export function Expenses() {
       setErrorMessage(`Failed to save transaction: ${error.message}`);
       setTimeout(() => setErrorMessage(null), 5000);
     } else {
+      // Create notification for admin
+      if (user?.id && projectId) {
+        const notificationType = editingId 
+          ? (formType === 'income' ? 'income_updated' : 'expense_updated')
+          : (formType === 'income' ? 'income_added' : 'expense_added');
+        
+        console.log('🔔 Attempting to create notification for expense:', {
+          userId: user.id,
+          projectId,
+          notificationType,
+          amount: parseFloat(amount),
+          category: finalCategory
+        });
+
+        // Run debug tests first
+        await NotificationDebugger.runAllTests(projectId, user.id);
+        
+        // Try regular notification service first
+        const result = await NotificationService.createExpenseNotification(
+          user.id,
+          projectId,
+          notificationType,
+          {
+            amount: parseFloat(amount),
+            category: finalCategory,
+            description: description || undefined
+          }
+        );
+
+        // If regular service fails, try simple version
+        if (!result.success) {
+          console.log('🔄 Regular notification service failed, trying simple version...');
+          await NotificationServiceSimple.createExpenseNotification(
+            user.id,
+            projectId,
+            notificationType,
+            {
+              amount: parseFloat(amount),
+              category: finalCategory,
+              description: description || undefined
+            }
+          );
+        }
+      }
+
       fetchTransactions();
       setShowForm(false);
       setEditingId(null);
@@ -697,18 +955,24 @@ export function Expenses() {
   const handleEdit = (transaction: Transaction) => {
     const project =
       phases.find((p) => p.id === transaction.phase_id)?.project_id || "";
+    
+    // Check if this is a custom category (not in the predefined options)
+    const isCustomCategory = transaction.custom_category && 
+      !EXPENSE_CATEGORY_OPTIONS.includes(transaction.category) && 
+      !INCOME_CATEGORY_OPTIONS.includes(transaction.category);
+    
     setFormData({
       projectId: project,
       phaseId: transaction.phase_id,
-      category: transaction.category,
+      category: isCustomCategory ? "Other" : transaction.category,
       amount: transaction.amount.toString(),
       paymentMethod: transaction.payment_method,
       date: transaction.date,
       billFile: null,
       includeGst: (transaction.gst_amount || 0) > 0,
       gstAmount: (transaction.gst_amount || 0).toString(),
-      source: transaction.vendor_name || "",
-      customCategory: "",
+      source: transaction.source || transaction.vendor_name || "",
+      customCategory: transaction.custom_category || "",
       referenceId: transaction.reference_id || "",
       description: transaction.description || "",
       tags: transaction.tags || "",
@@ -720,8 +984,27 @@ export function Expenses() {
 
   const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this transaction?")) {
+      // Get transaction details before deleting for notification
+      const transaction = transactions.find(t => t.id === id);
+      
       const { error } = await supabase.from("expenses").delete().eq("id", id);
       if (!error) {
+        // Create notification for admin
+        if (user?.id && transaction?.project_id) {
+          const notificationType = transaction.type === 'income' ? 'income_deleted' : 'expense_deleted';
+          
+          await NotificationService.createExpenseNotification(
+            user.id,
+            transaction.project_id,
+            notificationType,
+            {
+              amount: transaction.amount,
+              category: transaction.category,
+              description: transaction.description || undefined
+            }
+          );
+        }
+
         fetchTransactions();
         if (selectedTransaction?.id === id) {
           setSelectedTransaction(null);
@@ -892,6 +1175,21 @@ export function Expenses() {
       </div>
 
       <Layout title="Financial Transactions" subtitle={getHeaderSubtitle()}>
+        {/* Show helpful message when no project is assigned */}
+        {userRole !== 'Admin' && !assignedProjectId && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-yellow-600" />
+              <div>
+                <h3 className="text-sm font-medium text-yellow-800">No Project Assigned</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  You don't have a project assigned. Please contact your administrator to assign you to a project.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 flex flex-col overflow-hidden">
 
           {/* Charts Section */}
@@ -997,18 +1295,22 @@ export function Expenses() {
               </button>
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => openForm('income')}
-                className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-              >
-                <Plus className="mr-2" size={18} /> Add Income
-              </button>
-              <button
-                onClick={() => openForm('expense')}
-                className="flex items-center bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
-              >
-                <Plus className="mr-2" size={18} /> Add Expense
-              </button>
+              {hasPermission('add_income') && (
+                <button
+                  onClick={() => openForm('income')}
+                  className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Plus className="mr-2" size={18} /> Add Income
+                </button>
+              )}
+              {hasPermission('add_expense') && (
+                <button
+                  onClick={() => openForm('expense')}
+                  className="flex items-center bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  <Plus className="mr-2" size={18} /> Add Expense
+                </button>
+              )}
             </div>
           </div>
 
@@ -1161,26 +1463,30 @@ export function Expenses() {
                             >
                               <Eye size={18} />
                             </button>
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleEdit(t);
-                              }}
-                              className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
-                              title="Edit"
-                            >
-                              <Edit2 size={18} />
-                            </button>
-                            <button
-                              onClick={(event) => {
-                                event.stopPropagation();
-                                handleDelete(t.id);
-                              }}
-                              className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
-                              title="Delete"
-                            >
-                              <Trash size={18} />
-                            </button>
+                            {hasPermission('edit_expense') && (
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleEdit(t);
+                                }}
+                                className="text-blue-600 hover:text-blue-800 p-1 rounded transition-colors"
+                                title="Edit"
+                              >
+                                <Edit2 size={18} />
+                              </button>
+                            )}
+                            {hasPermission('delete_expense') && (
+                              <button
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDelete(t.id);
+                                }}
+                                className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                                title="Delete"
+                              >
+                                <Trash size={18} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1310,26 +1616,30 @@ export function Expenses() {
                           >
                             <Eye size={16} />
                           </button>
-                          <button
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleEdit(t);
-                            }}
-                            className="text-blue-600 hover:text-blue-800 p-2 rounded transition-colors"
-                            title="Edit"
-                          >
-                            <Edit2 size={16} />
-                          </button>
-                          <button
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleDelete(t.id);
-                            }}
-                            className="text-red-600 hover:text-red-800 p-2 rounded transition-colors"
-                            title="Delete"
-                          >
-                            <Trash size={16} />
-                          </button>
+                          {hasPermission('edit_expense') && (
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleEdit(t);
+                              }}
+                              className="text-blue-600 hover:text-blue-800 p-2 rounded transition-colors"
+                              title="Edit"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                          )}
+                          {hasPermission('delete_expense') && (
+                            <button
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleDelete(t.id);
+                              }}
+                              className="text-red-600 hover:text-red-800 p-2 rounded transition-colors"
+                              title="Delete"
+                            >
+                              <Trash size={16} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     );
@@ -1548,16 +1858,18 @@ export function Expenses() {
                 >
                   Close
                 </button>
-                <button
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleEdit(detailsTransaction);
-                  }}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                >
-                  <Edit2 size={18} />
-                  Edit Transaction
-                </button>
+                {hasPermission('edit_expense') && (
+                  <button
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleEdit(detailsTransaction);
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  >
+                    <Edit2 size={18} />
+                    Edit Transaction
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1593,11 +1905,17 @@ export function Expenses() {
                     required
                   >
                     <option value="">Select Project</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name}
+                    {projects.length === 0 ? (
+                      <option value="" disabled>
+                        No projects available - Contact administrator
                       </option>
-                    ))}
+                    ) : (
+                      projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
                 <div>

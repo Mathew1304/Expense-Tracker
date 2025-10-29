@@ -272,3 +272,55 @@ export const createAdminWithWelcomeEmail = async (
     };
   }
 };
+
+// Function to create user without email confirmation (for UserFirstLogin flow)
+export const createUserWithoutEmailConfirmation = async (
+  email: string,
+  password: string,
+  fullName: string,
+  role: string,
+  permissions: string[] = []
+): Promise<{ success: boolean; user?: any; error?: string }> => {
+  try {
+    // Call server function to create user with admin privileges
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user-without-confirmation`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        fullName,
+        role,
+        permissions,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Server function error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to create user');
+    }
+
+    console.log('Auth user created without email confirmation:', result.user.id);
+
+    return {
+      success: true,
+      user: result.user,
+    };
+  } catch (error) {
+    console.error('Error creating user without email confirmation:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error occurred',
+    };
+  }
+};

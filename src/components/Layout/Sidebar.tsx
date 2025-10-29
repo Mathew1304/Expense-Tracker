@@ -1,7 +1,7 @@
 // src/components/Layout/Sidebar.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Chrome as Home, FolderOpen, DollarSign, Package, FileText, Users, Archive, Settings, User, IndianRupee, Layers, ShieldCheck, Hammer, Calendar, HardDrive, LayoutDashboard } from "lucide-react";
+import { Chrome as Home, FolderOpen, Package, FileText, Users, Archive, Settings, IndianRupee, Layers, Calendar, HardDrive } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
 import { supabase } from "../../lib/supabase";
 
@@ -13,7 +13,7 @@ const STORAGE_LIMITS = {
 
 export function Sidebar() {
   const location = useLocation();
-  const { userRole, permissions, user } = useAuth();
+  const { userRole, user } = useAuth();
   const [rolePermissions, setRolePermissions] = useState<string[]>([]);
   const [userPlan, setUserPlan] = useState<'free' | 'basic' | 'pro'>('free');
   const [storageUsed, setStorageUsed] = useState(0);
@@ -61,25 +61,127 @@ export function Sidebar() {
     try {
       const { data: profile } = await supabase
         .from('profiles')
-        .select('plan_type')
+        .select('plan_type, role')
         .eq('id', userId)
         .single();
 
       setUserPlan(profile?.plan_type || 'free');
 
-      const { data: projectsData } = await supabase
-        .from('projects')
-        .select('id')
-        .eq('created_by', userId);
+      // Get user's assigned project for non-admin users
+      let assignedProjectId = null;
+      if (profile?.role !== "Admin") {
+        // Get user's assigned project from users table
+        const { data: userProfile } = await supabase
+          .from('users')
+          .select('project_id')
+          .eq('email', user?.email)
+          .single();
+        
+        if (userProfile?.project_id) {
+          assignedProjectId = userProfile.project_id;
+        } else {
+          // If user not found in users table, check if they have a project_id in profiles table
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('project_id')
+            .eq('id', user?.id)
+            .single();
 
-      const { data: photosData } = await supabase
-        .from('phase_photos')
-        .select('id')
-        .eq('created_by', userId);
+          if (profileData?.project_id) {
+            assignedProjectId = profileData.project_id;
+          }
+        }
+      }
 
-      const projectStorage = (projectsData?.length || 0) * 10;
-      const photoStorage = (photosData?.length || 0) * 2;
-      setStorageUsed(projectStorage + photoStorage);
+      let projectsQuery = supabase.from('projects').select('id');
+      let photosQuery = supabase.from('phase_photos').select('id');
+      let documentsQuery = supabase.from('documents').select('size');
+
+      if (profile?.role === "Admin") {
+        // Admin sees projects they created
+        projectsQuery = projectsQuery.eq('created_by', userId);
+        photosQuery = photosQuery.eq('created_by', userId);
+        documentsQuery = documentsQuery.eq('uploaded_by', userId);
+      } else if (assignedProjectId) {
+        // Non-admin users see data for their assigned project
+        projectsQuery = projectsQuery.eq('id', assignedProjectId);
+        photosQuery = photosQuery.eq('project_id', assignedProjectId);
+        // For documents, we need to get the project name first, then filter by project name
+        const { data: projectData } = await supabase
+          .from('projects')
+          .select('name')
+          .eq('id', assignedProjectId)
+          .single();
+        
+        if (projectData?.name) {
+          documentsQuery = documentsQuery.eq('project', projectData.name);
+        } else {
+          documentsQuery = documentsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+        }
+      } else {
+        // If no project assigned, return empty results
+        projectsQuery = projectsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+        photosQuery = photosQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+        documentsQuery = documentsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+      }
+
+      const [
+        { data: projectsData, error: projectsError }, 
+        { data: photosData, error: photosError },
+        { data: documentsData, error: documentsError }
+      ] = await Promise.all([
+        projectsQuery,
+        photosQuery,
+        documentsQuery
+      ]);
+
+      if (projectsError) {
+        console.error('Error fetching projects for storage:', projectsError);
+      }
+      if (photosError) {
+        console.error('Error fetching photos for storage:', photosError);
+      }
+      if (documentsError) {
+        console.error('Error fetching documents for storage:', documentsError);
+      }
+
+      // Calculate storage from actual file sizes
+      const projectStorage = (projectsData?.length || 0) * 10; // Base storage per project
+      const photoStorage = (photosData?.length || 0) * 2; // Base storage per photo
+      
+      // Calculate document storage from actual file sizes
+      let documentStorage = 0;
+      if (documentsData && documentsData.length > 0) {
+        documentStorage = documentsData.reduce((total, doc) => {
+          if (doc.size) {
+            // Parse size string (e.g., "1.5 KB" -> 1.5)
+            const sizeMatch = doc.size.match(/(\d+\.?\d*)\s*(KB|MB|GB)/i);
+            if (sizeMatch) {
+              const value = parseFloat(sizeMatch[1]);
+              const unit = sizeMatch[2].toUpperCase();
+              if (unit === 'KB') return total + (value / 1024); // Convert KB to MB
+              if (unit === 'MB') return total + value;
+              if (unit === 'GB') return total + (value * 1024); // Convert GB to MB
+            }
+          }
+          return total;
+        }, 0);
+      }
+      
+      const totalStorage = projectStorage + photoStorage + documentStorage;
+      
+      console.log('Storage calculation:', {
+        projectsCount: projectsData?.length || 0,
+        photosCount: photosData?.length || 0,
+        documentsCount: documentsData?.length || 0,
+        projectStorage,
+        photoStorage,
+        documentStorage,
+        totalStorage,
+        userRole: profile?.role
+      });
+      
+      setStorageUsed(totalStorage);
     } catch (error) {
       console.error('Error fetching storage:', error);
     }
@@ -112,7 +214,7 @@ export function Sidebar() {
   const navigationItems = [
     {
       name: "Dashboard",
-      href: "/dashboard",
+      href: "/",
       icon: Home,
       permission: "view_dashboard",
     },
@@ -159,12 +261,6 @@ export function Sidebar() {
       permission: "view_documents",
     },
     {
-      name: "Profile",
-      href: "/profile",
-      icon: User,
-      permission: null,
-    },
-    {
       name: "Users",
       href: "/users",
       icon: Users,
@@ -173,20 +269,8 @@ export function Sidebar() {
     {
       name: "Role Management",
       href: "/roles",
-      icon: ShieldCheck,
+      icon: Settings,
       permission: "view_roles",
-    },
-    {
-      name: "Dashboard Builder",
-      href: "/dashboard-builder",
-      icon: LayoutDashboard,
-      permission: "view_roles", // Only admins
-    },
-    {
-      name: "Admin Dashboard",
-      href: "/admin-dashboard",
-      icon: LayoutDashboard,
-      permission: "view_roles", // Only admins can see the full admin dashboard
     },
     {
       name: "Settings",
@@ -197,7 +281,7 @@ export function Sidebar() {
   ];
 
   const filteredItems = navigationItems.filter((item) => {
-    // Profile and Dashboard are always accessible
+    // Profile is always accessible
     if (!item.permission) return true;
 
     // Check if user has the required permission

@@ -51,7 +51,7 @@ const constructionCategories = [
 ];
 
 export function Documents() {
-  const { user } = useAuth();
+  const { user, userRole, permissions } = useAuth();
   const [documents, setDocuments] = useState<DocRecord[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -68,6 +68,21 @@ export function Documents() {
   const [category, setCategory] = useState("");
   const [project, setProject] = useState("");
   const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  // Permission helper function
+  const hasPermission = (requiredPermission: string | string[]) => {
+    // Admin always has access
+    if (userRole === "Admin") {
+      return true;
+    }
+
+    // Check permissions
+    if (Array.isArray(requiredPermission)) {
+      return requiredPermission.some(perm => permissions.includes(perm));
+    }
+
+    return permissions.includes(requiredPermission);
+  };
 
   useEffect(() => {
     fetchDocuments();
@@ -374,13 +389,15 @@ export function Documents() {
                   <ListIcon className="w-4 h-4" />
                 </button>
               </div>
-              <button
-                onClick={() => setShowUploadForm(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
-              >
-                <Upload className="w-4 h-4" />
-                <span>Upload Document</span>
-              </button>
+              {hasPermission('upload_documents') && (
+                <button
+                  onClick={() => setShowUploadForm(true)}
+                  className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all duration-200"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Upload Document</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -530,17 +547,19 @@ export function Documents() {
                       >
                         <Download className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDocumentToDelete(document);
-                          setShowDeleteConfirm(true);
-                        }}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {hasPermission('delete_documents') && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDocumentToDelete(document);
+                            setShowDeleteConfirm(true);
+                          }}
+                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Delete"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -686,6 +705,7 @@ export function Documents() {
           </div>
         </div>
       )}
+
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
 import imageCompression from "browser-image-compression";
+import { NotificationService } from "../lib/notificationService";
 
 type Project = { id: string; name: string };
 
@@ -47,6 +48,7 @@ type PhaseComment = {
 
 export function Phases() {
   const { userRole, user } = useAuth();
+  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -133,59 +135,156 @@ export function Phases() {
     return { startDate, endDate };
   };
 
+  // Fetch user's assigned project first
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!user?.id) return;
+      // Get user's assigned project from users table
+      const { data: userProfile, error: userError } = await supabase
+        .from('users')
+        .select('project_id')
+        .eq('email', user.email)
+        .single();
+
+      console.log('Phases - User profile lookup:', { userProfile, userError, userEmail: user.email });
+
+      if (userProfile?.project_id) {
+        console.log('Phases - Found assigned project:', userProfile.project_id);
+        setAssignedProjectId(userProfile.project_id);
+      } else {
+        console.log('Phases - No project assigned to user in users table');
+        console.log('Phases - This means the user either:');
+        console.log('1. Does not exist in the users table, OR');
+        console.log('2. Exists in users table but has no project_id assigned');
+        console.log('Phases - Check if the user was properly created in the Users page with a project assignment');
+        
+        // Try to find user by auth_user_id as fallback
+        console.log('Phases - Trying fallback lookup by auth_user_id:', user?.id);
+        const { data: fallbackUser, error: fallbackError } = await supabase
+          .from('users')
+          .select('project_id, id, name, email')
+          .eq('auth_user_id', user?.id)
+          .single();
+          
+        if (fallbackUser?.project_id) {
+          console.log('Phases - Found user by auth_user_id:', fallbackUser);
+          setAssignedProjectId(fallbackUser.project_id);
+        } else {
+          console.log('Phases - Fallback lookup also failed:', fallbackError);
+          setAssignedProjectId(null);
+        }
+      }
+    };
+    fetchUserData();
+  }, [user?.id]);
+
   // Fetch projects
   useEffect(() => {
     const fetchProjects = async () => {
       if (!user?.id) return;
-      
-      const { data, error } = await supabase
+
+      let query = supabase
         .from("projects")
-        .select("id, name")
-        .eq("created_by", user.id)
-        .order("name");
+        .select("id, name");
+
+      if (userRole === 'Admin') {
+        query = query.eq("created_by", user.id);
+      } else if (assignedProjectId) {
+        query = query.eq("id", assignedProjectId);
+      } else {
+        setProjects([]);
+        return;
+      }
+
+      const { data, error } = await query.order("name");
       if (!error) setProjects(data || []);
     };
     fetchProjects();
-  }, [user?.id]);
+  }, [user?.id, userRole, assignedProjectId]);
 
   // Fetch phases and their expenses
   const fetchPhases = async () => {
     if (!user?.id) return;
-    
-    const { data: adminProjects, error: projectsError } = await supabase
-      .from("projects")
-      .select("id")
-      .eq("created_by", user.id);
 
-    if (projectsError) {
-      console.error("Error fetching admin projects:", projectsError.message);
-      return;
-    }
+    console.log('Phases - fetchPhases called with:', { userRole, assignedProjectId, userId: user?.id });
 
-    if (!adminProjects || adminProjects.length === 0) {
+    let query = supabase
+      .from("phases")
+      .select(`id, project_id, name, start_date, end_date, status, estimated_cost, contractor_name`);
+
+    if (userRole === 'Admin') {
+      console.log('Phases - Admin user, getting phases from projects they created');
+      // For Admin users, get phases from projects they created
+      // First get project IDs that the admin created
+      const { data: adminProjects, error: projectsError } = await supabase
+        .from("projects")
+        .select("id")
+        .eq("created_by", user.id);
+      
+      if (projectsError) {
+        console.error("Phases - Error fetching admin projects:", projectsError);
+        setPhases([]);
+        return;
+      }
+      
+      if (!adminProjects || adminProjects.length === 0) {
+        console.log('Phases - Admin has no projects, returning empty phases');
+        setPhases([]);
+        return;
+      }
+      
+      const projectIds = adminProjects.map(p => p.id);
+      console.log('Phases - Admin project IDs:', projectIds);
+      query = query.in("project_id", projectIds);
+    } else if (assignedProjectId) {
+      console.log('Phases - Non-admin user, filtering by assigned project:', assignedProjectId);
+      query = query.eq("project_id", assignedProjectId);
+    } else {
+      console.log('Phases - No assigned project, returning empty phases');
       setPhases([]);
       return;
     }
 
-    const adminProjectIds = adminProjects.map(p => p.id);
-
-    const { data, error } = await supabase
-      .from("phases")
-      .select(
-        `id, project_id, name, start_date, end_date, status, estimated_cost, contractor_name, projects!inner(name)`
-      )
-      .in("project_id", adminProjectIds)
-      .order("start_date");
+    const { data, error } = await query.order("start_date");
 
     if (error) {
-      console.error("Error fetching phases:", error.message);
+      console.error("Phases - Error fetching phases:", error.message);
       return;
     }
 
-    const mapped: Phase[] = (data || []).map((p: any) => ({
+    console.log('Phases - Raw phases data:', { data, error, dataLength: data?.length });
+    if (!data || data.length === 0) {
+      console.log('Phases - No phases found');
+      setPhases([]);
+      return;
+    }
+
+    // Get all unique project IDs from phases
+    const projectIds = [...new Set(data.map(p => p.project_id))];
+    console.log('Phases - Unique project IDs:', projectIds);
+
+    // Fetch project names for all project IDs
+    const { data: projectsData, error: projectsError } = await supabase
+      .from("projects")
+      .select("id, name")
+      .in("id", projectIds);
+
+    console.log('Phases - Projects data:', { projectsData, projectsError });
+
+    // Create a map of project_id to project_name
+    const projectNameMap: Record<string, string> = {};
+    if (projectsData) {
+      projectsData.forEach(proj => {
+        projectNameMap[proj.id] = proj.name;
+      });
+    }
+
+    console.log('Phases - Project name map:', projectNameMap);
+
+    const mapped: Phase[] = data.map((p: any) => ({
       id: p.id,
       project_id: p.project_id,
-      project_name: p.projects?.name || "",
+      project_name: projectNameMap[p.project_id] || "No Project",
       name: p.name,
       start_date: p.start_date,
       end_date: p.end_date,
@@ -194,7 +293,7 @@ export function Phases() {
       contractor_name: p.contractor_name,
     }));
 
-    console.log("Fetched phases:", mapped);
+    console.log("Phases - Mapped phases:", mapped);
     setPhases(mapped);
 
     // Fetch expenses per phase
@@ -214,10 +313,10 @@ export function Phases() {
   };
 
   useEffect(() => {
-    if (user?.id) {
+    if (user?.id && (userRole === 'Admin' || assignedProjectId !== null)) {
       fetchPhases();
     }
-  }, [user?.id]);
+  }, [user?.id, userRole, assignedProjectId]);
 
   // Save phase (create or update)
   const savePhase = async () => {
@@ -239,12 +338,41 @@ export function Phases() {
       status: form.status,
       estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : null,
       contractor_name: form.contractor_name || null,
+      created_by: user?.id,
     };
 
     if (editingPhase) {
       await supabase.from("phases").update(phaseData).eq("id", editingPhase.id);
+      
+      // Create notification for admin
+      if (user?.id && form.project_id) {
+        await NotificationService.createPhaseNotification(
+          user.id,
+          form.project_id,
+          'phase_updated',
+          {
+            name: form.name,
+            status: form.status,
+            estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : undefined
+          }
+        );
+      }
     } else {
       await supabase.from("phases").insert([phaseData]);
+      
+      // Create notification for admin
+      if (user?.id && form.project_id) {
+        await NotificationService.createPhaseNotification(
+          user.id,
+          form.project_id,
+          'phase_added',
+          {
+            name: form.name,
+            status: form.status,
+            estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : undefined
+          }
+        );
+      }
     }
 
     setShowModal(false);
@@ -274,6 +402,20 @@ export function Phases() {
         console.error("Supabase delete error:", error);
         alert(`Failed to delete phase: ${error.message}`);
         return;
+      }
+
+      // Create notification for admin
+      if (user?.id && phase.project_id) {
+        await NotificationService.createPhaseNotification(
+          user.id,
+          phase.project_id,
+          'phase_deleted',
+          {
+            name: phase.name,
+            status: phase.status,
+            estimated_cost: phase.estimated_cost
+          }
+        );
       }
 
       console.log("Phase deleted successfully from database");
@@ -464,6 +606,15 @@ export function Phases() {
     return matchesSearch && matchesProject;
   });
 
+  console.log('Phases - Current state:', { 
+    phasesCount: phases.length, 
+    filteredPhasesCount: filteredPhases.length,
+    searchTerm, 
+    selectedProjectFilter, 
+    timelineFilter,
+    phases: phases.slice(0, 3) // Show first 3 phases for debugging
+  });
+
   const phasesByProject = filteredPhases.reduce((acc, phase) => {
     if (!acc[phase.project_id]) {
       acc[phase.project_id] = {
@@ -632,6 +783,21 @@ export function Phases() {
 
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
+      {/* Show helpful message when no project is assigned */}
+      {userRole !== 'Admin' && !assignedProjectId && (
+        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="w-5 h-5 text-yellow-600" />
+            <div>
+              <h3 className="text-sm font-medium text-yellow-800">No Project Assigned</h3>
+              <p className="text-sm text-yellow-700 mt-1">
+                You don't have a project assigned. Please contact your administrator to assign you to a project.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="p-6">
         <div className="mb-6 flex flex-wrap gap-4 items-center">
           {canManage && (
@@ -1437,6 +1603,7 @@ export function Phases() {
           </div>
         )}
       </div>
+
     </Layout>
   );
 }
