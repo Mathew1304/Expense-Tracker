@@ -484,7 +484,19 @@ export function Expenses() {
 
     try {
       const rows = await parseCSVFile(file);
-      const validation = validateCSVData(rows, projects, phases);
+      // Fetch all phases for validation
+      const { data: allPhases } = await supabase
+        .from("phases")
+        .select("id, name, project_id, projects!inner(id, name)");
+      
+      const phasesForValidation = allPhases?.map((phase) => ({
+        id: phase.id,
+        name: phase.name,
+        project_id: phase.project_id,
+        project_name: phase.projects?.name || "No Project",
+      })) || [];
+      
+      const validation = validateCSVData(rows, projects, phasesForValidation);
 
       setValidationErrors(validation.errors);
       setValidRowCount(validation.validRows);
@@ -510,7 +522,34 @@ export function Expenses() {
 
     try {
       const rows = await parseCSVFile(csvFile);
-      const expenseData = mapCSVRowsToExpenses(rows, projects, phases, user?.id || '');
+      
+      // Fetch all phases for mapping (same as validation)
+      const { data: allPhases, error: phasesError } = await supabase
+        .from("phases")
+        .select(`
+          id, 
+          name, 
+          project_id,
+          projects!inner(id, name)
+        `);
+
+      if (phasesError) {
+        console.error('Error fetching phases for upload:', phasesError);
+        setErrorMessage('Failed to load phases for upload. Please try again.');
+        return;
+      }
+
+      // Transform phases data to match the expected format
+      const phasesForUpload = allPhases?.map((phase) => ({
+        id: phase.id,
+        name: phase.name,
+        project_id: phase.project_id,
+        project_name: phase.projects?.name || "No Project",
+      })) || [];
+
+      const expenseData = mapCSVRowsToExpenses(rows, projects, phasesForUpload, user?.id || '');
+
+      console.log('Expense data to upload:', expenseData);
 
       const { data, error } = await supabase
         .from('expenses')
@@ -2567,6 +2606,7 @@ export function Expenses() {
                       <li>Fill in your expense data following the example format</li>
                       <li>Ensure project names and phase names match exactly with existing data</li>
                       <li>Use the format DD-MM-YYYY for dates (e.g., 07-10-2025)</li>
+                      <li><strong>Reference ID, Description, and Tags are required fields</strong> - make sure to fill them in</li>
                       <li>Upload the completed CSV file below</li>
                     </ol>
                   </div>

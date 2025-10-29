@@ -158,7 +158,14 @@ export function UserFirstLogin() {
       );
 
       if (!authResult.success) {
-        throw new Error(`Account creation failed: ${authResult.error}`);
+        // Provide more specific error messages for common issues
+        if (authResult.error?.includes('already has a completed profile')) {
+          throw new Error('This email is already registered and setup is complete. Please sign in instead.');
+        } else if (authResult.error?.includes('already been registered')) {
+          throw new Error('This email is already registered. If you haven\'t completed setup, please try again or contact support.');
+        } else {
+          throw new Error(`Account creation failed: ${authResult.error}`);
+        }
       }
 
       if (!authResult.user) {

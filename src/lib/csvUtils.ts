@@ -10,6 +10,9 @@ export interface ExpenseCSVRow {
   type: 'expense' | 'income' | string;
   gst_amount?: number | string;
   source?: string;
+  reference_id: string;
+  description: string;
+  tags: string;
 }
 
 export interface ValidationError {
@@ -60,6 +63,9 @@ export function generateCSVTemplate(): string {
     type: 'expense',
     gst_amount: '900',
     source: 'Hardware Store',
+    reference_id: 'REF-001',
+    description: 'Cement and sand for foundation work',
+    tags: 'construction,foundation,materials',
   };
 
   const headers = Object.keys(template).join(',');
@@ -174,6 +180,36 @@ export function validateCSVData(
       rowHasErrors = true;
     }
 
+    if (!row.reference_id || row.reference_id.trim() === '') {
+      errors.push({
+        row: rowNumber,
+        field: 'reference_id',
+        message: 'Reference ID is required',
+        value: row.reference_id,
+      });
+      rowHasErrors = true;
+    }
+
+    if (!row.description || row.description.trim() === '') {
+      errors.push({
+        row: rowNumber,
+        field: 'description',
+        message: 'Description is required',
+        value: row.description,
+      });
+      rowHasErrors = true;
+    }
+
+    if (!row.tags || row.tags.trim() === '') {
+      errors.push({
+        row: rowNumber,
+        field: 'tags',
+        message: 'Tags are required',
+        value: row.tags,
+      });
+      rowHasErrors = true;
+    }
+
     if (row.gst_amount && (isNaN(Number(row.gst_amount)) || Number(row.gst_amount) < 0)) {
       errors.push({
         row: rowNumber,
@@ -274,6 +310,9 @@ export function mapCSVRowsToExpenses(
         type: row.type.toLowerCase().trim() as 'expense' | 'income',
         gst_amount: row.gst_amount ? parseFloat(String(row.gst_amount)) : 0,
         source: row.source?.trim() || null,
+        reference_id: row.reference_id.trim(),
+        description: row.description.trim(),
+        tags: row.tags.trim(),
         created_by: userId,
       };
     })

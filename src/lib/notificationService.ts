@@ -124,6 +124,44 @@ export class NotificationService {
     }
   }
 
+  // Helper method to get admin ID from user's created_by field
+  static async getUserAdminId(userId: string): Promise<string | null> {
+    console.log('🔍 Looking up admin for user:', userId);
+    
+    try {
+      // Try to find user by auth_user_id in users table (admin-created users)
+      const { data, error } = await supabase
+        .from('users')
+        .select('created_by')
+        .eq('auth_user_id', userId)
+        .single();
+
+      if (error || !data) {
+        console.log('🔍 No user found by auth_user_id, trying by id:', userId);
+        // Fallback: try by id in case the userId is actually the users table id
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('users')
+          .select('created_by')
+          .eq('id', userId)
+          .single();
+
+        if (fallbackError || !fallbackData) {
+          console.error('❌ Error fetching user admin:', error || fallbackError);
+          return null;
+        }
+
+        console.log('✅ Found user admin by id:', fallbackData.created_by);
+        return fallbackData.created_by;
+      }
+
+      console.log('✅ Found user admin by auth_user_id:', data.created_by);
+      return data.created_by;
+    } catch (error) {
+      console.error('❌ Exception fetching user admin:', error);
+      return null;
+    }
+  }
+
   // Helper method to get project name
   static async getProjectName(projectId: string): Promise<string> {
     try {
@@ -267,6 +305,55 @@ export class NotificationService {
         userName
       }
     });
+  }
+
+  // Create bulk expense upload notification
+  static async createBulkExpenseUploadNotification(
+    userId: string,
+    expenseData: Array<{ amount: number; type: 'expense' | 'income'; project_id: string }>
+  ) {
+    console.log('🔔 Creating bulk expense upload notification:', { userId, count: expenseData.length });
+    
+    try {
+      const adminId = await this.getUserAdminId(userId);
+      
+      if (!adminId) {
+        console.error('❌ Admin not found for user:', userId);
+        return { success: false, error: 'Admin not found' };
+      }
+
+      const userName = await this.getUserName(userId);
+      
+      // Calculate totals
+      const totalAmount = expenseData.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+      const expenseCount = expenseData.length;
+      const incomeCount = expenseData.filter(e => e.type === 'income').length;
+      const expenseOnlyCount = expenseCount - incomeCount;
+      const projectId = expenseData[0]?.project_id;
+
+      const title = 'Bulk Expenses Uploaded';
+      const message = `${userName} uploaded ${expenseCount} transaction${expenseCount > 1 ? 's' : ''} (${expenseOnlyCount} expense${expenseOnlyCount !== 1 ? 's' : ''}, ${incomeCount} income${incomeCount !== 1 ? 's' : ''}) totaling ₹${totalAmount.toLocaleString('en-IN')}`;
+
+      return await this.createNotification({
+        adminId,
+        userId,
+        projectId,
+        type: 'expense_added',
+        title,
+        message,
+        data: {
+          count: expenseCount,
+          expenseCount: expenseOnlyCount,
+          incomeCount,
+          totalAmount,
+          userName,
+          uploadedAt: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('❌ Exception creating bulk expense upload notification:', error);
+      return { success: false, error: 'Failed to create notification' };
+    }
   }
 
   // Create project update notification
