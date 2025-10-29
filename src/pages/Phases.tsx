@@ -462,10 +462,8 @@ export function Phases() {
 
   const getBudgetUsage = (phase: Phase) => {
     const totalSpent = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
-    const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
-    const netExpense = totalSpent - totalIncome;
     if (!phase.estimated_cost) return 0;
-    return Math.round((netExpense / phase.estimated_cost) * 100);
+    return Math.round((totalSpent / phase.estimated_cost) * 100);
   };
 
   // Fetch phase photos
@@ -905,7 +903,6 @@ export function Phases() {
             {filteredPhases.map((phase) => {
               const totalExpenses = expenses[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
               const totalIncome = incomes[phase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0;
-              const netAmount = totalExpenses - totalIncome;
 
               return (
                 <div
@@ -1015,14 +1012,14 @@ export function Phases() {
 
                       <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-700">Net Amount</span>
+                          <span className="text-xs text-gray-700">Total Spent</span>
                           <DollarSign className="w-4 h-4 text-gray-600" />
                         </div>
-                        <p className={`text-lg font-bold mt-1 ${netAmount <= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {netAmount <= 0 ? '+' : '-'}₹{Math.abs(netAmount).toLocaleString()}
+                        <p className="text-lg font-bold mt-1 text-red-600">
+                          ₹{totalExpenses.toLocaleString()}
                         </p>
                         <p className="text-xs text-gray-600 mt-1">
-                          {netAmount <= 0 ? 'Surplus' : 'Deficit'}
+                          Total Spent
                         </p>
                       </div>
                     </div>
@@ -1227,10 +1224,7 @@ export function Phases() {
                     <div className="text-center">
                       <h4 className="text-sm font-medium text-gray-600 mb-1">Budget Used</h4>
                       <p className="text-2xl font-bold text-blue-600">
-                        ₹{Math.abs(
-                          (expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0) - 
-                          (incomes[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0)
-                        ).toLocaleString()}
+                        ₹{(expenses[viewPhase.id]?.reduce((sum, e) => sum + e.amount, 0) || 0).toLocaleString()}
                       </p>
                     </div>
 

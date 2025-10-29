@@ -366,10 +366,10 @@ export function Projects() {
 
       const { data: expensesData } = await expenseQuery;
 
-      // Calculate budget used (only count expenses, not income)
+      // Calculate budget used (only count expenses, exclude income completely)
       const budgetUsed = expensesData?.reduce((sum, exp) => {
         if (exp.type === 'income') {
-          return sum - (Number(exp.amount) || 0) - (Number(exp.gst_amount) || 0);
+          return sum; // Skip income transactions completely
         } else {
           return sum + (Number(exp.amount) || 0) + (Number(exp.gst_amount) || 0);
         }

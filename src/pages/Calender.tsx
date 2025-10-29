@@ -889,7 +889,7 @@ export const Calendar: React.FC = () => {
             onSave={handleCreateEvent}
           />
         )}
-
+        
         {showEditModal && selectedEvent && (
           <CreateEditEventModal
             event={selectedEvent}
