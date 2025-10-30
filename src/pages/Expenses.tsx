@@ -143,6 +143,7 @@ export function Expenses() {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
   const [showGstModal, setShowGstModal] = useState(false);
   const [gstAmount, setGstAmount] = useState("");
+  const [gstinInput, setGstinInput] = useState("");
   const [formData, setFormData] = useState({
     projectId: "",
     phaseId: "",
@@ -153,6 +154,7 @@ export function Expenses() {
     billFile: null as File | null,
     includeGst: false,
     gstAmount: "",
+    gstin: "",
     source: "",
     customCategory: "",
     referenceId: "",
@@ -845,7 +847,7 @@ export function Expenses() {
     if (includeGst) {
       setShowGstModal(true);
     } else {
-      setFormData(prev => ({ ...prev, includeGst: false, gstAmount: "" }));
+      setFormData(prev => ({ ...prev, includeGst: false, gstAmount: "", gstin: "" }));
     }
   };
 
@@ -859,15 +861,17 @@ export function Expenses() {
     setFormData(prev => ({
       ...prev,
       includeGst: true,
-      gstAmount: gstAmount
+      gstAmount: gstAmount,
+      gstin: gstinInput || ""
     }));
     setShowGstModal(false);
     setGstAmount("");
+    setGstinInput("");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount, source, customCategory, referenceId, description, tags } = formData;
+    const { projectId, phaseId, category, amount, paymentMethod, date, billFile, includeGst, gstAmount, gstin, source, customCategory, referenceId, description, tags } = formData;
 
     // Use custom category if "Other" is selected and customCategory is provided
     const finalCategory = category === "Other" && customCategory ? customCategory : category;
@@ -902,6 +906,7 @@ export function Expenses() {
       custom_category: customCategory || null,
       amount: parseFloat(amount),
       gst_amount: includeGst && gstAmount ? parseFloat(gstAmount) : 0,
+      gstin: gstin || null,
       date,
       payment_method: paymentMethod,
       bill_path,
@@ -980,6 +985,7 @@ export function Expenses() {
         billFile: null,
         includeGst: false,
         gstAmount: "",
+        gstin: "",
         source: "",
         customCategory: "",
         referenceId: "",
@@ -1010,6 +1016,7 @@ export function Expenses() {
       billFile: null,
       includeGst: (transaction.gst_amount || 0) > 0,
       gstAmount: (transaction.gst_amount || 0).toString(),
+      gstin: (transaction as any).gstin || "",
       source: transaction.source || transaction.vendor_name || "",
       customCategory: transaction.custom_category || "",
       referenceId: transaction.reference_id || "",
@@ -2183,6 +2190,16 @@ export function Expenses() {
                   value={gstAmount}
                   onChange={(e) => setGstAmount(e.target.value)}
                   autoFocus
+                />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-1">GSTIN (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="22AAAAA0000A1Z5"
+                  className="border border-gray-300 p-3 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  value={gstinInput}
+                  onChange={(e) => setGstinInput(e.target.value)}
                 />
               </div>
               {formData.amount && gstAmount && (
