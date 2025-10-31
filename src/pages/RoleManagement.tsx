@@ -41,6 +41,8 @@ export function RoleManagement() {
     "add_expense",
     "edit_expense",
     "delete_expense",
+    "bulk_upload_expenses",
+    "create_payment_links",
     
     // Material permissions
     "view_materials",

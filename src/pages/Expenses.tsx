@@ -123,7 +123,7 @@ const RAZORPAY_KEY_SECRET = import.meta.env.VITE_RAZORPAY_KEY_SECRET;
 
 export function Expenses() {
   const { user, userRole, permissions } = useAuth();
-  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -181,6 +181,7 @@ export function Expenses() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [validRowCount, setValidRowCount] = useState(0);
+  const [creatorInfo, setCreatorInfo] = useState<{ role: string; userName: string } | null>(null);
   const itemsPerPage = 10;
 
   // Permission helper function
@@ -198,43 +199,79 @@ export function Expenses() {
     return permissions.includes(requiredPermission);
   };
 
+  // Fetch creator information
+  const fetchCreatorInfo = async (createdById: string) => {
+    try {
+      const { data: profileData, error } = await supabase
+        .from("profiles")
+        .select("role, full_name")
+        .eq("id", createdById)
+        .maybeSingle();
+
+      if (!error && profileData) {
+        setCreatorInfo({
+          role: profileData.role || "Unknown Role",
+          userName: profileData.full_name || "Unknown User"
+        });
+      } else {
+        setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+      }
+    } catch (error) {
+      console.error("Error fetching creator info:", error);
+      setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+    }
+  };
+
   useEffect(() => {
     const fetchUserData = async () => {
       if (user) {
-        // Get user's assigned project from users table
-        const { data: userProfile, error: userError } = await supabase
+        // First try to get user from users table by email or auth_user_id
+        let userRecord = null;
+        
+        // Try by email first
+        const { data: userByEmail } = await supabase
           .from('users')
-          .select('project_id')
+          .select('id, project_id')
           .eq('email', user.email)
           .single();
-
-        console.log('Expenses - User profile lookup:', { userProfile, userError, userEmail: user.email });
-
-        if (userProfile?.project_id) {
-          console.log('Expenses - Found assigned project:', userProfile.project_id);
-          setAssignedProjectId(userProfile.project_id);
+        
+        if (userByEmail) {
+          userRecord = userByEmail;
         } else {
-          console.log('Expenses - No project assigned to user in users table');
-          console.log('Expenses - This means the user either:');
-          console.log('1. Does not exist in the users table, OR');
-          console.log('2. Exists in users table but has no project_id assigned');
-          console.log('Expenses - Check if the user was properly created in the Users page with a project assignment');
-          
-          // Try to find user by auth_user_id as fallback
-          console.log('Expenses - Trying fallback lookup by auth_user_id:', user?.id);
-          const { data: fallbackUser, error: fallbackError } = await supabase
+          // Try by auth_user_id as fallback
+          const { data: userByAuthId } = await supabase
             .from('users')
-            .select('project_id, id, name, email')
+            .select('id, project_id')
             .eq('auth_user_id', user?.id)
             .single();
-            
-          if (fallbackUser?.project_id) {
-            console.log('Expenses - Found user by auth_user_id:', fallbackUser);
-            setAssignedProjectId(fallbackUser.project_id);
-          } else {
-            console.log('Expenses - Fallback lookup also failed:', fallbackError);
-            setAssignedProjectId(null);
+          
+          if (userByAuthId) {
+            userRecord = userByAuthId;
           }
+        }
+
+        if (userRecord?.id) {
+          // Fetch multiple projects from user_projects table
+          const { data: userProjects, error: userProjectsError } = await supabase
+            .from('user_projects')
+            .select('project_id')
+            .eq('user_id', userRecord.id);
+
+          if (!userProjectsError && userProjects && userProjects.length > 0) {
+            const projectIds = userProjects.map(up => up.project_id);
+            console.log('Expenses - Found assigned projects:', projectIds);
+            setAssignedProjectIds(projectIds);
+          } else if (userRecord.project_id) {
+            // Fallback to single project_id for backward compatibility
+            console.log('Expenses - Using single project_id (backward compatibility):', userRecord.project_id);
+            setAssignedProjectIds([userRecord.project_id]);
+          } else {
+            console.log('Expenses - No projects assigned to user');
+            setAssignedProjectIds([]);
+          }
+        } else {
+          console.log('Expenses - User not found in users table');
+          setAssignedProjectIds([]);
         }
       }
     };
@@ -242,20 +279,20 @@ export function Expenses() {
   }, [user]);
 
   useEffect(() => {
-    console.log('Expenses - useEffect triggered with:', { assignedProjectId, userRole });
-    if (assignedProjectId !== null || userRole === 'Admin') {
+    console.log('Expenses - useEffect triggered with:', { assignedProjectIds, userRole });
+    if (assignedProjectIds.length > 0 || userRole === 'Admin') {
       console.log('Expenses - Calling fetch functions...');
       fetchProjects();
       // Don't fetch phases initially - they will be loaded dynamically when project is selected
       fetchTransactions();
       fetchPaymentLinks();
     } else {
-      console.log('Expenses - Not calling fetch functions - no assigned project and not admin');
+      console.log('Expenses - Not calling fetch functions - no assigned projects and not admin');
     }
-  }, [assignedProjectId, userRole]);
+  }, [assignedProjectIds, userRole]);
 
   async function fetchProjects() {
-    console.log('Expenses - fetchProjects called with:', { userRole, assignedProjectId, userId: user?.id });
+    console.log('Expenses - fetchProjects called with:', { userRole, assignedProjectIds, userId: user?.id });
     
     let query = supabase
       .from("projects")
@@ -264,11 +301,11 @@ export function Expenses() {
     if (userRole === 'Admin') {
       console.log('Expenses - Admin user, filtering by created_by:', user?.id);
       query = query.eq("created_by", user?.id);
-    } else if (assignedProjectId) {
-      console.log('Expenses - Non-admin user, filtering by assigned project:', assignedProjectId);
-      query = query.eq("id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      console.log('Expenses - Non-admin user, filtering by assigned projects:', assignedProjectIds);
+      query = query.in("id", assignedProjectIds);
     } else {
-      console.log('Expenses - No assigned project, returning empty projects');
+      console.log('Expenses - No assigned projects, returning empty projects');
       setProjects([]);
       return;
     }
@@ -279,7 +316,7 @@ export function Expenses() {
   }
 
   async function fetchPhases() {
-    console.log('Expenses - Fetching phases for assigned project:', assignedProjectId);
+    console.log('Expenses - Fetching phases for assigned projects:', assignedProjectIds);
 
     let query = supabase
       .from("phases")
@@ -287,8 +324,8 @@ export function Expenses() {
 
     if (userRole === 'Admin') {
       query = query.eq("created_by", user?.id);
-    } else if (assignedProjectId) {
-      query = query.eq("project_id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      query = query.in("project_id", assignedProjectIds);
     } else {
       // No project assigned, return empty result
       query = query.eq("project_id", "00000000-0000-0000-0000-000000000000");
@@ -331,16 +368,16 @@ export function Expenses() {
   async function fetchTransactions() {
     setLoading(true);
 
-    console.log('Expenses - Fetching transactions for assigned project:', assignedProjectId);
+    console.log('Expenses - Fetching transactions for assigned projects:', assignedProjectIds);
 
     let query = supabase
       .from("expenses")
       .select(
-        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source, reference_id, description, tags,
+        `id, phase_id, category, amount, gst_amount, date, payment_method, bill_path, type, source, reference_id, description, tags, created_by, created_at,
         phases (id, name, project_id)`
       );
 
-    console.log('Expenses - Query conditions:', { userRole, assignedProjectId, userId: user?.id });
+    console.log('Expenses - Query conditions:', { userRole, assignedProjectIds, userId: user?.id });
 
     if (userRole === 'Admin') {
       console.log('Expenses - Admin user, getting expenses from projects they created');
@@ -366,11 +403,11 @@ export function Expenses() {
       const projectIds = adminProjects.map(p => p.id);
       console.log('Expenses - Admin project IDs:', projectIds);
       query = query.in("project_id", projectIds);
-    } else if (assignedProjectId) {
-      console.log('Expenses - Non-admin user, filtering by project_id:', assignedProjectId);
-      query = query.eq("project_id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      console.log('Expenses - Non-admin user, filtering by project_ids:', assignedProjectIds);
+      query = query.in("project_id", assignedProjectIds);
     } else {
-      console.log('Expenses - No project assigned, using empty filter');
+      console.log('Expenses - No projects assigned, using empty filter');
       // No project assigned, return empty result
       query = query.eq("project_id", "00000000-0000-0000-0000-000000000000");
     }
@@ -416,8 +453,8 @@ export function Expenses() {
         source: e.source,
         custom_category: null,
         created_at: e.created_at || new Date().toISOString(),
-        created_by: e.created_by || user?.id,
-        project_id: e.phases?.project_id || assignedProjectId,
+        created_by: e.created_by,
+        project_id: e.phases?.project_id || null,
         phase_name: e.phases?.name || "No Phase",
         project_name: projectNameMap[e.phases?.project_id] || "No Project",
         vendor_name: e.source,
@@ -899,7 +936,7 @@ export function Expenses() {
       bill_path = fileName;
     }
 
-    const payload = {
+    const payload: any = {
       project_id: projectId,
       phase_id: phaseId,
       category: finalCategory,
@@ -911,12 +948,16 @@ export function Expenses() {
       payment_method: paymentMethod,
       bill_path,
       type: formType,
-      created_by: user?.id,
       source: source || null,
       reference_id: referenceId || null,
       description: description || null,
       tags: tags || null,
     };
+
+    // Only set created_by when creating a new expense, not when updating
+    if (!editingId) {
+      payload.created_by = user?.id;
+    }
 
     const { error } = editingId
       ? await supabase.from("expenses").update(payload).eq("id", editingId)
@@ -1222,7 +1263,7 @@ export function Expenses() {
 
       <Layout title="Financial Transactions" subtitle={getHeaderSubtitle()}>
         {/* Show helpful message when no project is assigned */}
-        {userRole !== 'Admin' && !assignedProjectId && (
+        {userRole !== 'Admin' && assignedProjectIds.length === 0 && (
           <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-600" />
@@ -1293,30 +1334,38 @@ export function Expenses() {
           {/* Header Section with New Buttons */}
           <div className="flex justify-between items-center mb-6 gap-3 flex-wrap">
             <div className="flex gap-3">
-              <button
-                onClick={() => setShowBulkUploadModal(true)}
-                className="flex items-center bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
-              >
-                <Upload className="mr-2" size={18} /> Bulk Upload
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
-              >
-                <Download className="mr-2" size={18} /> Export
-              </button>
-              <button
-                onClick={() => setShowPaymentLinkForm(true)}
-                className="flex items-center bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
-              >
-                <LinkIcon className="mr-2" size={18} /> Payment Link
-              </button>
-              <button
-                onClick={() => setShowPaymentLinksTable(true)}
-                className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <Eye className="mr-2" size={18} /> View Links ({paymentLinks.length})
-              </button>
+              {hasPermission("bulk_upload_expenses") && (
+                <button
+                  onClick={() => setShowBulkUploadModal(true)}
+                  className="flex items-center bg-orange-600 text-white px-4 py-2 rounded-lg hover:bg-orange-700 transition-colors"
+                >
+                  <Upload className="mr-2" size={18} /> Bulk Upload
+                </button>
+              )}
+              {userRole === "Admin" && (
+                <button
+                  onClick={exportToCSV}
+                  className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
+                >
+                  <Download className="mr-2" size={18} /> Export
+                </button>
+              )}
+              {hasPermission("create_payment_links") && (
+                <button
+                  onClick={() => setShowPaymentLinkForm(true)}
+                  className="flex items-center bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-colors"
+                >
+                  <LinkIcon className="mr-2" size={18} /> Payment Link
+                </button>
+              )}
+              {userRole === "Admin" && (
+                <button
+                  onClick={() => setShowPaymentLinksTable(true)}
+                  className="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Eye className="mr-2" size={18} /> View Links ({paymentLinks.length})
+                </button>
+              )}
             </div>
             <div className="flex gap-2">
               <button
@@ -1499,10 +1548,13 @@ export function Expenses() {
                         <td className="p-3">
                           <div className="flex gap-2">
                             <button
-                              onClick={(event) => {
+                              onClick={async (event) => {
                                 event.stopPropagation();
                                 setDetailsTransaction(t);
                                 setShowDetailsModal(true);
+                                if (t.created_by) {
+                                  await fetchCreatorInfo(t.created_by);
+                                }
                               }}
                               className="text-purple-600 hover:text-purple-800 p-1 rounded transition-colors"
                               title="View Details"
@@ -1656,6 +1708,9 @@ export function Expenses() {
                               event.stopPropagation();
                               setDetailsTransaction(t);
                               setShowDetailsModal(true);
+                              if (t.created_by) {
+                                fetchCreatorInfo(t.created_by);
+                              }
                             }}
                             className="text-purple-600 hover:text-purple-800 p-2 rounded transition-colors"
                             title="View Details"
@@ -1748,6 +1803,7 @@ export function Expenses() {
                 onClick={() => {
                   setShowDetailsModal(false);
                   setDetailsTransaction(null);
+                  setCreatorInfo(null);
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -1870,6 +1926,16 @@ export function Expenses() {
                 </div>
               )}
 
+              {/* Creator Information */}
+              {creatorInfo && (
+                <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                  <p className="text-sm text-gray-600 mb-1">Created By</p>
+                  <p className="text-base font-semibold text-gray-900">
+                    {creatorInfo.role}: {creatorInfo.userName}
+                  </p>
+                </div>
+              )}
+
               {/* Bill/Receipt */}
               <div className="bg-yellow-50 p-4 rounded-lg">
                 <p className="text-sm text-gray-600 mb-2">
@@ -1899,6 +1965,7 @@ export function Expenses() {
                   onClick={() => {
                     setShowDetailsModal(false);
                     setDetailsTransaction(null);
+                    setCreatorInfo(null);
                   }}
                   className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
                 >

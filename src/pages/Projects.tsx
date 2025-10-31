@@ -9,7 +9,7 @@ import "jspdf-autotable";
 export function Projects() {
   const { user, userRole, permissions } = useAuth();
   const [profileId, setProfileId] = useState<string | null>(null);
-  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([]);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [projects, setProjects] = useState<any[]>([]);
@@ -127,54 +127,53 @@ export function Projects() {
       if (user) {
         setProfileId(user.id);
 
-        // Get user's assigned project from users table
-        const { data: userProfile, error: userError } = await supabase
+        // First try to get user from users table by email or auth_user_id
+        let userRecord = null;
+        
+        // Try by email first
+        const { data: userByEmail } = await supabase
           .from('users')
-          .select('project_id')
+          .select('id, project_id')
           .eq('email', user.email)
           .single();
-
-        console.log('User profile lookup:', { userProfile, userError, userEmail: user.email });
-
-        if (userProfile?.project_id) {
-          console.log('Found assigned project:', userProfile.project_id);
-          setAssignedProjectId(userProfile.project_id);
-          // Trigger fetch immediately after setting the project ID
-          setTimeout(() => {
-            if (profileId) {
-              console.log('Projects - Triggering fetchProjects after state update');
-              fetchProjects();
-            }
-          }, 100);
+        
+        if (userByEmail) {
+          userRecord = userByEmail;
         } else {
-          console.log('No project assigned to user in users table');
-          console.log('This means the user either:');
-          console.log('1. Does not exist in the users table, OR');
-          console.log('2. Exists in users table but has no project_id assigned');
-          console.log('Check if the user was properly created in the Users page with a project assignment');
-          
-          // Try to find user by auth_user_id as fallback
-          console.log('Trying fallback lookup by auth_user_id:', user?.id);
-          const { data: fallbackUser, error: fallbackError } = await supabase
+          // Try by auth_user_id as fallback
+          const { data: userByAuthId } = await supabase
             .from('users')
-            .select('project_id, id, name, email')
+            .select('id, project_id')
             .eq('auth_user_id', user?.id)
             .single();
-            
-          if (fallbackUser?.project_id) {
-            console.log('Found user by auth_user_id:', fallbackUser);
-            setAssignedProjectId(fallbackUser.project_id);
-            // Trigger fetch immediately after setting the project ID
-            setTimeout(() => {
-              if (profileId) {
-                console.log('Projects - Triggering fetchProjects after fallback state update');
-                fetchProjects();
-              }
-            }, 100);
-          } else {
-            console.log('Fallback lookup also failed:', fallbackError);
-            setAssignedProjectId(null);
+          
+          if (userByAuthId) {
+            userRecord = userByAuthId;
           }
+        }
+
+        if (userRecord?.id) {
+          // Fetch multiple projects from user_projects table
+          const { data: userProjects, error: userProjectsError } = await supabase
+            .from('user_projects')
+            .select('project_id')
+            .eq('user_id', userRecord.id);
+
+          if (!userProjectsError && userProjects && userProjects.length > 0) {
+            const projectIds = userProjects.map(up => up.project_id);
+            console.log('Projects - Found assigned projects:', projectIds);
+            setAssignedProjectIds(projectIds);
+          } else if (userRecord.project_id) {
+            // Fallback to single project_id for backward compatibility
+            console.log('Projects - Using single project_id (backward compatibility):', userRecord.project_id);
+            setAssignedProjectIds([userRecord.project_id]);
+          } else {
+            console.log('Projects - No projects assigned to user');
+            setAssignedProjectIds([]);
+          }
+        } else {
+          console.log('Projects - User not found in users table');
+          setAssignedProjectIds([]);
         }
       }
     };
@@ -186,7 +185,7 @@ export function Projects() {
     if (!profileId) return;
     setLoading(true);
 
-    console.log('Projects - fetchProjects called with:', { userRole, assignedProjectId, profileId });
+    console.log('Projects - fetchProjects called with:', { userRole, assignedProjectIds, profileId });
 
     let query = supabase
       .from("projects")
@@ -197,10 +196,10 @@ export function Projects() {
       console.log('Projects - Admin user, filtering by created_by:', profileId);
       query = query.eq("created_by", profileId);
     } else {
-      // Non-admin users see only their assigned project
-      if (assignedProjectId) {
-        console.log('Projects - Non-admin user, filtering by assigned project:', assignedProjectId);
-        query = query.eq("id", assignedProjectId);
+      // Non-admin users see only their assigned projects
+      if (assignedProjectIds.length > 0) {
+        console.log('Projects - Non-admin user, filtering by assigned projects:', assignedProjectIds);
+        query = query.in("id", assignedProjectIds);
       } else {
         // If no project assigned, return empty result
         console.log('Projects - No project assigned, returning empty result');
@@ -214,8 +213,8 @@ export function Projects() {
     
     // Check if the user exists in the users table with the correct email
     // and create a mock project if RLS is blocking access
-    if (assignedProjectId && userRole !== 'Admin') {
-      console.log('Projects - User has assigned project:', assignedProjectId);
+    if (assignedProjectIds.length > 0 && userRole !== 'Admin') {
+      console.log('Projects - User has assigned projects:', assignedProjectIds);
       console.log('Projects - Checking if user exists in users table for RLS policy...');
       
       // Check if the user exists in the users table with the correct email
@@ -253,10 +252,10 @@ export function Projects() {
         // using the information we already have from the users table
         console.log('Projects - RLS is blocking access, creating project from user data...');
         
-        // We know the project ID from the users table, so let's create a basic project object
+        // We know the project IDs from the users table, so let's create basic project objects
         // This bypasses the RLS issue by not querying the projects table directly
-        const mockProject = {
-          id: assignedProjectId,
+        const mockProjects = assignedProjectIds.map(projectId => ({
+          id: projectId,
           name: "Assigned Project", // We'll try to get the real name from a different approach
           description: "Project assigned to user",
           status: "active",
@@ -266,17 +265,17 @@ export function Projects() {
           start_date: null,
           end_date: null,
           location: null
-        };
+        }));
         
-        console.log('Projects - Created mock project:', mockProject);
+        console.log('Projects - Created mock projects:', mockProjects);
         
         // Try to get the full project data through different approaches
         // First, try phases table
         const { data: phasesData, error: phasesError } = await supabase
           .from('phases')
           .select('project_id, projects(*)')
-          .eq('project_id', assignedProjectId)
-          .limit(1);
+          .in('project_id', assignedProjectIds)
+          .limit(assignedProjectIds.length);
         
         console.log('Projects - Phases query result:', { phasesData, phasesError });
         
@@ -297,55 +296,66 @@ export function Projects() {
         const { data: expensesData, error: expensesError } = await supabase
           .from('expenses')
           .select('project_id, projects(*)')
-          .eq('project_id', assignedProjectId)
-          .limit(1);
+          .in('project_id', assignedProjectIds)
+          .limit(assignedProjectIds.length);
         
         console.log('Projects - Expenses query result:', { expensesData, expensesError });
         
         if (!expensesError && expensesData && expensesData.length > 0) {
-          const expenseInfo = expensesData[0] as any;
-          const projectInfo = Array.isArray(expenseInfo.projects) ? expenseInfo.projects[0] : expenseInfo.projects;
+          // Extract unique projects from expenses data
+          const projectsMap = new Map();
+          expensesData.forEach((expenseInfo: any) => {
+            const projectInfo = Array.isArray(expenseInfo.projects) ? expenseInfo.projects[0] : expenseInfo.projects;
+            if (projectInfo && !projectsMap.has(projectInfo.id)) {
+              projectsMap.set(projectInfo.id, projectInfo);
+            }
+          });
           
-          if (projectInfo) {
-            console.log('Projects - Found project data through expenses:', projectInfo);
-            setProjects([projectInfo]);
+          if (projectsMap.size > 0) {
+            const projectsArray = Array.from(projectsMap.values());
+            console.log('Projects - Found project data through expenses:', projectsArray);
+            setProjects(projectsArray);
             setLoading(false);
             return;
           }
         }
         
-        // If both approaches failed, try to fetch project name directly
-        console.log('Projects - Trying to fetch project name directly...');
+        // If both approaches failed, try to fetch project names directly
+        console.log('Projects - Trying to fetch project names directly...');
         try {
           const { data: projectNameData, error: projectNameError } = await supabase
             .from('projects')
-            .select('name, description, status, start_date, end_date, location')
-            .eq('id', assignedProjectId)
-            .single();
+            .select('id, name, description, status, start_date, end_date, location')
+            .in('id', assignedProjectIds);
           
-          if (!projectNameError && projectNameData) {
-            console.log('Projects - Found project name directly:', projectNameData);
-            const fullProject = {
-              ...mockProject,
-              name: projectNameData.name,
-              description: projectNameData.description || mockProject.description,
-              status: projectNameData.status || mockProject.status,
-              start_date: projectNameData.start_date || mockProject.start_date,
-              end_date: projectNameData.end_date || mockProject.end_date,
-              location: projectNameData.location || mockProject.location
-            };
-            console.log('Projects - Using fetched project data:', fullProject);
-            setProjects([fullProject]);
+          if (!projectNameError && projectNameData && projectNameData.length > 0) {
+            console.log('Projects - Found project names directly:', projectNameData);
+            const fullProjects = assignedProjectIds.map(projectId => {
+              const projectNameInfo = projectNameData.find((p: any) => p.id === projectId);
+              const mockProject = mockProjects.find((mp: any) => mp.id === projectId);
+              return {
+                ...mockProject,
+                id: projectId,
+                name: projectNameInfo?.name || mockProject?.name || "Assigned Project",
+                description: projectNameInfo?.description || mockProject?.description || "Project assigned to user",
+                status: projectNameInfo?.status || mockProject?.status || "active",
+                start_date: projectNameInfo?.start_date || mockProject?.start_date || null,
+                end_date: projectNameInfo?.end_date || mockProject?.end_date || null,
+                location: projectNameInfo?.location || mockProject?.location || null,
+              };
+            });
+            console.log('Projects - Using fetched project data:', fullProjects);
+            setProjects(fullProjects);
             setLoading(false);
             return;
           }
         } catch (error) {
-          console.log('Projects - Could not fetch project name directly:', error);
+          console.log('Projects - Could not fetch project names directly:', error);
         }
         
-        // If all approaches failed, use the basic mock project
-        console.log('Projects - Using mock project to bypass RLS:', mockProject);
-        setProjects([mockProject]);
+        // If all approaches failed, use the basic mock projects
+        console.log('Projects - Using mock projects to bypass RLS:', mockProjects);
+        setProjects(mockProjects);
         setLoading(false);
         return;
       }
@@ -445,14 +455,14 @@ export function Projects() {
   };
 
   useEffect(() => {
-    console.log('Projects - useEffect triggered with:', { profileId, userRole, assignedProjectId });
-    if (profileId && (userRole === 'Admin' || assignedProjectId !== null)) {
+    console.log('Projects - useEffect triggered with:', { profileId, userRole, assignedProjectIds });
+    if (profileId && (userRole === 'Admin' || assignedProjectIds.length > 0)) {
       console.log('Projects - Calling fetchProjects...');
       fetchProjects();
     } else {
       console.log('Projects - Not calling fetchProjects - conditions not met');
     }
-  }, [profileId, userRole, assignedProjectId]);
+  }, [profileId, userRole, assignedProjectIds]);
 
   // Fetch stats for all projects when projects change
   useEffect(() => {
@@ -1587,7 +1597,7 @@ export function Projects() {
   };
 
   // Show message if user has no project assigned
-  if (userRole !== 'Admin' && assignedProjectId === null && !loading) {
+  if (userRole !== 'Admin' && assignedProjectIds.length === 0 && !loading) {
     return (
       <Layout title="Projects">
         <div className="p-6">

@@ -18,6 +18,7 @@ type Phase = {
   status: "Not Started" | "In Progress" | "Completed";
   estimated_cost?: number;
   contractor_name?: string;
+  created_by?: string;
 };
 
 type Expense = {
@@ -48,7 +49,7 @@ type PhaseComment = {
 
 export function Phases() {
   const { userRole, user } = useAuth();
-  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([]);
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [phases, setPhases] = useState<Phase[]>([]);
@@ -80,10 +81,34 @@ export function Phases() {
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list');
   const [timelineFilter, setTimelineFilter] = useState<"All" | "This Month" | "This Year">("All");
+  const [creatorInfo, setCreatorInfo] = useState<{ role: string; userName: string } | null>(null);
 
   const canManage = ["Admin", "Project Manager", "Site Engineer"].includes(
     userRole ?? ""
   );
+
+  // Fetch creator information
+  const fetchCreatorInfo = async (createdById: string) => {
+    try {
+      const { data: profileData, error } = await supabase
+        .from("profiles")
+        .select("role, full_name")
+        .eq("id", createdById)
+        .maybeSingle();
+
+      if (!error && profileData) {
+        setCreatorInfo({
+          role: profileData.role || "Unknown Role",
+          userName: profileData.full_name || "Unknown User"
+        });
+      } else {
+        setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+      }
+    } catch (error) {
+      console.error("Error fetching creator info:", error);
+      setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+    }
+  };
 
   // Function to format dates as DD-MMM-YYYY
   const formatDate = (dateString: string) => {
@@ -139,40 +164,54 @@ export function Phases() {
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user?.id) return;
-      // Get user's assigned project from users table
-      const { data: userProfile, error: userError } = await supabase
+      
+      // First try to get user from users table by email or auth_user_id
+      let userRecord = null;
+      
+      // Try by email first
+      const { data: userByEmail } = await supabase
         .from('users')
-        .select('project_id')
+        .select('id, project_id')
         .eq('email', user.email)
         .single();
-
-      console.log('Phases - User profile lookup:', { userProfile, userError, userEmail: user.email });
-
-      if (userProfile?.project_id) {
-        console.log('Phases - Found assigned project:', userProfile.project_id);
-        setAssignedProjectId(userProfile.project_id);
+      
+      if (userByEmail) {
+        userRecord = userByEmail;
       } else {
-        console.log('Phases - No project assigned to user in users table');
-        console.log('Phases - This means the user either:');
-        console.log('1. Does not exist in the users table, OR');
-        console.log('2. Exists in users table but has no project_id assigned');
-        console.log('Phases - Check if the user was properly created in the Users page with a project assignment');
-        
-        // Try to find user by auth_user_id as fallback
-        console.log('Phases - Trying fallback lookup by auth_user_id:', user?.id);
-        const { data: fallbackUser, error: fallbackError } = await supabase
+        // Try by auth_user_id as fallback
+        const { data: userByAuthId } = await supabase
           .from('users')
-          .select('project_id, id, name, email')
+          .select('id, project_id')
           .eq('auth_user_id', user?.id)
           .single();
-          
-        if (fallbackUser?.project_id) {
-          console.log('Phases - Found user by auth_user_id:', fallbackUser);
-          setAssignedProjectId(fallbackUser.project_id);
-        } else {
-          console.log('Phases - Fallback lookup also failed:', fallbackError);
-          setAssignedProjectId(null);
+        
+        if (userByAuthId) {
+          userRecord = userByAuthId;
         }
+      }
+
+      if (userRecord?.id) {
+        // Fetch multiple projects from user_projects table
+        const { data: userProjects, error: userProjectsError } = await supabase
+          .from('user_projects')
+          .select('project_id')
+          .eq('user_id', userRecord.id);
+
+        if (!userProjectsError && userProjects && userProjects.length > 0) {
+          const projectIds = userProjects.map(up => up.project_id);
+          console.log('Phases - Found assigned projects:', projectIds);
+          setAssignedProjectIds(projectIds);
+        } else if (userRecord.project_id) {
+          // Fallback to single project_id for backward compatibility
+          console.log('Phases - Using single project_id (backward compatibility):', userRecord.project_id);
+          setAssignedProjectIds([userRecord.project_id]);
+        } else {
+          console.log('Phases - No projects assigned to user');
+          setAssignedProjectIds([]);
+        }
+      } else {
+        console.log('Phases - User not found in users table');
+        setAssignedProjectIds([]);
       }
     };
     fetchUserData();
@@ -189,8 +228,8 @@ export function Phases() {
 
       if (userRole === 'Admin') {
         query = query.eq("created_by", user.id);
-      } else if (assignedProjectId) {
-        query = query.eq("id", assignedProjectId);
+      } else if (assignedProjectIds.length > 0) {
+        query = query.in("id", assignedProjectIds);
       } else {
         setProjects([]);
         return;
@@ -200,13 +239,13 @@ export function Phases() {
       if (!error) setProjects(data || []);
     };
     fetchProjects();
-  }, [user?.id, userRole, assignedProjectId]);
+  }, [user?.id, userRole, assignedProjectIds]);
 
   // Fetch phases and their expenses
   const fetchPhases = async () => {
     if (!user?.id) return;
 
-    console.log('Phases - fetchPhases called with:', { userRole, assignedProjectId, userId: user?.id });
+    console.log('Phases - fetchPhases called with:', { userRole, assignedProjectIds, userId: user?.id });
 
     let query = supabase
       .from("phases")
@@ -236,11 +275,11 @@ export function Phases() {
       const projectIds = adminProjects.map(p => p.id);
       console.log('Phases - Admin project IDs:', projectIds);
       query = query.in("project_id", projectIds);
-    } else if (assignedProjectId) {
-      console.log('Phases - Non-admin user, filtering by assigned project:', assignedProjectId);
-      query = query.eq("project_id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      console.log('Phases - Non-admin user, filtering by assigned projects:', assignedProjectIds);
+      query = query.in("project_id", assignedProjectIds);
     } else {
-      console.log('Phases - No assigned project, returning empty phases');
+      console.log('Phases - No assigned projects, returning empty phases');
       setPhases([]);
       return;
     }
@@ -291,6 +330,7 @@ export function Phases() {
       status: p.status,
       estimated_cost: p.estimated_cost,
       contractor_name: p.contractor_name,
+      created_by: undefined, // Column doesn't exist in database
     }));
 
     console.log("Phases - Mapped phases:", mapped);
@@ -313,10 +353,10 @@ export function Phases() {
   };
 
   useEffect(() => {
-    if (user?.id && (userRole === 'Admin' || assignedProjectId !== null)) {
+    if (user?.id && (userRole === 'Admin' || assignedProjectIds.length > 0)) {
       fetchPhases();
     }
-  }, [user?.id, userRole, assignedProjectId]);
+  }, [user?.id, userRole, assignedProjectIds]);
 
   // Save phase (create or update)
   const savePhase = async () => {
@@ -338,7 +378,7 @@ export function Phases() {
       status: form.status,
       estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : null,
       contractor_name: form.contractor_name || null,
-      created_by: user?.id,
+      // created_by column doesn't exist in phases table
     };
 
     if (editingPhase) {
@@ -782,7 +822,7 @@ export function Phases() {
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
       {/* Show helpful message when no project is assigned */}
-      {userRole !== 'Admin' && !assignedProjectId && (
+      {userRole !== 'Admin' && assignedProjectIds.length === 0 && (
         <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <div className="flex items-center gap-3">
             <AlertTriangle className="w-5 h-5 text-yellow-600" />
@@ -939,12 +979,14 @@ export function Phases() {
                       </div>
                       <div className="flex gap-2">
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
                             setSelectedPhase(phase);
                             setViewPhase(phase);
                             fetchPhasePhotos(phase.id);
                             fetchComments(phase.id);
+                            // Note: created_by column doesn't exist in phases table
+                            // Creator info feature disabled
                           }}
                           className="bg-green-600 text-white px-3 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
                         >
@@ -1153,7 +1195,10 @@ export function Phases() {
               <div className="flex justify-between items-center p-6 border-b">
                 <h2 className="text-2xl font-bold text-gray-900">Phase Details</h2>
                 <button 
-                  onClick={() => setViewPhase(null)}
+                  onClick={() => {
+                    setViewPhase(null);
+                    setCreatorInfo(null);
+                  }}
                   className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 >
                   <X className="w-6 h-6 text-gray-500" />
@@ -1327,6 +1372,16 @@ export function Phases() {
                       <span className="font-medium text-gray-700">Contractor:</span>
                       <span className="ml-2 text-gray-900">{viewPhase.contractor_name}</span>
                     </div>
+                  </div>
+                )}
+
+                {/* Creator Information */}
+                {creatorInfo && (
+                  <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                    <p className="text-sm text-gray-600 mb-1">Created By</p>
+                    <p className="text-base font-semibold text-gray-900">
+                      {creatorInfo.role}: {creatorInfo.userName}
+                    </p>
                   </div>
                 )}
 

@@ -30,7 +30,7 @@ type Project = {
 
 export function Materials() {
   const { user, userRole, permissions } = useAuth();
-  const [assignedProjectId, setAssignedProjectId] = useState<string | null>(null);
+  const [assignedProjectIds, setAssignedProjectIds] = useState<string[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
@@ -47,6 +47,7 @@ export function Materials() {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   const [showViewModal, setShowViewModal] = useState(false);
+  const [creatorInfo, setCreatorInfo] = useState<{ role: string; userName: string } | null>(null);
   const [newMaterial, setNewMaterial] = useState({
     name: "",
     description: "",
@@ -102,6 +103,29 @@ export function Materials() {
     return permissions.includes(requiredPermission);
   };
 
+  // Fetch creator information
+  const fetchCreatorInfo = async (createdById: string) => {
+    try {
+      const { data: profileData, error } = await supabase
+        .from("profiles")
+        .select("role, full_name")
+        .eq("id", createdById)
+        .maybeSingle();
+
+      if (!error && profileData) {
+        setCreatorInfo({
+          role: profileData.role || "Unknown Role",
+          userName: profileData.full_name || "Unknown User"
+        });
+      } else {
+        setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+      }
+    } catch (error) {
+      console.error("Error fetching creator info:", error);
+      setCreatorInfo({ role: "Unknown Role", userName: "Unknown User" });
+    }
+  };
+
   // SMS notification helper function
   const sendSMSNotification = async (action: 'add' | 'edit' | 'delete', material: any, projectName?: string) => {
     try {
@@ -147,59 +171,64 @@ export function Materials() {
     const fetchUserData = async () => {
       if (!user?.id) return;
 
-      // Get user's assigned project from users table
-      const { data: userProfile } = await supabase
+      // First try to get user from users table by email or auth_user_id
+      let userRecord = null;
+      
+      // Try by email first
+      const { data: userByEmail } = await supabase
         .from('users')
-        .select('project_id')
+        .select('id, project_id')
         .eq('email', user.email)
         .single();
-
-      if (userProfile?.project_id) {
-        console.log('Materials - Found assigned project:', userProfile.project_id);
-        setAssignedProjectId(userProfile.project_id);
-        // Trigger fetch immediately after setting the project ID
-        setTimeout(() => {
-          console.log('Materials - Triggering fetchMaterials after state update');
-          fetchMaterials();
-        }, 100);
+      
+      if (userByEmail) {
+        userRecord = userByEmail;
       } else {
-        console.log('Materials - No project assigned to user in users table');
-        console.log('This means the user either:');
-        console.log('1. Does not exist in the users table, OR');
-        console.log('2. Exists in users table but has no project_id assigned');
-        console.log('Check if the user was properly created in the Users page with a project assignment');
-        
-        // Try to find user by auth_user_id as fallback
-        console.log('Materials - Trying fallback lookup by auth_user_id:', user?.id);
-        const { data: fallbackUser, error: fallbackError } = await supabase
+        // Try by auth_user_id as fallback
+        const { data: userByAuthId } = await supabase
           .from('users')
-          .select('project_id, id, name, email')
+          .select('id, project_id')
           .eq('auth_user_id', user?.id)
           .single();
-          
-        if (fallbackUser?.project_id) {
-          console.log('Materials - Found user by auth_user_id:', fallbackUser);
-          setAssignedProjectId(fallbackUser.project_id);
-          // Trigger fetch immediately after setting the project ID
-          setTimeout(() => {
-            console.log('Materials - Triggering fetchMaterials after fallback state update');
-            fetchMaterials();
-          }, 100);
-        } else {
-          console.log('Materials - Fallback lookup also failed:', fallbackError);
-          setAssignedProjectId(null);
+        
+        if (userByAuthId) {
+          userRecord = userByAuthId;
         }
+      }
+
+      if (userRecord?.id) {
+        // Fetch multiple projects from user_projects table
+        const { data: userProjects, error: userProjectsError } = await supabase
+          .from('user_projects')
+          .select('project_id')
+          .eq('user_id', userRecord.id);
+
+        if (!userProjectsError && userProjects && userProjects.length > 0) {
+          const projectIds = userProjects.map(up => up.project_id);
+          console.log('Materials - Found assigned projects:', projectIds);
+          setAssignedProjectIds(projectIds);
+        } else if (userRecord.project_id) {
+          // Fallback to single project_id for backward compatibility
+          console.log('Materials - Using single project_id (backward compatibility):', userRecord.project_id);
+          setAssignedProjectIds([userRecord.project_id]);
+        } else {
+          console.log('Materials - No projects assigned to user');
+          setAssignedProjectIds([]);
+        }
+      } else {
+        console.log('Materials - User not found in users table');
+        setAssignedProjectIds([]);
       }
     };
     fetchUserData();
   }, [user?.id]);
 
   useEffect(() => {
-    if (assignedProjectId !== null || userRole === 'Admin') {
+    if (assignedProjectIds.length > 0 || userRole === 'Admin') {
       fetchMaterials();
       fetchProjects();
     }
-  }, [user?.id, assignedProjectId, userRole]);
+  }, [user?.id, assignedProjectIds, userRole]);
 
   useEffect(() => {
     if (showSuccessMessage) {
@@ -217,7 +246,7 @@ export function Materials() {
     setLoading(true);
     setError(null);
 
-    console.log('Materials - fetchMaterials called with:', { userRole, assignedProjectId, userId: user?.id });
+    console.log('Materials - fetchMaterials called with:', { userRole, assignedProjectIds, userId: user?.id });
 
     let query = supabase
       .from("materials")
@@ -241,9 +270,9 @@ export function Materials() {
     if (userRole === 'Admin') {
       console.log('Materials - Admin user, filtering by created_by:', user.id);
       query = query.eq("created_by", user.id);
-    } else if (assignedProjectId) {
-      console.log('Materials - Non-admin user, filtering by assigned project:', assignedProjectId);
-      query = query.eq("project_id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      console.log('Materials - Non-admin user, filtering by assigned projects:', assignedProjectIds);
+      query = query.in("project_id", assignedProjectIds);
     } else {
       setMaterials([]);
       setLoading(false);
@@ -270,35 +299,34 @@ export function Materials() {
         console.log('Materials - The user may not have permission to access materials for this project');
         
         // For non-admin users, try to fetch materials directly without the join
-        if (assignedProjectId && userRole !== 'Admin') {
+        if (assignedProjectIds.length > 0 && userRole !== 'Admin') {
           console.log('Materials - Trying direct fetch without projects join...');
           const { data: directData, error: directError } = await supabase
             .from("materials")
             .select('id, name, description, category, unit, qty_required, unit_cost, project_id, supplier, hsn, specifications, status, updated_at, created_by')
-            .eq("project_id", assignedProjectId)
+            .in("project_id", assignedProjectIds)
             .order("updated_at", { ascending: false });
           
           console.log('Materials - Direct fetch result:', { directData, directError });
           
           if (!directError && directData) {
-            // Get project name for fallback data
+            // Get project names for fallback data
             const { data: projectData } = await supabase
               .from("projects")
-              .select("name")
-              .eq("id", assignedProjectId)
-              .single();
-            const projectName = projectData?.name || "Assigned Project";
+              .select("id, name")
+              .in("id", assignedProjectIds);
+            const projectNameMap = new Map((projectData || []).map((p: any) => [p.id, p.name]));
 
             const mapped = directData.map((m: any) => ({
               id: m.id,
               name: m.name,
-              description: m.description || `Construction material for ${projectName}`,
+              description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Assigned Project'}`,
               category: m.category || 'Cement & Concrete',
               unit: m.unit || 'Kg',
               qty_required: m.qty_required || 0,
               unit_cost: m.unit_cost || 0,
               project_id: m.project_id,
-              project_name: projectName,
+              project_name: projectNameMap.get(m.project_id) || "Assigned Project",
               supplier: m.supplier || 'Not Specified',
               hsn: m.hsn || '',
               specifications: m.specifications || 'Standard construction grade material',
@@ -318,29 +346,30 @@ export function Materials() {
     } else {
       console.log('Materials - Processing materials data...');
       
-      // Get project name separately for better reliability
-      let projectName = "Unknown";
-      if (assignedProjectId) {
+      // Get project names separately for better reliability
+      const projectNameMap = new Map<string, string>();
+      if (assignedProjectIds.length > 0) {
         const { data: projectData } = await supabase
           .from("projects")
-          .select("name")
-          .eq("id", assignedProjectId)
-          .single();
-        projectName = projectData?.name || "Unknown";
+          .select("id, name")
+          .in("id", assignedProjectIds);
+        if (projectData) {
+          projectData.forEach((p: any) => projectNameMap.set(p.id, p.name));
+        }
       }
 
-      console.log('Materials - Project name for materials:', projectName);
+      console.log('Materials - Project names for materials:', projectNameMap);
       
       const mapped = (data || []).map((m: any) => ({
         id: m.id,
         name: m.name,
-        description: m.description || `Construction material for ${projectName}`,
+        description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Unknown'}`,
         category: m.category || 'Cement & Concrete',
         unit: m.unit || 'Kg',
         qty_required: m.qty_required || 0,
         unit_cost: m.unit_cost || 0,
         project_id: m.project_id,
-        project_name: projectName,
+        project_name: m.projects?.name || projectNameMap.get(m.project_id) || "Unknown",
         supplier: m.supplier || 'Not Specified',
         hsn: m.hsn || '',
         specifications: m.specifications || 'Standard construction grade material',
@@ -363,8 +392,8 @@ export function Materials() {
 
     if (userRole === 'Admin') {
       query = query.eq("created_by", user.id);
-    } else if (assignedProjectId) {
-      query = query.eq("id", assignedProjectId);
+    } else if (assignedProjectIds.length > 0) {
+      query = query.in("id", assignedProjectIds);
     } else {
       setProjects([]);
       return;
@@ -554,6 +583,9 @@ export function Materials() {
   const handleViewMaterial = (material: Material) => {
     setSelectedMaterial(material);
     setShowViewModal(true);
+    if (material.created_by) {
+      fetchCreatorInfo(material.created_by);
+    }
   };
 
   const handleClickOutside = (e: React.MouseEvent<HTMLDivElement>, closeModal: () => void) => {
@@ -1245,7 +1277,10 @@ export function Materials() {
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-bold text-gray-900">Material Details</h2>
-              <button onClick={() => setShowViewModal(false)}>
+              <button onClick={() => {
+                setShowViewModal(false);
+                setCreatorInfo(null);
+              }}>
                 <X className="h-5 w-5 text-gray-500 hover:text-gray-700" />
               </button>
             </div>
@@ -1333,6 +1368,16 @@ export function Materials() {
                   </div>
                 </div>
               )}
+
+              {/* Creator Information */}
+              {creatorInfo && (
+                <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                  <p className="text-sm text-gray-600 mb-1">Created By</p>
+                  <p className="text-base font-semibold text-gray-900">
+                    {creatorInfo.role}: {creatorInfo.userName}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
@@ -1340,6 +1385,7 @@ export function Materials() {
                 <button
                   onClick={() => {
                     setShowViewModal(false);
+                    setCreatorInfo(null);
                     handleEditClick(selectedMaterial);
                   }}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -1349,7 +1395,10 @@ export function Materials() {
               )}
               <button
                 className="px-4 py-2 bg-gray-200 rounded-lg hover:bg-gray-300 transition-colors"
-                onClick={() => setShowViewModal(false)}
+                onClick={() => {
+                  setShowViewModal(false);
+                  setCreatorInfo(null);
+                }}
               >
                 Close
               </button>

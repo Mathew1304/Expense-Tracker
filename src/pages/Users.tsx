@@ -17,6 +17,12 @@ type User = {
   projects?: {
     name: string;
   } | null;
+  user_projects?: Array<{
+    project_id: string;
+    projects: {
+      name: string;
+    };
+  }>;
   created_by: string | null;
   created_at?: string;
   phone?: string;
@@ -71,7 +77,7 @@ export function Users() {
     email: "",
     phone: "",
     role_id: "",
-    project_id: "",
+    project_ids: [] as string[],
     department: "",
     status: "Active",
   });
@@ -83,6 +89,7 @@ export function Users() {
     email: "",
     phone: "",
     role_id: "",
+    project_ids: [] as string[],
     department: "",
     status: "",
   });
@@ -124,13 +131,52 @@ export function Users() {
     // Fetch only users created by this admin
     const { data: usersData, error: usersError } = await supabase
       .from("users")
-      .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
+      .select(`
+        id, 
+        name, 
+        email, 
+        phone, 
+        role_id, 
+        project_id, 
+        roles(role_name), 
+        projects(name), 
+        created_by, 
+        created_at
+      `)
       .eq("created_by", user.id)
       .order("created_at", { ascending: false });
 
     if (usersError) {
       console.error("Error fetching users:", usersError.message);
     } else if (usersData) {
+      // Fetch user_projects for all users separately to ensure we get all projects
+      const userIds = usersData.map(u => u.id);
+      let userProjectsMap = new Map<string, Array<{ project_id: string; projects: { name: string } }>>();
+      
+      if (userIds.length > 0) {
+        try {
+          const { data: userProjectsData, error: userProjectsError } = await supabase
+            .from("user_projects")
+            .select("user_id, project_id, projects(name)")
+            .in("user_id", userIds);
+          
+          if (!userProjectsError && userProjectsData) {
+            // Group user_projects by user_id
+            userProjectsData.forEach((up: any) => {
+              if (!userProjectsMap.has(up.user_id)) {
+                userProjectsMap.set(up.user_id, []);
+              }
+              userProjectsMap.get(up.user_id)!.push({
+                project_id: up.project_id,
+                projects: up.projects
+              });
+            });
+          }
+        } catch (err) {
+          console.warn("Could not fetch user_projects (table may not exist):", err);
+        }
+      }
+      
       // Transform data to match UI expectations
       const transformedUsers = usersData.map(u => ({
         ...u,
@@ -138,7 +184,8 @@ export function Users() {
         department: u.roles?.role_name || 'No Department',
         status: 'Active', // Default status
         lastLogin: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-        joinDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        joinDate: u.created_at ? new Date(u.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        user_projects: userProjectsMap.get(u.id) || []
       }));
       setUsers(transformedUsers as User[]);
     }
@@ -232,6 +279,9 @@ export function Users() {
       console.log('✅ Auth user created successfully:', authUserResult.user.id);
 
       // 2. Insert user into database with auth_user_id
+      // Use first project_id for backward compatibility, or null if no projects selected
+      const firstProjectId = formData.project_ids.length > 0 ? formData.project_ids[0] : null;
+      
       const { data: newUser, error: insertError } = await supabase
         .from("users")
         .insert([
@@ -240,7 +290,7 @@ export function Users() {
             email: formData.email,
             phone: formData.phone || null,
             role_id: formData.role_id || null,
-            project_id: formData.project_id || null,
+            project_id: firstProjectId, // Keep for backward compatibility
             created_by: user.id,
             auth_user_id: authUserResult.user.id, // Link to auth user
           },
@@ -255,13 +305,40 @@ export function Users() {
         return;
       }
 
+      // 2b. Insert multiple project assignments into user_projects table
+      if (formData.project_ids.length > 0) {
+        const userProjectAssignments = formData.project_ids.map(projectId => ({
+          user_id: newUser.id,
+          project_id: projectId,
+        }));
+
+        const { error: userProjectsError } = await supabase
+          .from("user_projects")
+          .insert(userProjectAssignments);
+
+        if (userProjectsError) {
+          console.error("Failed to assign projects:", userProjectsError.message);
+          // Check if table doesn't exist - provide helpful error message
+          if (userProjectsError.message.includes("relation") || userProjectsError.message.includes("does not exist")) {
+            showNotification('error', `User created but project assignments failed. Please run the database migration (user_projects_migration.sql) to enable multiple project assignments.`);
+          } else {
+            showNotification('error', `User created but some project assignments failed: ${userProjectsError.message}`);
+          }
+        }
+      }
+
       // 3. Send welcome email
+      const projectNames = formData.project_ids
+        .map(id => projects.find(p => p.id === id)?.name)
+        .filter(Boolean)
+        .join(", ");
+      
       const emailParams = {
         to_email: formData.email,
         to_name: formData.name,
         password: generatedPassword,
         role: roles.find(r => r.id === formData.role_id)?.role_name || 'User',
-        project: projects.find(p => p.id === formData.project_id)?.name,
+        project: projectNames || 'No Project',
       };
 
       const result = await sendUserCredentialsEmail(emailParams);
@@ -287,8 +364,11 @@ export function Users() {
       
       // Reset form
       setShowConfirmModal(false);
-      setFormData({ name: "", email: "", phone: "", role_id: "", project_id: "", department: "", status: "Active" });
+      setFormData({ name: "", email: "", phone: "", role_id: "", project_ids: [], department: "", status: "Active" });
       setGeneratedPassword("");
+      
+      // Refresh user list to show updated projects
+      fetchData();
 
     } catch (error) {
       console.error('Error creating user:', error);
@@ -336,13 +416,31 @@ export function Users() {
   }
 
   // Start editing
-  function startEdit(user: User) {
+  async function startEdit(user: User) {
     setEditingUser(user);
+    
+    // Fetch user's assigned projects from user_projects table
+    let assignedProjectIds: string[] = [];
+    
+    // Try to fetch from user_projects table first
+    const { data: userProjectsData, error: userProjectsError } = await supabase
+      .from("user_projects")
+      .select("project_id")
+      .eq("user_id", user.id);
+    
+    if (!userProjectsError && userProjectsData) {
+      assignedProjectIds = userProjectsData.map(up => up.project_id);
+    } else if (user?.project_id) {
+      // Fallback to single project_id if user_projects table doesn't exist or has no data
+      assignedProjectIds = [user.project_id];
+    }
+    
     setEditForm({
       name: user.name,
       email: user.email,
       phone: user.phone || '',
       role_id: user.role_id || "",
+      project_ids: assignedProjectIds,
       department: user.department || '',
       status: user.status || 'Active',
     });
@@ -352,7 +450,7 @@ export function Users() {
   // Cancel editing
   function cancelEdit() {
     setEditingUser(null);
-    setEditForm({ name: "", email: "", phone: "", role_id: "", department: "", status: "" });
+    setEditForm({ name: "", email: "", phone: "", role_id: "", project_ids: [], department: "", status: "" });
     setShowEditModal(false);
   }
 
@@ -361,6 +459,9 @@ export function Users() {
     e.preventDefault();
     if (!editingUser) return;
 
+    // Use first project_id for backward compatibility
+    const firstProjectId = editForm.project_ids.length > 0 ? editForm.project_ids[0] : null;
+
     const { data, error } = await supabase
       .from("users")
       .update({
@@ -368,6 +469,7 @@ export function Users() {
         email: editForm.email,
         phone: editForm.phone || null,
         role_id: editForm.role_id || null,
+        project_id: firstProjectId, // Keep for backward compatibility
       })
       .eq("id", editingUser.id)
       .select("id, name, email, phone, role_id, project_id, roles(role_name), projects(name), created_by, created_at")
@@ -377,6 +479,41 @@ export function Users() {
       console.error("Update failed:", error.message);
       showNotification('error', 'Failed to update user. Please try again.');
       return;
+    }
+
+    // Update project assignments
+    // First, delete existing assignments
+    const { error: deleteError } = await supabase
+      .from("user_projects")
+      .delete()
+      .eq("user_id", editingUser.id);
+
+    // Only proceed if delete was successful or table doesn't exist (backward compatibility)
+    if (deleteError && !deleteError.message.includes("does not exist") && !deleteError.message.includes("relation")) {
+      console.warn("Failed to delete existing project assignments:", deleteError.message);
+    }
+
+    // Then, insert new assignments
+    if (editForm.project_ids.length > 0) {
+      const userProjectAssignments = editForm.project_ids.map(projectId => ({
+        user_id: editingUser.id,
+        project_id: projectId,
+      }));
+
+      const { error: userProjectsError } = await supabase
+        .from("user_projects")
+        .insert(userProjectAssignments);
+
+      if (userProjectsError) {
+        console.error("Failed to update project assignments:", userProjectsError.message);
+        // Check if table doesn't exist
+        if (userProjectsError.message.includes("relation") || userProjectsError.message.includes("does not exist")) {
+          showNotification('error', 'User updated but project assignments failed. Please run the database migration (user_projects_migration.sql) to enable multiple project assignments.');
+        } else {
+          showNotification('error', 'User updated but project assignments failed. Please try again.');
+        }
+        return;
+      }
     }
 
     // Transform updated user data
@@ -392,6 +529,9 @@ export function Users() {
     setUsers(users.map((u) => (u.id === editingUser.id ? transformedUser : u)));
     showNotification('success', 'User updated successfully!');
     cancelEdit();
+    
+    // Refresh user list to show updated projects
+    fetchData();
   }
 
   // View user
@@ -441,8 +581,10 @@ export function Users() {
   const getHeaderSubtitle = () => {
     if (selectedUser) {
       const roleName = selectedUser.roles?.role_name || 'No Role';
-      const projectName = selectedUser.projects?.name || 'No Project';
-      return `${selectedUser.name} - ${roleName} - ${projectName}`;
+      const projectNames = selectedUser.user_projects && selectedUser.user_projects.length > 0
+        ? selectedUser.user_projects.map(up => up.projects?.name).filter(Boolean).join(", ")
+        : selectedUser.projects?.name || 'No Project';
+      return `${selectedUser.name} - ${roleName} - ${projectNames}`;
     }
     return undefined;
   };
@@ -638,7 +780,11 @@ export function Users() {
                       </div>
                       <div className="flex items-center space-x-2 text-sm text-slate-600">
                         <Building className="w-4 h-4" />
-                        <span>{user.projects?.name || 'No Project'}</span>
+                        <span>
+                          {user.user_projects && user.user_projects.length > 0
+                            ? user.user_projects.map(up => up.projects?.name).filter(Boolean).join(", ")
+                            : user.projects?.name || 'No Project'}
+                        </span>
                       </div>
                       <div className="flex items-center space-x-2 text-sm text-slate-600">
                         <Calendar className="w-4 h-4" />
@@ -727,7 +873,9 @@ export function Users() {
                             </span>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                            {user.projects?.name || 'No Project'}
+                            {user.user_projects && user.user_projects.length > 0
+                              ? user.user_projects.map(up => up.projects?.name).filter(Boolean).join(", ")
+                              : user.projects?.name || 'No Project'}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(user.status || 'Active')}`}>
@@ -865,20 +1013,35 @@ export function Users() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assign Project</label>
-                <select
-                  value={formData.project_id}
-                  onChange={(e) => setFormData({ ...formData, project_id: e.target.value })}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  required
-                >
-                  <option value="">Select project</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign Projects</label>
+                <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  {projects.length === 0 ? (
+                    <p className="text-sm text-gray-500">No projects available</p>
+                  ) : (
+                    projects.map((p) => (
+                      <label key={p.id} className="flex items-center space-x-2 py-2 cursor-pointer hover:bg-gray-50 rounded px-2">
+                        <input
+                          type="checkbox"
+                          checked={formData.project_ids.includes(p.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setFormData({ ...formData, project_ids: [...formData.project_ids, p.id] });
+                            } else {
+                              setFormData({ ...formData, project_ids: formData.project_ids.filter(id => id !== p.id) });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">{p.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {formData.project_ids.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {formData.project_ids.length} project{formData.project_ids.length !== 1 ? 's' : ''} selected
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
@@ -935,7 +1098,11 @@ export function Users() {
                 <p><strong>Email:</strong> {formData.email}</p>
                 <p><strong>Phone:</strong> {formData.phone || 'Not provided'}</p>
                 <p><strong>Role:</strong> {roles.find(r => r.id === formData.role_id)?.role_name}</p>
-                <p><strong>Project:</strong> {projects.find(p => p.id === formData.project_id)?.name}</p>
+                <p><strong>Projects:</strong> {
+                  formData.project_ids.length > 0 
+                    ? formData.project_ids.map(id => projects.find(p => p.id === id)?.name).filter(Boolean).join(", ")
+                    : "No projects assigned"
+                }</p>
                 <p><strong>Status:</strong> {formData.status}</p>
               </div>
 
@@ -1055,8 +1222,12 @@ export function Users() {
                     <div className="flex items-center space-x-3">
                       <Building className="w-5 h-5 text-slate-400" />
                       <div>
-                        <p className="text-sm text-slate-500">Project</p>
-                        <p className="text-slate-900">{selectedUser.projects?.name || 'No Project Assigned'}</p>
+                        <p className="text-sm text-slate-500">Projects</p>
+                        <p className="text-slate-900">
+                          {selectedUser.user_projects && selectedUser.user_projects.length > 0
+                            ? selectedUser.user_projects.map(up => up.projects?.name).filter(Boolean).join(", ")
+                            : selectedUser.projects?.name || 'No Project Assigned'}
+                        </p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-3">
@@ -1162,6 +1333,37 @@ export function Users() {
                 </select>
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Assign Projects</label>
+                <div className="border border-gray-300 rounded-lg p-3 max-h-48 overflow-y-auto">
+                  {projects.length === 0 ? (
+                    <p className="text-sm text-gray-500">No projects available</p>
+                  ) : (
+                    projects.map((p) => (
+                      <label key={p.id} className="flex items-center space-x-2 py-2 cursor-pointer hover:bg-gray-50 rounded px-2">
+                        <input
+                          type="checkbox"
+                          checked={editForm.project_ids.includes(p.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setEditForm({ ...editForm, project_ids: [...editForm.project_ids, p.id] });
+                            } else {
+                              setEditForm({ ...editForm, project_ids: editForm.project_ids.filter(id => id !== p.id) });
+                            }
+                          }}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-700">{p.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {editForm.project_ids.length > 0 && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {editForm.project_ids.length} project{editForm.project_ids.length !== 1 ? 's' : ''} selected
+                  </p>
+                )}
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
                 <select
                   value={editForm.status}
@@ -1224,7 +1426,11 @@ export function Users() {
                   <p><strong>Name:</strong> {userToDelete.name}</p>
                   <p><strong>Email:</strong> {userToDelete.email}</p>
                   <p><strong>Role:</strong> {userToDelete.roles?.role_name || 'No Role'}</p>
-                  <p><strong>Project:</strong> {userToDelete.projects?.name || 'No Project'}</p>
+                  <p><strong>Projects:</strong> {
+                    userToDelete.user_projects && userToDelete.user_projects.length > 0
+                      ? userToDelete.user_projects.map(up => up.projects?.name).filter(Boolean).join(", ")
+                      : userToDelete.projects?.name || 'No Project'
+                  }</p>
                 </div>
               </div>
             </div>
