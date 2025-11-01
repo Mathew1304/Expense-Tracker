@@ -138,6 +138,7 @@ export function Expenses() {
   const [showPaymentLinksTable, setShowPaymentLinksTable] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsTransaction, setDetailsTransaction] = useState<Transaction | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
@@ -506,6 +507,135 @@ export function Expenses() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setShowExportModal(false);
+  };
+
+  // PDF Export functionality
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 20;
+
+    // Header
+    const addHeader = (title: string) => {
+      doc.setFillColor(41, 128, 185);
+      doc.rect(0, 0, pageWidth, 30, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(20);
+      doc.setFont('helvetica', 'bold');
+      doc.text('EXPENSES REPORT', margin, 20);
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
+      
+      doc.setTextColor(41, 128, 185);
+      doc.setFontSize(16);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, margin, 45);
+      
+      doc.setTextColor(0, 0, 0);
+    };
+
+    // Footer
+    const addFooter = (pageNum: number) => {
+      doc.setFontSize(8);
+      doc.setTextColor(128, 128, 128);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 15, pageHeight - 10);
+      doc.text('Expenses Report', margin, pageHeight - 10);
+    };
+
+    addHeader('TRANSACTIONS');
+
+    if (filteredTransactions.length > 0) {
+      const transactionRows = filteredTransactions.map((t) => {
+        const amount = Number(t.amount || 0);
+        const gstAmount = Number(t.gst_amount || 0);
+        const totalAmount = amount + gstAmount;
+        return [
+          t.type === 'income' ? 'Income' : 'Expense',
+          t.project_name || 'No Project',
+          t.phase_name || 'No Phase',
+          t.category || 'Uncategorized',
+          `Rs ${amount.toLocaleString()}`,
+          `Rs ${gstAmount.toLocaleString()}`,
+          `Rs ${totalAmount.toLocaleString()}`,
+          t.payment_method || 'Not Specified',
+          t.date ? format(new Date(t.date), 'dd/MM/yyyy') : 'No Date',
+        ];
+      });
+
+      const totalExpenses = filteredTransactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+      
+      const totalIncome = filteredTransactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+
+      (doc as any).autoTable({
+        head: [['Type', 'Project', 'Phase', 'Category', 'Amount', 'GST', 'Total', 'Payment Method', 'Date']],
+        body: transactionRows,
+        startY: 55,
+        theme: 'striped',
+        headStyles: {
+          fillColor: [41, 128, 185],
+          textColor: [255, 255, 255],
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 8,
+          cellPadding: 3
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { cellWidth: 20, halign: 'center' },
+          1: { cellWidth: 35 },
+          2: { cellWidth: 30 },
+          3: { cellWidth: 30 },
+          4: { cellWidth: 25, halign: 'right' },
+          5: { cellWidth: 20, halign: 'right' },
+          6: { cellWidth: 25, halign: 'right' },
+          7: { cellWidth: 30, halign: 'center' },
+          8: { cellWidth: 25, halign: 'center' }
+        }
+      });
+
+      const finalY = (doc as any).lastAutoTable.finalY + 10;
+      
+      // Total Expenses
+      doc.setFillColor(231, 76, 60);
+      doc.rect(pageWidth - margin - 150, finalY, 150, 12, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text(`Total Expenses: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 145, finalY + 8);
+      
+      // Total Income
+      doc.setFillColor(46, 204, 113);
+      doc.rect(pageWidth - margin - 150, finalY + 15, 150, 12, 'F');
+      doc.text(`Total Income: Rs ${totalIncome.toLocaleString()}`, pageWidth - margin - 145, finalY + 23);
+      
+      // Net Balance
+      const netBalance = totalIncome - totalExpenses;
+      const balanceColor = netBalance >= 0 ? [46, 204, 113] : [231, 76, 60];
+      doc.setFillColor(balanceColor[0], balanceColor[1], balanceColor[2]);
+      doc.rect(pageWidth - margin - 150, finalY + 30, 150, 12, 'F');
+      doc.text(`Net Balance: Rs ${netBalance.toLocaleString()}`, pageWidth - margin - 145, finalY + 38);
+    } else {
+      doc.setFontSize(12);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No transactions found.', margin, 70);
+    }
+
+    addFooter(1);
+    
+    doc.save(`expenses_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    setShowExportModal(false);
   };
 
   const handleCSVFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -720,7 +850,7 @@ export function Expenses() {
     doc.setFont('helvetica', 'normal');
     doc.text('Email: info@yourbusiness.com | Phone: +91 XXXXX XXXXX', 20, 35);
     doc.text(`GST No: ${paymentLinkData.gstNumber || 'Not Provided'}`, 20, 42);
-
+    
     // Invoice title
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
@@ -1344,7 +1474,7 @@ export function Expenses() {
               )}
               {userRole === "Admin" && (
                 <button
-                  onClick={exportToCSV}
+                  onClick={() => setShowExportModal(true)}
                   className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Download className="mr-2" size={18} /> Export
@@ -2224,6 +2354,61 @@ export function Expenses() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Export Format Selection Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[1000]" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowExportModal(false);
+          }
+        }}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-green-600" />
+                <h3 className="text-xl font-bold text-gray-900">Select Export Format</h3>
+              </div>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 mb-4">
+                Choose the format you want to export your expenses data in:
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={exportToCSV}
+                  className="flex flex-col items-center justify-center p-6 border-2 border-gray-300 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all cursor-pointer group"
+                >
+                  <FileText className="w-12 h-12 text-green-600 mb-3 group-hover:scale-110 transition-transform" />
+                  <span className="text-lg font-semibold text-gray-900">CSV</span>
+                  <span className="text-xs text-gray-500 mt-1">Spreadsheet format</span>
+                </button>
+                <button
+                  onClick={exportToPDF}
+                  className="flex flex-col items-center justify-center p-6 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-all cursor-pointer group"
+                >
+                  <FileText className="w-12 h-12 text-red-600 mb-3 group-hover:scale-110 transition-transform" />
+                  <span className="text-lg font-semibold text-gray-900">PDF</span>
+                  <span className="text-xs text-gray-500 mt-1">Document format</span>
+                </button>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
