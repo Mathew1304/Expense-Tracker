@@ -133,11 +133,14 @@ export function Expenses() {
   const [selectedProject, setSelectedProject] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [dateFilterPreset, setDateFilterPreset] = useState<'lastDay' | 'last7Days' | 'lastMonth' | 'custom' | null>(null);
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showPaymentLinkForm, setShowPaymentLinkForm] = useState(false);
   const [showPaymentLinksTable, setShowPaymentLinksTable] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [detailsTransaction, setDetailsTransaction] = useState<Transaction | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
@@ -481,7 +484,6 @@ export function Expenses() {
     }
   }
 
-  // CSV Export functionality with fixed date formatting
   const exportToCSV = () => {
     const csvData = filteredTransactions.map(t => ({
       'Type': t.type === 'income' ? 'Income' : 'Expense',
@@ -506,6 +508,171 @@ export function Expenses() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    setShowExportModal(false);
+  };
+
+  const exportToPDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.width;
+    const pageHeight = doc.internal.pageSize.height;
+    const margin = 20;
+    const accentColor = [230, 126, 34];
+    let pageNum = 1;
+
+    const addPageHeader = () => {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(0, 0, pageWidth, 12, 'F');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('FirstMeta Infrastructure Solutions — Project Finance', pageWidth / 2, 8, { align: 'center' });
+      doc.setDrawColor(230, 126, 34);
+      doc.setLineWidth(0.5);
+      doc.line(0, 12, pageWidth, 12);
+    };
+
+    const addPageFooter = () => {
+      doc.setDrawColor(230, 126, 34);
+      doc.setLineWidth(0.5);
+      doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Confidential | Internal Use Only', margin, pageHeight - 8);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 10, pageHeight - 8, { align: 'right' });
+    };
+
+    // Cover Page
+    doc.setFillColor(30, 30, 30);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(32);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${selectedProject || 'Project'} — FirstMeta  - Expense Report`, pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    const dateRange = fromDate && toDate ?
+      `${format(new Date(fromDate), 'MMMM dd')} – ${format(new Date(toDate), 'MMMM dd yyyy')}` :
+      `As of ${format(new Date(), 'MMMM dd, yyyy')}`;
+    doc.text(`Reporting Period: ${dateRange}`, pageWidth / 2, pageHeight / 2, { align: 'center' });
+
+    doc.setFillColor(...accentColor);
+    doc.rect(pageWidth / 2 - 80, pageHeight / 2 + 10, 160, 2, 'F');
+
+    pageNum = 2;
+    doc.addPage();
+
+    addPageHeader();
+
+    const totalExpenses = filteredTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+
+    const totalIncome = filteredTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+
+    const netBalance = totalIncome - totalExpenses;
+
+    // Executive Summary
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text('Executive Summary', margin, 25);
+
+    // Summary boxes
+    const boxWidth = (pageWidth - margin * 2 - 4) / 3;
+    const boxHeight = 30;
+    const boxY = 35;
+
+    [
+      { label: 'Total Expenses', value: `Rs ${totalExpenses.toLocaleString()}` },
+      { label: 'Total Income', value: `Rs ${totalIncome.toLocaleString()}` },
+      { label: 'Net Balance', value: `Rs ${netBalance.toLocaleString()}` }
+    ].forEach((item, index) => {
+      const x = margin + (index * (boxWidth + 2));
+      doc.setDrawColor(100, 100, 100);
+      doc.rect(x, boxY, boxWidth, boxHeight, 'S');
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 100, 100);
+      doc.text(item.label, x + 2, boxY + 8);
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(item.value, x + 2, boxY + 20);
+    });
+
+    // Detailed Transactions
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text('Detailed Transactions', margin, 75);
+
+    if (filteredTransactions.length > 0) {
+      const transactionRows = filteredTransactions.map((t) => {
+        const amount = Number(t.amount || 0);
+        const gstAmount = Number(t.gst_amount || 0);
+        const totalAmount = amount + gstAmount;
+        return [
+          t.type === 'income' ? 'Income' : 'Expense',
+          t.project_name || 'No Project',
+          t.phase_name || 'No Phase',
+          t.category || 'Uncategorized',
+          `Rs ${amount.toLocaleString()}`,
+          `Rs ${gstAmount.toLocaleString()}`,
+          `Rs ${totalAmount.toLocaleString()}`,
+          t.payment_method || 'Not Specified',
+          t.date ? format(new Date(t.date), 'dd/MM/yyyy') : 'No Date',
+        ];
+      });
+
+      (doc as any).autoTable({
+        head: [['Type', 'Project', 'Phase', 'Category', 'Amount', 'GST', 'Total', 'Method', 'Date']],
+        body: transactionRows,
+        startY: 82,
+        theme: 'grid',
+        headStyles: {
+          fillColor: [220, 220, 220],
+          textColor: [30, 30, 30],
+          fontSize: 9,
+          fontStyle: 'bold',
+          halign: 'center'
+        },
+        bodyStyles: {
+          fontSize: 8,
+          cellPadding: 2,
+          textColor: [30, 30, 30]
+        },
+        alternateRowStyles: {
+          fillColor: [250, 250, 250]
+        },
+        columnStyles: {
+          0: { cellWidth: 15, halign: 'center' },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 28 },
+          3: { cellWidth: 28 },
+          4: { cellWidth: 20, halign: 'right' },
+          5: { cellWidth: 15, halign: 'right' },
+          6: { cellWidth: 20, halign: 'right' },
+          7: { cellWidth: 20, halign: 'center' },
+          8: { cellWidth: 18, halign: 'center' }
+        },
+        didDrawPage: (data: any) => {
+          addPageFooter();
+        }
+      });
+    } else {
+      doc.setFontSize(11);
+      doc.setTextColor(128, 128, 128);
+      doc.text('No transactions found.', margin, 90);
+      addPageFooter();
+    }
+
+    doc.save(`expenses_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
+    setShowExportModal(false);
   };
 
   const handleCSVFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1128,9 +1295,37 @@ export function Expenses() {
   };
 
   // Clear date filters
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const applyDateFilterPreset = (preset: 'lastDay' | 'last7Days' | 'lastMonth') => {
+    const today = new Date();
+    const from = new Date();
+
+    if (preset === 'lastDay') {
+      from.setDate(today.getDate() - 1);
+    } else if (preset === 'last7Days') {
+      from.setDate(today.getDate() - 7);
+    } else if (preset === 'lastMonth') {
+      from.setMonth(today.getMonth() - 1);
+    }
+
+    setFromDate(formatDateForInput(from));
+    setToDate(formatDateForInput(today));
+    setDateFilterPreset(preset);
+    setShowCustomDatePicker(false);
+    setCurrentPage(1);
+  };
+
   const clearDateFilters = () => {
     setFromDate("");
     setToDate("");
+    setDateFilterPreset(null);
+    setShowCustomDatePicker(false);
     setCurrentPage(1);
   };
 
@@ -1344,7 +1539,7 @@ export function Expenses() {
               )}
               {userRole === "Admin" && (
                 <button
-                  onClick={exportToCSV}
+                  onClick={() => setShowExportModal(true)}
                   className="flex items-center bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors"
                 >
                   <Download className="mr-2" size={18} /> Export
@@ -1437,37 +1632,89 @@ export function Expenses() {
               ))}
             </select>
 
-            {/* Date Range Filters */}
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-gray-400" />
-              <span className="text-sm text-gray-600">From:</span>
-              <input
-                type="date"
-                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              <span className="text-sm text-gray-600">To:</span>
-              <input
-                type="date"
-                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              {(fromDate || toDate) && (
+            {/* Date Range Filters with Presets */}
+            <div className="space-y-3">
+              {/* Preset Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar size={18} className="text-gray-400" />
                 <button
-                  onClick={clearDateFilters}
-                  className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
-                  title="Clear date filters"
+                  onClick={() => applyDateFilterPreset('lastDay')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'lastDay'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
                 >
-                  <X size={18} />
+                  Last Day
                 </button>
+                <button
+                  onClick={() => applyDateFilterPreset('last7Days')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'last7Days'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => applyDateFilterPreset('lastMonth')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'lastMonth'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Last Month
+                </button>
+                <button
+                  onClick={() => {
+                    setDateFilterPreset('custom');
+                    setShowCustomDatePicker(true);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'custom'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Custom Range
+                </button>
+                {(fromDate || toDate) && (
+                  <button
+                    onClick={clearDateFilters}
+                    className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                    title="Clear date filters"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
+
+              {/* Custom Date Range Input */}
+              {showCustomDatePicker && dateFilterPreset === 'custom' && (
+                <div className="flex items-center gap-2 bg-blue-50 p-3 rounded-lg">
+                  <span className="text-sm text-gray-600">From:</span>
+                  <input
+                    type="date"
+                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                  <span className="text-sm text-gray-600">To:</span>
+                  <input
+                    type="date"
+                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={toDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
               )}
             </div>
           </div>
@@ -2224,6 +2471,61 @@ export function Expenses() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Export Format Selection Modal */}
+      {showExportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[1000]" onClick={(e) => {
+          if (e.target === e.currentTarget) {
+            setShowExportModal(false);
+          }
+        }}>
+          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-2">
+                <Download className="w-5 h-5 text-green-600" />
+                <h3 className="text-xl font-bold text-gray-900">Select Export Format</h3>
+              </div>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600 mb-4">
+                Choose the format you want to export your expenses data in:
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={exportToCSV}
+                  className="flex flex-col items-center justify-center p-6 border-2 border-gray-300 rounded-lg hover:border-green-500 hover:bg-green-50 transition-all cursor-pointer group"
+                >
+                  <FileText className="w-12 h-12 text-green-600 mb-3 group-hover:scale-110 transition-transform" />
+                  <span className="text-lg font-semibold text-gray-900">CSV</span>
+                  <span className="text-xs text-gray-500 mt-1">Spreadsheet format</span>
+                </button>
+                <button
+                  onClick={exportToPDF}
+                  className="flex flex-col items-center justify-center p-6 border-2 border-gray-300 rounded-lg hover:border-red-500 hover:bg-red-50 transition-all cursor-pointer group"
+                >
+                  <FileText className="w-12 h-12 text-red-600 mb-3 group-hover:scale-110 transition-transform" />
+                  <span className="text-lg font-semibold text-gray-900">PDF</span>
+                  <span className="text-xs text-gray-500 mt-1">Document format</span>
+                </button>
+              </div>
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <button
+                  onClick={() => setShowExportModal(false)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
