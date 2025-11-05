@@ -102,6 +102,8 @@ export function Settings() {
   const [smsTestPhone, setSmsTestPhone] = useState('');
   const [smsTestLoading, setSmsTestLoading] = useState(false);
   const [smsTestResult, setSmsTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -110,6 +112,12 @@ export function Settings() {
       fetchUserTokens();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (profile?.logo_url) {
+      setLogoPreview(profile.logo_url);
+    }
+  }, [profile?.logo_url]);
 
   const fetchProfile = async () => {
     try {
@@ -260,6 +268,104 @@ export function Settings() {
     }
   };
 
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) {
+      setSuccessMessage('Please select a file.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setSuccessMessage('Please upload an image file (PNG, JPG, etc.)');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSuccessMessage('File size must be less than 5MB');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      const fileName = `${user.id}-${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('company-logos')
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('company-logos')
+        .getPublicUrl(fileName);
+
+      const logoUrl = data.publicUrl;
+
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          logo_url: logoUrl,
+          logo_name: file.name,
+          logo_uploaded_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile(prev => prev ? {
+        ...prev,
+        logo_url: logoUrl,
+        logo_name: file.name
+      } : null);
+
+      setLogoPreview(logoUrl);
+      setSuccessMessage('Logo uploaded successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      setSuccessMessage(`Failed to upload logo: ${error.message}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!user?.id || !profile?.logo_url) return;
+
+    setLogoUploading(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          logo_url: null,
+          logo_name: null,
+          logo_uploaded_at: null
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile(prev => prev ? {
+        ...prev,
+        logo_url: null,
+        logo_name: null
+      } : null);
+
+      setLogoPreview(null);
+      setSuccessMessage('Logo removed successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error: any) {
+      console.error('Error removing logo:', error);
+      setSuccessMessage(`Failed to remove logo: ${error.message}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
   const handleTestSMS = async () => {
     if (!smsTestPhone.trim()) {
       setSmsTestResult({ success: false, message: 'Please enter a phone number' });
@@ -273,8 +379,8 @@ export function Settings() {
       const result = await testSMSService(smsTestPhone);
       setSmsTestResult({
         success: result.success,
-        message: result.success 
-          ? 'Test SMS sent successfully! Check your phone.' 
+        message: result.success
+          ? 'Test SMS sent successfully! Check your phone.'
           : `Failed to send SMS: ${result.error}`
       });
     } catch (error) {
@@ -289,6 +395,7 @@ export function Settings() {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'branding', label: 'Branding', icon: Building },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -508,6 +615,92 @@ export function Settings() {
                       <p className="font-medium text-gray-900">
                         {profile?.created_at ? format(new Date(profile.created_at), 'MMM dd, yyyy') : 'N/A'}
                       </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'branding' && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Company Branding</h2>
+
+                <div className="space-y-6">
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Logo</h3>
+                    <p className="text-sm text-gray-600 mb-6">Upload your company logo to be displayed on exported reports and documents.</p>
+
+                    <div className="space-y-4">
+                      {logoPreview ? (
+                        <div className="relative">
+                          <div className="flex items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                            <div className="text-center">
+                              <img
+                                src={logoPreview}
+                                alt="Company Logo"
+                                className="h-32 object-contain mx-auto mb-4"
+                              />
+                              <p className="text-sm text-gray-600 mb-2">Current Logo</p>
+                              <p className="text-xs text-gray-500">{profile?.logo_name}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleRemoveLogo}
+                            disabled={logoUploading}
+                            className="mt-3 w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                          >
+                            {logoUploading ? 'Removing...' : 'Remove Logo'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors">
+                          <Camera className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                          <p className="text-sm text-gray-600 mb-2">No logo uploaded yet</p>
+                          <p className="text-xs text-gray-500 mb-4">Supported formats: PNG, JPG, SVG (Max 5MB)</p>
+                          <label className="inline-block">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              disabled={logoUploading}
+                              className="hidden"
+                            />
+                            <span className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 cursor-pointer inline-block disabled:opacity-50 transition-colors">
+                              {logoUploading ? 'Uploading...' : 'Choose Logo'}
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                      {logoPreview && (
+                        <label className="block">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                            disabled={logoUploading}
+                            className="hidden"
+                          />
+                          <span className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 cursor-pointer disabled:opacity-50 transition-colors">
+                            {logoUploading ? 'Uploading...' : 'Change Logo'}
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 border border-blue-200 bg-blue-50 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <Building className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-semibold text-blue-900">Logo Usage</h3>
+                        <ul className="text-sm text-blue-800 mt-2 space-y-1">
+                          <li>• Logo appears on the first page of exported expense reports</li>
+                          <li>• Logo is centered and scaled automatically</li>
+                          <li>• Recommended size: 300x300px or higher</li>
+                          <li>• Best results with PNG format and transparent background</li>
+                        </ul>
+                      </div>
                     </div>
                   </div>
                 </div>

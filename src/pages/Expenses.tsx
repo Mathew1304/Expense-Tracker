@@ -511,7 +511,7 @@ export function Expenses() {
     setShowExportModal(false);
   };
 
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
@@ -540,24 +540,59 @@ export function Expenses() {
       doc.text(`Page ${pageNum}`, pageWidth - margin - 10, pageHeight - 8, { align: 'right' });
     };
 
+    let logoAdded = false;
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('logo_url')
+        .eq('id', user?.id)
+        .single();
+
+      if (profile?.logo_url) {
+        logoAdded = true;
+      }
+    } catch (error) {
+      console.log('Logo not available');
+    }
+
     // Cover Page
     doc.setFillColor(30, 30, 30);
     doc.rect(0, 0, pageWidth, pageHeight, 'F');
 
+    let currentY = pageHeight / 3;
+
+    if (logoAdded) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('logo_url')
+          .eq('id', user?.id)
+          .single();
+
+        if (profile?.logo_url) {
+          doc.addImage(profile.logo_url, 'PNG', pageWidth / 2 - 30, currentY - 20, 60, 60);
+          currentY += 50;
+        }
+      } catch (error) {
+        console.log('Error loading logo');
+      }
+    }
+
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(32);
     doc.setFont('helvetica', 'bold');
-    doc.text(`${selectedProject || 'Project'} — FirstMeta  - Expense Report`, pageWidth / 2, pageHeight / 2 - 20, { align: 'center' });
+    doc.text(`${selectedProject || 'Project'} — Expense Report`, pageWidth / 2, currentY, { align: 'center' });
 
     doc.setFontSize(14);
     doc.setFont('helvetica', 'normal');
     const dateRange = fromDate && toDate ?
       `${format(new Date(fromDate), 'MMMM dd')} – ${format(new Date(toDate), 'MMMM dd yyyy')}` :
       `As of ${format(new Date(), 'MMMM dd, yyyy')}`;
-    doc.text(`Reporting Period: ${dateRange}`, pageWidth / 2, pageHeight / 2, { align: 'center' });
+    doc.text(`Reporting Period: ${dateRange}`, pageWidth / 2, currentY + 20, { align: 'center' });
 
     doc.setFillColor(...accentColor);
-    doc.rect(pageWidth / 2 - 80, pageHeight / 2 + 10, 160, 2, 'F');
+    doc.rect(pageWidth / 2 - 80, currentY + 35, 160, 2, 'F');
 
     pageNum = 2;
     doc.addPage();
