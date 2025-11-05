@@ -133,6 +133,8 @@ export function Expenses() {
   const [selectedProject, setSelectedProject] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const [dateFilterPreset, setDateFilterPreset] = useState<'lastDay' | 'last7Days' | 'lastMonth' | 'custom' | null>(null);
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [showPaymentLinkForm, setShowPaymentLinkForm] = useState(false);
   const [showPaymentLinksTable, setShowPaymentLinksTable] = useState(false);
@@ -482,7 +484,6 @@ export function Expenses() {
     }
   }
 
-  // CSV Export functionality with fixed date formatting
   const exportToCSV = () => {
     const csvData = filteredTransactions.map(t => ({
       'Type': t.type === 'income' ? 'Income' : 'Expense',
@@ -510,42 +511,140 @@ export function Expenses() {
     setShowExportModal(false);
   };
 
-  // PDF Export functionality
-  const exportToPDF = () => {
+  const exportToPDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.width;
     const pageHeight = doc.internal.pageSize.height;
     const margin = 20;
+    const accentColor = [230, 126, 34];
+    let pageNum = 1;
 
-    // Header
-    const addHeader = (title: string) => {
-      doc.setFillColor(41, 128, 185);
-      doc.rect(0, 0, pageWidth, 30, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(20);
-      doc.setFont('helvetica', 'bold');
-      doc.text('EXPENSES REPORT', margin, 20);
-      doc.setFontSize(12);
-      doc.setFont('helvetica', 'normal');
-      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
-      
-      doc.setTextColor(41, 128, 185);
-      doc.setFontSize(16);
-      doc.setFont('helvetica', 'bold');
-      doc.text(title, margin, 45);
-      
-      doc.setTextColor(0, 0, 0);
+    const addPageHeader = () => {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(0, 0, pageWidth, 12, 'F');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 100, 100);
+      doc.text('FirstMeta Infrastructure Solutions — Project Finance', pageWidth / 2, 8, { align: 'center' });
+      doc.setDrawColor(230, 126, 34);
+      doc.setLineWidth(0.5);
+      doc.line(0, 12, pageWidth, 12);
     };
 
-    // Footer
-    const addFooter = (pageNum: number) => {
+    const addPageFooter = () => {
+      doc.setDrawColor(230, 126, 34);
+      doc.setLineWidth(0.5);
+      doc.line(margin, pageHeight - 15, pageWidth - margin, pageHeight - 15);
       doc.setFontSize(8);
-      doc.setTextColor(128, 128, 128);
-      doc.text(`Page ${pageNum}`, pageWidth - margin - 15, pageHeight - 10);
-      doc.text('Expenses Report', margin, pageHeight - 10);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Confidential | Internal Use Only', margin, pageHeight - 8);
+      doc.text(`Page ${pageNum}`, pageWidth - margin - 10, pageHeight - 8, { align: 'right' });
     };
 
-    addHeader('TRANSACTIONS');
+    let logoAdded = false;
+
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('logo_url')
+        .eq('id', user?.id)
+        .single();
+
+      if (profile?.logo_url) {
+        logoAdded = true;
+      }
+    } catch (error) {
+      console.log('Logo not available');
+    }
+
+    // Cover Page
+    doc.setFillColor(30, 30, 30);
+    doc.rect(0, 0, pageWidth, pageHeight, 'F');
+
+    let currentY = pageHeight / 3;
+
+    if (logoAdded) {
+      try {
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('logo_url')
+          .eq('id', user?.id)
+          .single();
+
+        if (profile?.logo_url) {
+          doc.addImage(profile.logo_url, 'PNG', pageWidth / 2 - 30, currentY - 20, 60, 60);
+          currentY += 50;
+        }
+      } catch (error) {
+        console.log('Error loading logo');
+      }
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(32);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`${selectedProject || 'Project'} — Expense Report`, pageWidth / 2, currentY, { align: 'center' });
+
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'normal');
+    const dateRange = fromDate && toDate ?
+      `${format(new Date(fromDate), 'MMMM dd')} – ${format(new Date(toDate), 'MMMM dd yyyy')}` :
+      `As of ${format(new Date(), 'MMMM dd, yyyy')}`;
+    doc.text(`Reporting Period: ${dateRange}`, pageWidth / 2, currentY + 20, { align: 'center' });
+
+    doc.setFillColor(...accentColor);
+    doc.rect(pageWidth / 2 - 80, currentY + 35, 160, 2, 'F');
+
+    pageNum = 2;
+    doc.addPage();
+
+    addPageHeader();
+
+    const totalExpenses = filteredTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+
+    const totalIncome = filteredTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
+
+    const netBalance = totalIncome - totalExpenses;
+
+    // Executive Summary
+    doc.setFontSize(16);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text('Executive Summary', margin, 25);
+
+    // Summary boxes
+    const boxWidth = (pageWidth - margin * 2 - 4) / 3;
+    const boxHeight = 30;
+    const boxY = 35;
+
+    [
+      { label: 'Total Expenses', value: `Rs ${totalExpenses.toLocaleString()}` },
+      { label: 'Total Income', value: `Rs ${totalIncome.toLocaleString()}` },
+      { label: 'Net Balance', value: `Rs ${netBalance.toLocaleString()}` }
+    ].forEach((item, index) => {
+      const x = margin + (index * (boxWidth + 2));
+      doc.setDrawColor(100, 100, 100);
+      doc.rect(x, boxY, boxWidth, boxHeight, 'S');
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(100, 100, 100);
+      doc.text(item.label, x + 2, boxY + 8);
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(item.value, x + 2, boxY + 20);
+    });
+
+    // Detailed Transactions
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text('Detailed Transactions', margin, 75);
 
     if (filteredTransactions.length > 0) {
       const transactionRows = filteredTransactions.map((t) => {
@@ -565,75 +664,48 @@ export function Expenses() {
         ];
       });
 
-      const totalExpenses = filteredTransactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
-      
-      const totalIncome = filteredTransactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + Number(t.amount || 0) + Number(t.gst_amount || 0), 0);
-
       (doc as any).autoTable({
-        head: [['Type', 'Project', 'Phase', 'Category', 'Amount', 'GST', 'Total', 'Payment Method', 'Date']],
+        head: [['Type', 'Project', 'Phase', 'Category', 'Amount', 'GST', 'Total', 'Method', 'Date']],
         body: transactionRows,
-        startY: 55,
-        theme: 'striped',
+        startY: 82,
+        theme: 'grid',
         headStyles: {
-          fillColor: [41, 128, 185],
-          textColor: [255, 255, 255],
+          fillColor: [220, 220, 220],
+          textColor: [30, 30, 30],
           fontSize: 9,
           fontStyle: 'bold',
           halign: 'center'
         },
         bodyStyles: {
           fontSize: 8,
-          cellPadding: 3
+          cellPadding: 2,
+          textColor: [30, 30, 30]
         },
         alternateRowStyles: {
-          fillColor: [245, 245, 245]
+          fillColor: [250, 250, 250]
         },
         columnStyles: {
-          0: { cellWidth: 20, halign: 'center' },
-          1: { cellWidth: 35 },
-          2: { cellWidth: 30 },
-          3: { cellWidth: 30 },
-          4: { cellWidth: 25, halign: 'right' },
-          5: { cellWidth: 20, halign: 'right' },
-          6: { cellWidth: 25, halign: 'right' },
-          7: { cellWidth: 30, halign: 'center' },
-          8: { cellWidth: 25, halign: 'center' }
+          0: { cellWidth: 15, halign: 'center' },
+          1: { cellWidth: 28 },
+          2: { cellWidth: 28 },
+          3: { cellWidth: 28 },
+          4: { cellWidth: 20, halign: 'right' },
+          5: { cellWidth: 15, halign: 'right' },
+          6: { cellWidth: 20, halign: 'right' },
+          7: { cellWidth: 20, halign: 'center' },
+          8: { cellWidth: 18, halign: 'center' }
+        },
+        didDrawPage: (data: any) => {
+          addPageFooter();
         }
       });
-
-      const finalY = (doc as any).lastAutoTable.finalY + 10;
-      
-      // Total Expenses
-      doc.setFillColor(231, 76, 60);
-      doc.rect(pageWidth - margin - 150, finalY, 150, 12, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text(`Total Expenses: Rs ${totalExpenses.toLocaleString()}`, pageWidth - margin - 145, finalY + 8);
-      
-      // Total Income
-      doc.setFillColor(46, 204, 113);
-      doc.rect(pageWidth - margin - 150, finalY + 15, 150, 12, 'F');
-      doc.text(`Total Income: Rs ${totalIncome.toLocaleString()}`, pageWidth - margin - 145, finalY + 23);
-      
-      // Net Balance
-      const netBalance = totalIncome - totalExpenses;
-      const balanceColor = netBalance >= 0 ? [46, 204, 113] : [231, 76, 60];
-      doc.setFillColor(balanceColor[0], balanceColor[1], balanceColor[2]);
-      doc.rect(pageWidth - margin - 150, finalY + 30, 150, 12, 'F');
-      doc.text(`Net Balance: Rs ${netBalance.toLocaleString()}`, pageWidth - margin - 145, finalY + 38);
     } else {
-      doc.setFontSize(12);
+      doc.setFontSize(11);
       doc.setTextColor(128, 128, 128);
-      doc.text('No transactions found.', margin, 70);
+      doc.text('No transactions found.', margin, 90);
+      addPageFooter();
     }
 
-    addFooter(1);
-    
     doc.save(`expenses_${format(new Date(), 'dd-MM-yyyy')}.pdf`);
     setShowExportModal(false);
   };
@@ -850,7 +922,7 @@ export function Expenses() {
     doc.setFont('helvetica', 'normal');
     doc.text('Email: info@yourbusiness.com | Phone: +91 XXXXX XXXXX', 20, 35);
     doc.text(`GST No: ${paymentLinkData.gstNumber || 'Not Provided'}`, 20, 42);
-    
+
     // Invoice title
     doc.setFontSize(18);
     doc.setFont('helvetica', 'bold');
@@ -1258,9 +1330,37 @@ export function Expenses() {
   };
 
   // Clear date filters
+  const formatDateForInput = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const applyDateFilterPreset = (preset: 'lastDay' | 'last7Days' | 'lastMonth') => {
+    const today = new Date();
+    const from = new Date();
+
+    if (preset === 'lastDay') {
+      from.setDate(today.getDate() - 1);
+    } else if (preset === 'last7Days') {
+      from.setDate(today.getDate() - 7);
+    } else if (preset === 'lastMonth') {
+      from.setMonth(today.getMonth() - 1);
+    }
+
+    setFromDate(formatDateForInput(from));
+    setToDate(formatDateForInput(today));
+    setDateFilterPreset(preset);
+    setShowCustomDatePicker(false);
+    setCurrentPage(1);
+  };
+
   const clearDateFilters = () => {
     setFromDate("");
     setToDate("");
+    setDateFilterPreset(null);
+    setShowCustomDatePicker(false);
     setCurrentPage(1);
   };
 
@@ -1567,37 +1667,89 @@ export function Expenses() {
               ))}
             </select>
 
-            {/* Date Range Filters */}
-            <div className="flex items-center gap-2">
-              <Calendar size={18} className="text-gray-400" />
-              <span className="text-sm text-gray-600">From:</span>
-              <input
-                type="date"
-                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              <span className="text-sm text-gray-600">To:</span>
-              <input
-                type="date"
-                className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value);
-                  setCurrentPage(1);
-                }}
-              />
-              {(fromDate || toDate) && (
+            {/* Date Range Filters with Presets */}
+            <div className="space-y-3">
+              {/* Preset Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Calendar size={18} className="text-gray-400" />
                 <button
-                  onClick={clearDateFilters}
-                  className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
-                  title="Clear date filters"
+                  onClick={() => applyDateFilterPreset('lastDay')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'lastDay'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
                 >
-                  <X size={18} />
+                  Last Day
                 </button>
+                <button
+                  onClick={() => applyDateFilterPreset('last7Days')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'last7Days'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => applyDateFilterPreset('lastMonth')}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'lastMonth'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Last Month
+                </button>
+                <button
+                  onClick={() => {
+                    setDateFilterPreset('custom');
+                    setShowCustomDatePicker(true);
+                  }}
+                  className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
+                    dateFilterPreset === 'custom'
+                      ? 'bg-blue-600 text-white'
+                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                  }`}
+                >
+                  Custom Range
+                </button>
+                {(fromDate || toDate) && (
+                  <button
+                    onClick={clearDateFilters}
+                    className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
+                    title="Clear date filters"
+                  >
+                    <X size={18} />
+                  </button>
+                )}
+              </div>
+
+              {/* Custom Date Range Input */}
+              {showCustomDatePicker && dateFilterPreset === 'custom' && (
+                <div className="flex items-center gap-2 bg-blue-50 p-3 rounded-lg">
+                  <span className="text-sm text-gray-600">From:</span>
+                  <input
+                    type="date"
+                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={fromDate}
+                    onChange={(e) => {
+                      setFromDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                  <span className="text-sm text-gray-600">To:</span>
+                  <input
+                    type="date"
+                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    value={toDate}
+                    onChange={(e) => {
+                      setToDate(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                  />
+                </div>
               )}
             </div>
           </div>

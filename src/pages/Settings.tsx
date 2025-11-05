@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  User, 
-  Shield, 
-  Bell, 
-  Palette, 
-  Settings as SettingsIcon, 
+import {
+  User,
+  Shield,
+  Bell,
+  Palette,
+  Settings as SettingsIcon,
   CreditCard,
   Save,
   Eye,
@@ -20,7 +20,8 @@ import {
   Calendar,
   Crown,
   Coins,
-  AlertCircle
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react';
 import { Layout } from '../components/Layout/Layout';
 import { supabase } from '../lib/supabase';
@@ -45,6 +46,9 @@ interface Profile {
   subscription_start: string;
   subscription_end: string;
   created_at: string;
+  logo_url?: string;
+  logo_name?: string;
+  logo_uploaded_at?: string;
 }
 
 interface Plan {
@@ -101,6 +105,8 @@ export function Settings() {
   const [smsTestPhone, setSmsTestPhone] = useState('');
   const [smsTestLoading, setSmsTestLoading] = useState(false);
   const [smsTestResult, setSmsTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -109,6 +115,12 @@ export function Settings() {
       fetchUserTokens();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (profile?.logo_url) {
+      setLogoPreview(profile.logo_url);
+    }
+  }, [profile?.logo_url]);
 
   const fetchProfile = async () => {
     try {
@@ -192,6 +204,18 @@ export function Settings() {
   };
 
   const handlePasswordChange = async () => {
+    if (!passwordData.currentPassword.trim()) {
+      setSuccessMessage('Please enter your current password.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (!passwordData.newPassword.trim()) {
+      setSuccessMessage('Please enter a new password.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
     if (passwordData.newPassword !== passwordData.confirmPassword) {
       setSuccessMessage('New passwords do not match.');
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -204,13 +228,32 @@ export function Settings() {
       return;
     }
 
+    if (passwordData.currentPassword === passwordData.newPassword) {
+      setSuccessMessage('New password must be different from current password.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
     setSaving(true);
     try {
-      const { error } = await supabase.auth.updateUser({
+      if (!user?.email) {
+        throw new Error('User email not found');
+      }
+
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: passwordData.currentPassword
+      });
+
+      if (signInError) {
+        throw new Error('Current password is incorrect.');
+      }
+
+      const { error: updateError } = await supabase.auth.updateUser({
         password: passwordData.newPassword
       });
 
-      if (error) throw error;
+      if (updateError) throw updateError;
 
       setPasswordData({
         currentPassword: '',
@@ -219,12 +262,131 @@ export function Settings() {
       });
       setSuccessMessage('Password updated successfully!');
       setTimeout(() => setSuccessMessage(null), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating password:', error);
-      setSuccessMessage('Failed to update password. Please try again.');
+      setSuccessMessage(error.message || 'Failed to update password. Please try again.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user?.id) {
+      setSuccessMessage('Please select a file.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setSuccessMessage('Please upload an image file (PNG, JPG, etc.)');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setSuccessMessage('File size must be less than 5MB');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    setLogoUploading(true);
+    try {
+      // Debug: Log user info
+      console.log('Current user ID:', user.id);
+      console.log('Profile ID:', profile?.id);
+      
+      // Simple filename without nested folders
+      const fileExtension = file.name.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExtension}`;
+      console.log('Uploading to:', fileName);
+      
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('company-logos')
+        .upload(fileName, file, { upsert: true });
+      
+      console.log('Upload result:', { uploadData, uploadError });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage
+        .from('company-logos')
+        .getPublicUrl(fileName);
+
+      const logoUrl = data.publicUrl;
+
+      // Debug: Log update attempt
+      console.log('Attempting to update profile with:', {
+        logo_url: logoUrl,
+        logo_name: file.name,
+        user_id: user.id
+      });
+
+      const { data: updateData, error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          logo_url: logoUrl,
+          logo_name: file.name,
+          logo_uploaded_at: new Date().toISOString()
+        })
+        .eq('id', user.id)
+        .select();
+      
+      // Debug: Log result
+      console.log('Update result:', { updateData, updateError });
+
+      if (updateError) throw updateError;
+
+      setProfile(prev => prev ? {
+        ...prev,
+        logo_url: logoUrl,
+        logo_name: file.name
+      } : null);
+
+      setLogoPreview(logoUrl);
+      setSuccessMessage('Logo uploaded successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error: any) {
+      console.error('Error uploading logo:', error);
+      setSuccessMessage(`Failed to upload logo: ${error.message}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!user?.id || !profile?.logo_url) return;
+
+    setLogoUploading(true);
+    try {
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({
+          logo_url: null,
+          logo_name: null,
+          logo_uploaded_at: null
+        })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      setProfile(prev => prev ? {
+        ...prev,
+        logo_url: undefined,
+        logo_name: undefined
+      } : null);
+
+      setLogoPreview(null);
+      setSuccessMessage('Logo removed successfully!');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error: any) {
+      console.error('Error removing logo:', error);
+      setSuccessMessage(`Failed to remove logo: ${error.message}`);
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } finally {
+      setLogoUploading(false);
     }
   };
 
@@ -241,11 +403,11 @@ export function Settings() {
       const result = await testSMSService(smsTestPhone);
       setSmsTestResult({
         success: result.success,
-        message: result.success 
-          ? 'Test SMS sent successfully! Check your phone.' 
+        message: result.success
+          ? 'Test SMS sent successfully! Check your phone.'
           : `Failed to send SMS: ${result.error}`
       });
-    } catch (error) {
+    } catch (error: any) {
       setSmsTestResult({
         success: false,
         message: `Error: ${error.message}`
@@ -257,6 +419,7 @@ export function Settings() {
 
   const tabs = [
     { id: 'profile', label: 'Profile', icon: User },
+    { id: 'branding', label: 'Branding', icon: Building },
     { id: 'security', label: 'Security', icon: Shield },
     { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'appearance', label: 'Appearance', icon: Palette },
@@ -482,13 +645,110 @@ export function Settings() {
               </div>
             )}
 
+            {activeTab === 'branding' && (
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-6">Company Branding</h2>
+
+                <div className="space-y-6">
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Company Logo</h3>
+                    <p className="text-sm text-gray-600 mb-6">Upload your company logo to be displayed on exported reports and documents.</p>
+
+                    <div className="space-y-4">
+                      {logoPreview ? (
+                        <div className="relative">
+                          <div className="flex items-center justify-center p-6 border-2 border-dashed border-gray-300 rounded-lg bg-gray-50">
+                            <div className="text-center">
+                              <img
+                                src={logoPreview}
+                                alt="Company Logo"
+                                className="h-32 object-contain mx-auto mb-4"
+                              />
+                              <p className="text-sm text-gray-600 mb-2">Current Logo</p>
+                              <p className="text-xs text-gray-500">{profile?.logo_name}</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={handleRemoveLogo}
+                            disabled={logoUploading}
+                            className="mt-3 w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
+                          >
+                            {logoUploading ? 'Removing...' : 'Remove Logo'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-gray-400 transition-colors">
+                          <Camera className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                          <p className="text-sm text-gray-600 mb-2">No logo uploaded yet</p>
+                          <p className="text-xs text-gray-500 mb-4">Supported formats: PNG, JPG, SVG (Max 5MB)</p>
+                          <label className="inline-block">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              disabled={logoUploading}
+                              className="hidden"
+                            />
+                            <span className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 cursor-pointer inline-block disabled:opacity-50 transition-colors">
+                              {logoUploading ? 'Uploading...' : 'Choose Logo'}
+                            </span>
+                          </label>
+                        </div>
+                      )}
+
+                      {logoPreview && (
+                        <label className="block">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                            disabled={logoUploading}
+                            className="hidden"
+                          />
+                          <span className="inline-block bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 cursor-pointer disabled:opacity-50 transition-colors">
+                            {logoUploading ? 'Uploading...' : 'Change Logo'}
+                          </span>
+                        </label>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-6 border border-blue-200 bg-blue-50 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <Building className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-semibold text-blue-900">Logo Usage</h3>
+                        <ul className="text-sm text-blue-800 mt-2 space-y-1">
+                          <li>• Logo appears on the first page of exported expense reports</li>
+                          <li>• Logo is centered and scaled automatically</li>
+                          <li>• Recommended size: 300x300px or higher</li>
+                          <li>• Best results with PNG format and transparent background</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'security' && (
               <div>
                 <h2 className="text-2xl font-bold text-gray-900 mb-6">Security Settings</h2>
-                
+
                 <div className="space-y-6">
+                  <div className="p-6 border border-blue-200 bg-blue-50 rounded-lg">
+                    <div className="flex items-start gap-3">
+                      <Shield className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <h3 className="font-semibold text-blue-900">Account Security</h3>
+                        <p className="text-sm text-blue-800 mt-1">Keep your account secure by regularly updating your password and managing access permissions.</p>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="p-6 border border-gray-200 rounded-lg">
                     <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Password</h3>
+                    <p className="text-sm text-gray-600 mb-4">Update your password regularly to keep your account secure.</p>
                     <div className="space-y-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -500,12 +760,12 @@ export function Settings() {
                             value={passwordData.currentPassword}
                             onChange={(e) => setPasswordData(prev => ({ ...prev, currentPassword: e.target.value }))}
                             className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
-                            placeholder="Enter current password"
+                            placeholder="Enter your current password"
                           />
                           <button
                             type="button"
                             onClick={() => setShowPassword(!showPassword)}
-                            className="absolute right-3 top-3 text-gray-400 hover:text-gray-600"
+                            className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 transition-colors"
                           >
                             {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
                           </button>
@@ -521,7 +781,7 @@ export function Settings() {
                           value={passwordData.newPassword}
                           onChange={(e) => setPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Enter new password"
+                          placeholder="Enter a new password (min 6 characters)"
                         />
                       </div>
 
@@ -534,26 +794,42 @@ export function Settings() {
                           value={passwordData.confirmPassword}
                           onChange={(e) => setPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          placeholder="Confirm new password"
+                          placeholder="Confirm your new password"
                         />
                       </div>
 
-                      <button
-                        onClick={handlePasswordChange}
-                        disabled={saving || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
-                        className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                      >
-                        {saving ? 'Updating...' : 'Update Password'}
-                      </button>
+                      <div className="pt-2">
+                        <button
+                          onClick={handlePasswordChange}
+                          disabled={saving || !passwordData.currentPassword || !passwordData.newPassword || !passwordData.confirmPassword}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                        >
+                          {saving ? 'Updating Password...' : 'Update Password'}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
                   <div className="p-6 border border-gray-200 rounded-lg">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Two-Factor Authentication</h3>
-                    <p className="text-gray-600 mb-4">Add an extra layer of security to your account.</p>
-                    <button className="bg-green-600 text-white px-6 py-3 rounded-lg hover:bg-green-700 transition-colors">
-                      Enable 2FA
-                    </button>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Security Tips</h3>
+                    <ul className="space-y-3">
+                      <li className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0"></div>
+                        <span className="text-sm text-gray-700">Use a strong password with uppercase, lowercase, numbers, and symbols</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0"></div>
+                        <span className="text-sm text-gray-700">Change your password every 3-6 months</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0"></div>
+                        <span className="text-sm text-gray-700">Never share your password with anyone</span>
+                      </li>
+                      <li className="flex items-start gap-3">
+                        <div className="w-1.5 h-1.5 bg-green-600 rounded-full mt-2 flex-shrink-0"></div>
+                        <span className="text-sm text-gray-700">Log out from other sessions if you suspect unauthorized access</span>
+                      </li>
+                    </ul>
                   </div>
                 </div>
               </div>
