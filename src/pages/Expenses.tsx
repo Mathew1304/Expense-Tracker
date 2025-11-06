@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CircleCheck as CheckCircle, Clock, Circle as XCircle, Upload, FileDown, CircleAlert as AlertCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
-import { ConfirmationModal } from '../components/UI/ConfirmationModal';
+import { ConfirmationModal } from '../components/ui/ConfirmationModal';
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
 import { useAuth } from "../contexts/AuthContext";
