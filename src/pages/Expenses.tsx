@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CheckCircle, Clock, XCircle, Upload, FileDown, AlertCircle } from "lucide-react";
+import { Plus, Search, X, Trash, CreditCard as Edit2, TrendingUp, TrendingDown, Calendar, Download, Link as LinkIcon, FileText, Calculator, QrCode, Eye, CircleCheck as CheckCircle, Clock, Circle as XCircle, Upload, FileDown, CircleAlert as AlertCircle } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
+import { ConfirmationModal } from '../components/UI/ConfirmationModal';
 import { supabase } from "../lib/supabase";
 import { format } from "date-fns";
 import { useAuth } from "../contexts/AuthContext";
@@ -98,6 +99,9 @@ const EXPENSE_CATEGORY_OPTIONS = [
   "Site Expenses",
   "Transport",
   "Miscellaneous",
+  "Bonus",
+  "Salary",
+  "Travel Allowance",
   "Other",
 ];
 
@@ -147,6 +151,14 @@ export function Expenses() {
   const [showGstModal, setShowGstModal] = useState(false);
   const [gstAmount, setGstAmount] = useState("");
   const [gstinInput, setGstinInput] = useState("");
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    expense: any | null;
+  }>({
+    isOpen: false,
+    expense: null
+  });
+  const [isDeleting, setIsDeleting] = useState(false);
   const [formData, setFormData] = useState({
     projectId: "",
     phaseId: "",
@@ -1271,6 +1283,58 @@ export function Expenses() {
     setShowForm(true);
   };
 
+  const handleDeleteClick = (expense: any) => {
+    setDeleteModal({
+      isOpen: true,
+      expense: expense
+    });
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteModal.expense) return;
+    
+    setIsDeleting(true);
+    
+    // Get transaction details before deleting for notification
+    const transaction = transactions.find(t => t.id === deleteModal.expense.id);
+    
+    const { error } = await supabase.from("expenses").delete().eq("id", deleteModal.expense.id);
+    if (!error) {
+      // Create notification for admin
+      if (user?.id && transaction?.project_id) {
+        const notificationType = transaction.type === 'income' ? 'income_deleted' : 'expense_deleted';
+        
+        await NotificationService.createExpenseNotification(
+          user.id,
+          transaction.project_id,
+          notificationType,
+          {
+            amount: transaction.amount,
+            category: transaction.category,
+            description: transaction.description || undefined
+          }
+        );
+      }
+
+      fetchTransactions();
+      if (selectedTransaction?.id === deleteModal.expense.id) {
+        setSelectedTransaction(null);
+      }
+      setSuccessMessage("Transaction deleted successfully!");
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } else {
+      setErrorMessage("Failed to delete transaction.");
+      setTimeout(() => setErrorMessage(null), 5000);
+    }
+    
+    setIsDeleting(false);
+    setDeleteModal({ isOpen: false, expense: null });
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteModal({ isOpen: false, expense: null });
+  };
+
   const handleDelete = async (id: string) => {
     if (window.confirm("Are you sure you want to delete this transaction?")) {
       // Get transaction details before deleting for notification
@@ -1859,7 +1923,7 @@ export function Expenses() {
                               <button
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  handleDelete(t.id);
+                                  handleDeleteClick(t);
                                 }}
                                 className="text-red-600 hover:text-red-800 p-1 rounded transition-colors"
                                 title="Delete"
@@ -2015,7 +2079,7 @@ export function Expenses() {
                             <button
                               onClick={(event) => {
                                 event.stopPropagation();
-                                handleDelete(t.id);
+                                handleDeleteClick(t);
                               }}
                               className="text-red-600 hover:text-red-800 p-2 rounded transition-colors"
                               title="Delete"
@@ -3193,6 +3257,19 @@ export function Expenses() {
           </div>
         </div>
       )}
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={deleteModal.isOpen}
+        onClose={handleDeleteCancel}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Expense"
+        message={`Are you sure you want to delete "${deleteModal.expense?.description || deleteModal.expense?.category}"? This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+        loading={isDeleting}
+      />
     </div>
   );
 }
