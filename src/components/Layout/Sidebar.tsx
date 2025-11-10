@@ -59,17 +59,24 @@ export function Sidebar() {
 
   const fetchStorageInfo = async (userId: string) => {
     try {
-      const { data: profile } = await supabase
+      console.log('Fetching storage for user:', userId);
+      
+      const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('plan_type, role')
         .eq('id', userId)
         .single();
 
+      console.log('Profile data:', profile, 'Error:', profileError);
+
       setUserPlan(profile?.plan_type || 'free');
+      const userRoleFromProfile = profile?.role || userRole;
+
+      console.log('User role:', userRoleFromProfile);
 
       // Get user's assigned project for non-admin users
       let assignedProjectId = null;
-      if (profile?.role !== "Admin") {
+      if (userRoleFromProfile !== "Admin") {
         // Get user's assigned project from users table
         const { data: userProfile } = await supabase
           .from('users')
@@ -93,20 +100,141 @@ export function Sidebar() {
         }
       }
 
-      let projectsQuery = supabase.from('projects').select('id');
-      let photosQuery = supabase.from('phase_photos').select('id');
-      let documentsQuery = supabase.from('documents').select('size');
+      console.log('Assigned project ID:', assignedProjectId);
 
-      if (profile?.role === "Admin") {
-        // Admin sees projects they created
-        projectsQuery = projectsQuery.eq('created_by', userId);
-        photosQuery = photosQuery.eq('created_by', userId);
+      // Calculate storage from Supabase Storage buckets
+      let totalStorageBytes = 0;
+
+      // Get all storage buckets
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+      
+      console.log('Found buckets:', buckets, 'Error:', bucketsError);
+
+      if (!bucketsError && buckets && buckets.length > 0) {
+        // For each bucket, list all files and sum their sizes
+        for (const bucket of buckets) {
+          try {
+            // Recursively get all files including in subdirectories
+            const getAllFiles = async (path = '', bucketName: string): Promise<any[]> => {
+              const { data, error } = await supabase.storage
+                .from(bucketName)
+                .list(path, {
+                  limit: 1000,
+                  offset: 0,
+                  sortBy: { column: 'name', order: 'asc' }
+                });
+
+              if (error || !data) {
+                console.log(`Error listing ${bucketName}/${path}:`, error);
+                return [];
+              }
+
+              let allFiles: any[] = [];
+              
+              for (const item of data) {
+                const fullPath = path ? `${path}/${item.name}` : item.name;
+                
+                if (item.id === null) {
+                  // It's a folder, recurse into it
+                  const subFiles = await getAllFiles(fullPath, bucketName);
+                  allFiles = allFiles.concat(subFiles);
+                } else {
+                  // It's a file
+                  allFiles.push({ ...item, fullPath });
+                }
+              }
+              
+              return allFiles;
+            };
+
+            const allFiles = await getAllFiles('', bucket.name);
+            
+            console.log(`Files in bucket ${bucket.name}:`, allFiles.length);
+            
+            // Filter files based on user role and assigned project
+            let filteredFiles = allFiles;
+            
+            if (userRoleFromProfile === "Admin") {
+              // Admin sees only their files (files in their user folder or created by them)
+              filteredFiles = allFiles.filter(file => 
+                file.fullPath?.includes(`/${userId}/`) || 
+                file.metadata?.uploaded_by === userId ||
+                file.owner === userId
+              );
+              console.log(`Admin filtered files in ${bucket.name}:`, filteredFiles.length);
+            } else if (assignedProjectId) {
+              // Non-admin users see files for their assigned project
+              filteredFiles = allFiles.filter(file => 
+                file.fullPath?.includes(`/${assignedProjectId}/`) ||
+                file.metadata?.project_id === assignedProjectId
+              );
+              console.log(`User filtered files in ${bucket.name}:`, filteredFiles.length);
+            } else {
+              // No project assigned, no files
+              filteredFiles = [];
+            }
+
+            // Sum up file sizes
+            const bucketSize = filteredFiles.reduce((sum, file) => {
+              const size = file.metadata?.size || 0;
+              console.log(`File ${file.name}: ${size} bytes`);
+              return sum + size;
+            }, 0);
+
+            console.log(`Bucket ${bucket.name} total:`, {
+              totalFiles: allFiles.length,
+              filteredFiles: filteredFiles.length,
+              sizeBytes: bucketSize,
+              sizeMB: (bucketSize / (1024 * 1024)).toFixed(2)
+            });
+
+            totalStorageBytes += bucketSize;
+          } catch (err) {
+            console.error(`Error processing bucket ${bucket.name}:`, err);
+          }
+        }
+      }
+
+      // Check for phase_photos table to calculate photo storage
+      let photosQuery, photosData, photosError;
+      
+      if (userRoleFromProfile === "Admin") {
+        // Get all photos from admin's projects
+        const { data: adminProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('created_by', userId);
+        
+        const projectIds = adminProjects?.map(p => p.id) || [];
+        
+        if (projectIds.length > 0) {
+          const result = await supabase.from('phase_photos').select('photo_url, id').in('project_id', projectIds);
+          photosData = result.data;
+          photosError = result.error;
+        } else {
+          photosData = [];
+          photosError = null;
+        }
+      } else if (assignedProjectId) {
+        const result = await supabase.from('phase_photos').select('photo_url, id').eq('project_id', assignedProjectId);
+        photosData = result.data;
+        photosError = result.error;
+      } else {
+        photosData = [];
+        photosError = null;
+      }
+      
+      console.log('Photos found:', photosData?.length || 0, 'Error:', photosError);
+
+      // Estimate photo storage (average 2MB per photo if we can't get exact size)
+      const photoStorageBytes = (photosData?.length || 0) * 2 * 1024 * 1024;
+
+      // Also add storage from documents table (if size is stored there)
+      let documentsQuery = supabase.from('documents').select('size, file_path, name');
+
+      if (userRoleFromProfile === "Admin") {
         documentsQuery = documentsQuery.eq('uploaded_by', userId);
       } else if (assignedProjectId) {
-        // Non-admin users see data for their assigned project
-        projectsQuery = projectsQuery.eq('id', assignedProjectId);
-        photosQuery = photosQuery.eq('project_id', assignedProjectId);
-        // For documents, we need to get the project name first, then filter by project name
         const { data: projectData } = await supabase
           .from('projects')
           .select('name')
@@ -119,69 +247,154 @@ export function Sidebar() {
           documentsQuery = documentsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
         }
       } else {
-        // If no project assigned, return empty results
-        projectsQuery = projectsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
-        photosQuery = photosQuery.eq('id', '00000000-0000-0000-0000-000000000000');
         documentsQuery = documentsQuery.eq('id', '00000000-0000-0000-0000-000000000000');
       }
 
-      const [
-        { data: projectsData, error: projectsError }, 
-        { data: photosData, error: photosError },
-        { data: documentsData, error: documentsError }
-      ] = await Promise.all([
-        projectsQuery,
-        photosQuery,
-        documentsQuery
-      ]);
+      const { data: documentsData, error: documentsError } = await documentsQuery;
 
-      if (projectsError) {
-        console.error('Error fetching projects for storage:', projectsError);
-      }
-      if (photosError) {
-        console.error('Error fetching photos for storage:', photosError);
-      }
-      if (documentsError) {
-        console.error('Error fetching documents for storage:', documentsError);
-      }
+      console.log('Documents fetched:', {
+        count: documentsData?.length || 0,
+        data: documentsData,
+        error: documentsError
+      });
 
-      // Calculate storage from actual file sizes
-      const projectStorage = (projectsData?.length || 0) * 10; // Base storage per project
-      const photoStorage = (photosData?.length || 0) * 2; // Base storage per photo
-      
-      // Calculate document storage from actual file sizes
-      let documentStorage = 0;
+      // Calculate document storage from size field
+      let documentStorageBytes = 0;
       if (documentsData && documentsData.length > 0) {
-        documentStorage = documentsData.reduce((total, doc) => {
+        documentStorageBytes = documentsData.reduce((total, doc) => {
           if (doc.size) {
-            // Parse size string (e.g., "1.5 KB" -> 1.5)
-            const sizeMatch = doc.size.match(/(\d+\.?\d*)\s*(KB|MB|GB)/i);
+            // Parse size string (e.g., "1.5 KB", "1.5KB", "1.5 MB")
+            const sizeMatch = doc.size.toString().match(/(\d+\.?\d*)\s*(KB|MB|GB|BYTES?|B)?/i);
+            
             if (sizeMatch) {
               const value = parseFloat(sizeMatch[1]);
-              const unit = sizeMatch[2].toUpperCase();
-              if (unit === 'KB') return total + (value / 1024); // Convert KB to MB
-              if (unit === 'MB') return total + value;
-              if (unit === 'GB') return total + (value * 1024); // Convert GB to MB
+              const unit = (sizeMatch[2] || 'BYTES').toUpperCase();
+              
+              // Convert to bytes
+              if (unit === 'BYTES' || unit === 'BYTE' || unit === 'B') {
+                return total + value;
+              } else if (unit === 'KB') {
+                return total + (value * 1024);
+              } else if (unit === 'MB') {
+                return total + (value * 1024 * 1024);
+              } else if (unit === 'GB') {
+                return total + (value * 1024 * 1024 * 1024);
+              }
             }
           }
           return total;
         }, 0);
       }
+
+      // Calculate actual database text data size
+      let databaseStorageBytes = 0;
       
-      const totalStorage = projectStorage + photoStorage + documentStorage;
+      // Helper function to calculate size of an object
+      const calculateObjectSize = (obj: any): number => {
+        const jsonString = JSON.stringify(obj);
+        return new Blob([jsonString]).size;
+      };
+
+      // Get full data with all columns for accurate size calculation
+      let projectsFullQuery, phasesFullQuery, expensesFullQuery, materialsFullQuery, usersFullQuery;
+
+      if (userRoleFromProfile === "Admin") {
+        // Get all data created by this admin with all columns
+        projectsFullQuery = supabase.from('projects').select('*').eq('created_by', userId);
+        
+        // For phases, expenses, materials - get all that belong to admin's projects
+        const { data: adminProjects } = await supabase
+          .from('projects')
+          .select('id')
+          .eq('created_by', userId);
+        
+        const projectIds = adminProjects?.map(p => p.id) || [];
+        
+        console.log('Admin project IDs:', projectIds);
+        
+        if (projectIds.length > 0) {
+          phasesFullQuery = supabase.from('phases').select('*').in('project_id', projectIds);
+          expensesFullQuery = supabase.from('expenses').select('*').in('project_id', projectIds);
+          materialsFullQuery = supabase.from('materials').select('*').in('project_id', projectIds);
+          usersFullQuery = supabase.from('users').select('*').in('project_id', projectIds);
+        } else {
+          const emptyId = '00000000-0000-0000-0000-000000000000';
+          phasesFullQuery = supabase.from('phases').select('*').eq('id', emptyId);
+          expensesFullQuery = supabase.from('expenses').select('*').eq('id', emptyId);
+          materialsFullQuery = supabase.from('materials').select('*').eq('id', emptyId);
+          usersFullQuery = supabase.from('users').select('*').eq('id', emptyId);
+        }
+      } else if (assignedProjectId) {
+        projectsFullQuery = supabase.from('projects').select('*').eq('id', assignedProjectId);
+        phasesFullQuery = supabase.from('phases').select('*').eq('project_id', assignedProjectId);
+        expensesFullQuery = supabase.from('expenses').select('*').eq('project_id', assignedProjectId);
+        materialsFullQuery = supabase.from('materials').select('*').eq('project_id', assignedProjectId);
+        usersFullQuery = supabase.from('users').select('*').eq('project_id', assignedProjectId);
+      } else {
+        const emptyId = '00000000-0000-0000-0000-000000000000';
+        projectsFullQuery = supabase.from('projects').select('*').eq('id', emptyId);
+        phasesFullQuery = supabase.from('phases').select('*').eq('id', emptyId);
+        expensesFullQuery = supabase.from('expenses').select('*').eq('id', emptyId);
+        materialsFullQuery = supabase.from('materials').select('*').eq('id', emptyId);
+        usersFullQuery = supabase.from('users').select('*').eq('id', emptyId);
+      }
+
+      const [
+        { data: projectsData },
+        { data: phasesData },
+        { data: expensesData },
+        { data: materialsData },
+        { data: usersData }
+      ] = await Promise.all([
+        projectsFullQuery,
+        phasesFullQuery,
+        expensesFullQuery,
+        materialsFullQuery,
+        usersFullQuery
+      ]);
+
+      // Calculate actual size of each dataset
+      const projectsSize = projectsData ? calculateObjectSize(projectsData) : 0;
+      const phasesSize = phasesData ? calculateObjectSize(phasesData) : 0;
+      const expensesSize = expensesData ? calculateObjectSize(expensesData) : 0;
+      const materialsSize = materialsData ? calculateObjectSize(materialsData) : 0;
+      const usersSize = usersData ? calculateObjectSize(usersData) : 0;
+
+      databaseStorageBytes = projectsSize + phasesSize + expensesSize + materialsSize + usersSize;
+
+      console.log('Database records:', {
+        projects: projectsData?.length || 0,
+        projectsSize: `${(projectsSize / 1024).toFixed(2)} KB`,
+        phases: phasesData?.length || 0,
+        phasesSize: `${(phasesSize / 1024).toFixed(2)} KB`,
+        expenses: expensesData?.length || 0,
+        expensesSize: `${(expensesSize / 1024).toFixed(2)} KB`,
+        materials: materialsData?.length || 0,
+        materialsSize: `${(materialsSize / 1024).toFixed(2)} KB`,
+        users: usersData?.length || 0,
+        usersSize: `${(usersSize / 1024).toFixed(2)} KB`,
+        totalDatabaseSize: `${(databaseStorageBytes / 1024).toFixed(2)} KB`
+      });
+
+      // Total storage in MB
+      const totalStorageMB = (totalStorageBytes + photoStorageBytes + documentStorageBytes + databaseStorageBytes) / (1024 * 1024);
       
-      console.log('Storage calculation:', {
-        projectsCount: projectsData?.length || 0,
-        photosCount: photosData?.length || 0,
-        documentsCount: documentsData?.length || 0,
-        projectStorage,
-        photoStorage,
-        documentStorage,
-        totalStorage,
-        userRole: profile?.role
+      console.log('Complete storage calculation:', {
+        storageFilesBytes: totalStorageBytes,
+        storageFilesMB: (totalStorageBytes / (1024 * 1024)).toFixed(2),
+        photoStorageBytes: photoStorageBytes,
+        photoStorageMB: (photoStorageBytes / (1024 * 1024)).toFixed(2),
+        photoCount: photosData?.length || 0,
+        documentStorageBytes: documentStorageBytes,
+        documentStorageMB: (documentStorageBytes / (1024 * 1024)).toFixed(2),
+        documentCount: documentsData?.length || 0,
+        databaseStorageBytes: databaseStorageBytes,
+        databaseStorageMB: (databaseStorageBytes / (1024 * 1024)).toFixed(2),
+        totalStorageMB: totalStorageMB.toFixed(2),
+        userRole: userRoleFromProfile
       });
       
-      setStorageUsed(totalStorage);
+      setStorageUsed(Math.round(totalStorageMB * 100) / 100);
     } catch (error) {
       console.error('Error fetching storage:', error);
     }
@@ -358,7 +571,7 @@ export function Sidebar() {
         </div>
         <div className="space-y-1">
           <div className="flex justify-between text-xs text-gray-600">
-            <span>{storageUsed}MB</span>
+            <span>{storageUsed.toFixed(2)}MB</span>
             <span>{getStorageLimit()}</span>
           </div>
           {userPlan !== 'pro' && (
