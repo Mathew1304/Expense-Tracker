@@ -17,7 +17,6 @@ import {
   Globe,
   Instagram,
   Hash,
-  Calendar,
   Crown,
   Coins,
   AlertCircle,
@@ -26,6 +25,7 @@ import {
 import { Layout } from '../components/Layout/Layout';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { format } from 'date-fns';
 import { testSMSService } from '../lib/smsService';
 
@@ -74,6 +74,7 @@ interface UserTokens {
 
 export function Settings() {
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [activeTab, setActiveTab] = useState('profile');
   const [profile, setProfile] = useState<Profile | null>(null);
   const [subscription, setSubscription] = useState<Subscription | null>(null);
@@ -96,7 +97,6 @@ export function Settings() {
     systemUpdates: false
   });
   const [appearanceSettings, setAppearanceSettings] = useState({
-    theme: 'light',
     language: 'en',
     dateFormat: 'dd-MM-yyyy',
     currency: 'INR',
@@ -442,14 +442,14 @@ export function Settings() {
     <Layout title="Settings">
       <div className="max-w-7xl mx-auto">
         {successMessage && (
-          <div className="mb-6 p-4 bg-green-100 text-green-800 rounded-lg shadow">
+          <div className="mb-6 p-4 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded-lg shadow">
             {successMessage}
           </div>
         )}
 
         <div className="flex gap-8">
           {/* Sidebar */}
-          <div className="w-80 bg-white rounded-lg shadow-sm p-6">
+          <div className="w-80 bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6">
             <nav className="space-y-2">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
@@ -460,7 +460,7 @@ export function Settings() {
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${
                       activeTab === tab.id
                         ? 'bg-blue-600 text-white'
-                        : 'text-gray-700 hover:bg-gray-100'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                     }`}
                   >
                     <Icon size={20} />
@@ -472,11 +472,11 @@ export function Settings() {
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 bg-white rounded-lg shadow-sm p-8">
+          <div className="flex-1 bg-white dark:bg-gray-800 rounded-lg shadow-sm p-8">
             {activeTab === 'profile' && (
               <div>
                 <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">Personal Information</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Personal Information</h2>
                   <button
                     onClick={() => handleProfileUpdate(profile || {})}
                     disabled={saving}
@@ -647,7 +647,7 @@ export function Settings() {
 
             {activeTab === 'branding' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Company Branding</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Company Branding</h2>
 
                 <div className="space-y-6">
                   <div className="p-6 border border-gray-200 rounded-lg">
@@ -733,7 +733,7 @@ export function Settings() {
 
             {activeTab === 'security' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Security Settings</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Security Settings</h2>
 
                 <div className="space-y-6">
                   <div className="p-6 border border-blue-200 bg-blue-50 rounded-lg">
@@ -837,7 +837,7 @@ export function Settings() {
 
             {activeTab === 'notifications' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Notification Preferences</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Notification Preferences</h2>
                 
                 <div className="space-y-6">
                   {Object.entries(notificationSettings).map(([key, value]) => (
@@ -872,23 +872,27 @@ export function Settings() {
 
             {activeTab === 'appearance' && (
               <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-6">Appearance Settings</h2>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Appearance Settings</h2>
                 
                 <div className="space-y-6">
-                  <div className="p-6 border border-gray-200 rounded-lg">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Theme</h3>
-                    <div className="grid grid-cols-3 gap-4">
-                      {['light', 'dark', 'system'].map((theme) => (
+                  <div className="p-6 border border-gray-200 dark:border-gray-700 rounded-lg dark:bg-gray-800">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Theme</h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      {['light', 'dark'].map((themeOption) => (
                         <button
-                          key={theme}
-                          onClick={() => setAppearanceSettings(prev => ({ ...prev, theme }))}
+                          key={themeOption}
+                          onClick={() => {
+                            if (themeOption !== theme) {
+                              toggleTheme();
+                            }
+                          }}
                           className={`p-4 border-2 rounded-lg text-center capitalize transition-colors ${
-                            appearanceSettings.theme === theme
-                              ? 'border-blue-600 bg-blue-50 text-blue-600'
-                              : 'border-gray-200 hover:border-gray-300'
+                            theme === themeOption
+                              ? 'border-blue-600 bg-blue-50 dark:bg-blue-900 text-blue-600 dark:text-blue-400'
+                              : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500 text-gray-700 dark:text-gray-300'
                           }`}
                         >
-                          {theme}
+                          {themeOption}
                         </button>
                       ))}
                     </div>
