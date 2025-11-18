@@ -11,16 +11,6 @@ import { NotificationService } from "../lib/notificationService";
 import { NotificationServiceServiceRole } from "../lib/notificationServiceServiceRole";
 import { NotificationServiceSimple } from "../lib/notificationServiceSimple";
 import { NotificationDebugger } from "../lib/notificationDebugger";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
@@ -58,12 +48,6 @@ interface Phase {
 interface Project {
   id: string;
   name: string;
-}
-
-interface ChartData {
-  date: string;
-  expense: number;
-  income: number;
 }
 
 interface PaymentLink {
@@ -1475,35 +1459,6 @@ export function Expenses() {
     .reduce((sum, t) => sum + t.amount + (t.gst_amount || 0), 0);
 
   // Prepare chart data
-  const getChartData = (): ChartData[] => {
-    const dataMap = new Map<string, { expense: number; income: number }>();
-
-    filteredTransactions.forEach((t) => {
-      const date = format(new Date(t.date), "MMM dd");
-      if (!dataMap.has(date)) {
-        dataMap.set(date, { expense: 0, income: 0 });
-      }
-      const current = dataMap.get(date)!;
-      const totalAmount = t.amount + (t.gst_amount || 0);
-      if (t.type === 'expense') {
-        current.expense += totalAmount;
-      } else {
-        current.income += totalAmount;
-      }
-    });
-
-    return Array.from(dataMap.entries())
-      .map(([date, values]) => ({
-        date,
-        expense: values.expense,
-        income: values.income,
-      }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(-30); // Last 30 data points
-  };
-
-  const chartData = getChartData();
-
   // Get the header subtitle based on selected transaction
   const getHeaderSubtitle = () => {
     if (selectedTransaction) {
@@ -1573,55 +1528,110 @@ export function Expenses() {
 
         <div className="flex-1 flex flex-col overflow-hidden">
 
-          {/* Charts Section */}
+          {/* Financial Summary & Tracking Module */}
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Income */}
+            <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg shadow p-6 border-l-4 border-green-600">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Total Income</span>
+                <TrendingUp className="w-5 h-5 text-green-600" />
+              </div>
+              <p className="text-3xl font-bold text-green-700">₹{totalIncome.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+              <p className="text-xs text-green-600 mt-2">{transactions.filter(t => t.type === 'income').length} transactions</p>
+            </div>
+
+            {/* Total Expenses */}
+            <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg shadow p-6 border-l-4 border-red-600">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Total Expenses</span>
+                <TrendingDown className="w-5 h-5 text-red-600" />
+              </div>
+              <p className="text-3xl font-bold text-red-700">₹{totalExpenses.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
+              <p className="text-xs text-red-600 mt-2">{transactions.filter(t => t.type === 'expense').length} transactions</p>
+            </div>
+
+            {/* Net Amount */}
+            <div className={`bg-gradient-to-br rounded-lg shadow p-6 border-l-4 ${
+              (totalIncome - totalExpenses) >= 0
+                ? 'from-blue-50 to-blue-100 border-blue-600'
+                : 'from-orange-50 to-orange-100 border-orange-600'
+            }`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Net Balance</span>
+                <Calculator className="w-5 h-5" style={{ color: (totalIncome - totalExpenses) >= 0 ? '#2563eb' : '#ea580c' }} />
+              </div>
+              <p className={`text-3xl font-bold ${(totalIncome - totalExpenses) >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+                ₹{(totalIncome - totalExpenses).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+              </p>
+              <p className={`text-xs mt-2 ${(totalIncome - totalExpenses) >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                {(totalIncome - totalExpenses) >= 0 ? 'Surplus' : 'Deficit'}
+              </p>
+            </div>
+
+            {/* Budget Utilization */}
+            <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg shadow p-6 border-l-4 border-purple-600">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-gray-700">Utilization</span>
+                <AlertCircle className="w-5 h-5 text-purple-600" />
+              </div>
+              <p className="text-3xl font-bold text-purple-700">
+                {totalIncome > 0 ? ((totalExpenses / totalIncome) * 100).toFixed(1) : '0'}%
+              </p>
+              <p className="text-xs text-purple-600 mt-2">Expense to Income Ratio</p>
+            </div>
+          </div>
+
+          {/* Transaction Summary by Category */}
           <div className="mb-6 bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900">Income vs Expenses Trend</h3>
-              <div className="flex gap-4 text-sm">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-green-600" />
-                  <span className="text-green-600 font-medium">Income: ₹{totalIncome.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <TrendingDown className="w-4 h-4 text-red-600" />
-                  <span className="text-red-600 font-medium">Expenses: ₹{totalExpenses.toFixed(2)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`font-medium ${totalIncome - totalExpenses >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    Net: ₹{(totalIncome - totalExpenses).toFixed(2)}
-                  </span>
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Overview</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Expenses by Category */}
+              <div>
+                <h4 className="font-medium text-gray-800 mb-3 text-sm">Top Expense Categories</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {Object.entries(
+                    transactions
+                      .filter(t => t.type === 'expense')
+                      .reduce((acc: Record<string, number>, t) => {
+                        const cat = t.custom_category || t.category || 'Other';
+                        acc[cat] = (acc[cat] || 0) + t.amount;
+                        return acc;
+                      }, {})
+                  )
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([category, amount]) => (
+                      <div key={category} className="flex items-center justify-between p-2 bg-red-50 rounded">
+                        <span className="text-sm text-gray-700">{category}</span>
+                        <span className="font-medium text-red-600">₹{(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    ))}
                 </div>
               </div>
-            </div>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value: number, name: string) => [
-                      `₹${value.toFixed(2)}`,
-                      name === 'expense' ? 'Expenses' : 'Income'
-                    ]}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="income"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    name="Income"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="expense"
-                    stroke="#ef4444"
-                    strokeWidth={2}
-                    name=""
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+
+              {/* Income by Category */}
+              <div>
+                <h4 className="font-medium text-gray-800 mb-3 text-sm">Top Income Categories</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {Object.entries(
+                    transactions
+                      .filter(t => t.type === 'income')
+                      .reduce((acc: Record<string, number>, t) => {
+                        const cat = t.source || t.category || 'Other';
+                        acc[cat] = (acc[cat] || 0) + t.amount;
+                        return acc;
+                      }, {})
+                  )
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 10)
+                    .map(([category, amount]) => (
+                      <div key={category} className="flex items-center justify-between p-2 bg-green-50 rounded">
+                        <span className="text-sm text-gray-700">{category}</span>
+                        <span className="font-medium text-green-600">₹{(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
+                      </div>
+                    ))}
+                </div>
+              </div>
             </div>
           </div>
 
