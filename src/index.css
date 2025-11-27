@@ -27,25 +27,25 @@
 }
 
 .dark {
-  --bg-primary: 17, 24, 39;
-  --bg-secondary: 31, 41, 55;
-  --bg-tertiary: 55, 65, 81;
-  --text-primary: 243, 244, 246;
-  --text-secondary: 156, 163, 175;
-  --text-tertiary: 107, 114, 128;
-  --border-primary: 55, 65, 81;
-  --border-secondary: 75, 85, 99;
+  --bg-primary: 13, 17, 23;
+  --bg-secondary: 22, 27, 34;
+  --bg-tertiary: 30, 41, 59;
+  --text-primary: 248, 250, 252;
+  --text-secondary: 203, 213, 225;
+  --text-tertiary: 148, 163, 184;
+  --border-primary: 51, 65, 85;
+  --border-secondary: 71, 85, 105;
   --accent: 59, 130, 246;
   --accent-hover: 96, 165, 250;
-  --sidebar-bg: 31, 41, 55;
-  --sidebar-border: 55, 65, 81;
-  --header-bg: 31, 41, 55;
-  --header-border: 55, 65, 81;
-  --card-bg: 31, 41, 55;
-  --card-border: 55, 65, 81;
-  --input-bg: 55, 65, 81;
-  --input-border: 75, 85, 99;
-  --modal-bg: 31, 41, 55;
+  --sidebar-bg: 22, 27, 34;
+  --sidebar-border: 51, 65, 85;
+  --header-bg: 22, 27, 34;
+  --header-border: 51, 65, 85;
+  --card-bg: 30, 41, 59;
+  --card-border: 51, 65, 85;
+  --input-bg: 30, 41, 59;
+  --input-border: 71, 85, 105;
+  --modal-bg: 22, 27, 34;
   --shadow: 0, 0, 0;
 }
 
@@ -78,15 +78,175 @@
 .dark .text-gray-700 { color: rgb(var(--text-secondary)); }
 .dark .text-gray-600 { color: rgb(var(--text-secondary)); }
 .dark .text-gray-500 { color: rgb(var(--text-tertiary)); }
+.dark .text-gray-400 { color: rgb(var(--text-tertiary)); }
+.dark .text-gray-300 { color: rgb(var(--text-tertiary)); }
 .dark .border-gray-200 { border-color: rgb(var(--border-primary)); }
 .dark .border-gray-300 { border-color: rgb(var(--border-secondary)); }
 .dark .border-gray-100 { border-color: rgb(var(--border-secondary)); }
-.dark .hover\\:bg-gray-50:hover { background-color: rgb(var(--bg-tertiary)); }
-.dark .hover\\:bg-gray-100:hover { background-color: rgb(var(--border-primary)); }
-.dark .hover\\:text-gray-900:hover { color: rgb(var(--text-primary)); }
-.dark .hover\\:bg-blue-50:hover { background-color: rgba(59, 130, 246, 0.1); }
-.dark .hover\\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.1); }
-.dark .hover\\:bg-gray-800:hover { background-color: rgb(var(--bg-tertiary)); }
+.dark .hover\:bg-gray-50:hover { background-color: rgb(var(--bg-tertiary)); }
+.dark .hover\:bg-gray-100:hover { background-color: rgb(var(--border-primary)); }
+.dark .hover\:text-gray-900:hover { color: rgb(var(--text-primary)); }
+.dark .hover\:bg-blue-50:hover { background-color: rgba(59, 130, 246, 0.1); }
+.dark .hover\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.1); }
+.dark .hover\:bg-gray-800:hover { background-color: rgb(var(--bg-tertiary)); }
+
+/* Enhanced dark mode overrides for better visibility */
+.dark .text-black { color: rgb(var(--text-primary)); }
+.dark .text-zinc-900 { color: rgb(var(--text-primary)); }
+.dark .text-zinc-800 { color: rgb(var(--text-primary)); }
+.dark .text-zinc-700 { color: rgb(var(--text-secondary)); }
+.dark .text-zinc-600 { color: rgb(var(--text-primary)); }
+.dark .text-zinc-500 { color: rgb(var(--text-secondary)); }
+.dark .text-slate-900 { color: rgb(var(--text-primary)); }
+.dark .text-slate-800 { color: rgb(var(--text-primary)); }
+.dark .text-slate-700 { color: rgb(var(--text-secondary)); }
+.dark .text-slate-600 { color: rgb(var(--text-primary)); }
+.dark .text-slate-500 { color: rgb(var(--text-secondary)); }
+.dark .bg-slate-50 { background-color: rgb(var(--bg-secondary)); }
+.dark .bg-slate-100 { background-color: rgb(var(--bg-tertiary)); }
+.dark .bg-zinc-50 { background-color: rgb(var(--bg-secondary)); }
+.dark .bg-zinc-100 { background-color: rgb(var(--bg-tertiary)); }
+.dark .border-slate-200 { border-color: rgb(var(--border-primary)); }
+.dark .border-slate-300 { border-color: rgb(var(--border-secondary)); }
+.dark .border-zinc-200 { border-color: rgb(var(--border-primary)); }
+.dark .border-zinc-300 { border-color: rgb(var(--border-secondary)); }
+
+/* Sidebar specific fixes */
+.dark .text-secondary {
+  color: rgb(203, 213, 225) !important;
+}
+
+.dark aside nav a:not(.bg-blue-50):not(.dark\:bg-blue-900\/20) {
+  color: rgb(203, 213, 225) !important;
+}
+
+.dark aside nav a:hover:not(.bg-blue-50):not(.dark\:bg-blue-900\/20) {
+  color: rgb(248, 250, 252) !important;
+}
+
+/* Form elements visibility */
+.dark input, .dark textarea, .dark select {
+  background-color: rgb(var(--input-bg));
+  border-color: rgb(var(--input-border));
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark input::placeholder, .dark textarea::placeholder {
+  color: rgb(var(--text-tertiary));
+}
+
+.dark input:focus, .dark textarea:focus, .dark select:focus {
+  border-color: rgb(var(--accent));
+  box-shadow: 0 0 0 1px rgb(var(--accent));
+}
+
+/* Enhanced form input fixes for dark theme */
+.dark .bg-white input {
+  background-color: rgb(var(--input-bg)) !important;
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-white textarea {
+  background-color: rgb(var(--input-bg)) !important;
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-white select {
+  background-color: rgb(var(--input-bg)) !important;
+  color: rgb(var(--text-primary)) !important;
+}
+
+/* Fix all input text colors in dark mode */
+.dark input[type="text"],
+.dark input[type="number"],
+.dark input[type="email"],
+.dark input[type="password"],
+.dark input[type="date"],
+.dark input[type="tel"],
+.dark input[type="url"],
+.dark input[type="search"] {
+  color: rgb(var(--text-primary)) !important;
+  background-color: rgb(var(--input-bg)) !important;
+}
+
+.dark textarea {
+  color: rgb(var(--text-primary)) !important;
+  background-color: rgb(var(--input-bg)) !important;
+}
+
+.dark select {
+  color: rgb(var(--text-primary)) !important;
+  background-color: rgb(var(--input-bg)) !important;
+}
+
+/* Fix select option text */
+.dark select option {
+  background-color: rgb(var(--input-bg));
+  color: rgb(var(--text-primary));
+}
+
+/* Form labels and helper text */
+.dark label {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .text-gray-700 label {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .text-gray-600 label {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+/* Button visibility fixes */
+.dark button:not(.text-white):not(.text-blue-600):not(.text-red-600):not(.text-green-600) {
+  color: rgb(var(--text-primary));
+}
+
+.dark .bg-blue-600 {
+  background-color: rgb(37, 99, 235);
+}
+
+.dark .bg-blue-500 {
+  background-color: rgb(59, 130, 246);
+}
+
+.dark .bg-red-600 {
+  background-color: rgb(220, 38, 38);
+}
+
+.dark .bg-green-600 {
+  background-color: rgb(22, 163, 74);
+}
+
+.dark .bg-orange-500 {
+  background-color: rgb(249, 115, 22);
+}
+
+/* Transaction Overview fixes */
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.1) !important;
+}
+
+.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.1) !important;
+}
+
+.dark .bg-red-50 .text-primary {
+  color: rgb(248, 250, 252) !important;
+}
+
+.dark .bg-green-50 .text-primary {
+  color: rgb(248, 250, 252) !important;
+}
+
+.dark .text-red-600 {
+  color: rgb(248, 113, 113) !important;
+}
+
+.dark .text-green-600 {
+  color: rgb(74, 222, 128) !important;
+}
 
 /* Custom animations for smooth page transitions */
 @keyframes fadeIn {
@@ -171,7 +331,7 @@
 }
 
 .dark ::-webkit-scrollbar-track {
-  background: rgb(31, 41, 55);
+  background: rgb(var(--bg-secondary));
 }
 
 ::-webkit-scrollbar-thumb {
@@ -180,7 +340,7 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: rgb(75, 85, 99);
+  background: rgb(var(--border-secondary));
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -188,5 +348,292 @@
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: rgb(107, 114, 128);
+  background: rgb(var(--text-tertiary));
+}
+
+/* Enhanced scrollbar for better visibility in dark mode */
+.dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgb(var(--bg-tertiary));
+  border-radius: 5px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(var(--border-primary));
+  border-radius: 5px;
+  border: 2px solid rgb(var(--bg-tertiary));
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--text-tertiary));
+  border: 2px solid rgb(var(--bg-tertiary));
+}
+
+/* Additional dark theme enhancements */
+.dark .shadow-lg {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.4);
+}
+
+.dark .shadow-xl {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 10px 10px -5px rgba(0, 0, 0, 0.5);
+}
+
+.dark .shadow-md {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+}
+
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.dark .ring-1 {
+  --tw-ring-color: rgb(var(--border-primary));
+}
+
+.dark .ring-2 {
+  --tw-ring-color: rgb(var(--border-primary));
+}
+
+/* Table styling for dark mode */
+.dark table {
+  background-color: rgb(var(--card-bg));
+}
+
+.dark th {
+  background-color: rgb(var(--bg-secondary));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-primary));
+}
+
+.dark td {
+  background-color: rgb(var(--card-bg));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-primary));
+}
+
+.dark tr:hover td {
+  background-color: rgb(var(--bg-tertiary));
+}
+
+/* Modal and dropdown enhancements */
+.dark .bg-opacity-50 {
+  background-color: rgba(0, 0, 0, 0.7);
+}
+
+.dark .dropdown-content {
+  background-color: rgb(var(--modal-bg));
+  border-color: rgb(var(--border-primary));
+}
+
+/* Modal and detail view fixes */
+.dark .bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .fixed.inset-0.bg-white {
+  background-color: rgb(var(--modal-bg)) !important;
+}
+
+.dark .fixed.inset-0 .bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .bg-gray-50 {
+  background-color: rgb(var(--bg-secondary)) !important;
+}
+
+.dark .bg-gray-100 {
+  background-color: rgb(var(--bg-tertiary)) !important;
+}
+
+/* Modal content fixes */
+.dark [role="dialog"] {
+  background-color: rgb(var(--modal-bg)) !important;
+}
+
+.dark .modal-content {
+  background-color: rgb(var(--modal-bg)) !important;
+}
+
+.dark .shadow-lg {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+/* Detail view specific fixes */
+.dark .p-6.bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .rounded-lg.bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .bg-white.rounded-lg {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+/* Additional modal and detail view fixes */
+.dark .absolute.inset-0.bg-white {
+  background-color: rgb(var(--modal-bg)) !important;
+}
+
+.dark .relative.bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .transform.transition-all .bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+/* Ensure text is visible in all modal contexts */
+.dark .bg-white .text-gray-900 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-white .text-gray-800 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-white .text-gray-700 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .bg-white .text-gray-600 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .bg-white .text-gray-500 {
+  color: rgb(var(--text-tertiary)) !important;
+}
+
+/* Fix any remaining white backgrounds in modals */
+.dark .modal .bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+.dark .overlay .bg-white {
+  background-color: rgb(var(--card-bg)) !important;
+}
+
+/* Phase Details and modal specific fixes */
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.1) !important;
+}
+
+.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+.dark .bg-indigo-50 {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+}
+
+.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+}
+
+/* Ensure text is visible in colored backgrounds */
+.dark .bg-blue-50 .text-gray-900,
+.dark .bg-blue-100 .text-gray-900,
+.dark .bg-indigo-50 .text-gray-900,
+.dark .bg-indigo-100 .text-gray-900 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-blue-50 .text-gray-800,
+.dark .bg-blue-100 .text-gray-800,
+.dark .bg-indigo-50 .text-gray-800,
+.dark .bg-indigo-100 .text-gray-800 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .bg-blue-50 .text-gray-700,
+.dark .bg-blue-100 .text-gray-700,
+.dark .bg-indigo-50 .text-gray-700,
+.dark .bg-indigo-100 .text-gray-700 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .bg-blue-50 .text-gray-600,
+.dark .bg-blue-100 .text-gray-600,
+.dark .bg-indigo-50 .text-gray-600,
+.dark .bg-indigo-100 .text-gray-600 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .bg-blue-50 .text-blue-600,
+.dark .bg-blue-100 .text-blue-600 {
+  color: rgb(96, 165, 250) !important;
+}
+
+.dark .bg-indigo-50 .text-indigo-600,
+.dark .bg-indigo-100 .text-indigo-600 {
+  color: rgb(129, 140, 248) !important;
+}
+
+/* Budget overview specific fixes */
+.dark .text-gray-900 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .text-gray-800 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+.dark .text-gray-700 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+.dark .text-gray-600 {
+  color: rgb(var(--text-secondary)) !important;
+}
+
+/* Modal section headers */
+.dark h3.text-gray-900,
+.dark h4.text-gray-900,
+.dark h3.text-gray-800,
+.dark h4.text-gray-800 {
+  color: rgb(var(--text-primary)) !important;
+}
+
+/* Link styling */
+.dark a:not(.text-blue-600):not(.text-white):not(.text-red-600):not(.text-green-600) {
+  color: rgb(var(--accent));
+}
+
+.dark a:hover:not(.text-blue-600):not(.text-white):not(.text-red-600):not(.text-green-600) {
+  color: rgb(var(--accent-hover));
+}
+
+/* Badge and chip styling */
+.dark .bg-gray-100 {
+  background-color: rgb(var(--bg-tertiary));
+  color: rgb(var(--text-primary));
+}
+
+.dark .bg-gray-200 {
+  background-color: rgb(var(--border-primary));
+  color: rgb(var(--text-primary));
+}
+
+/* Code block styling */
+.dark code {
+  background-color: rgb(var(--bg-tertiary));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-primary));
+}
+
+.dark pre {
+  background-color: rgb(var(--bg-tertiary));
+  color: rgb(var(--text-primary));
+  border-color: rgb(var(--border-primary));
+}
+
+/* Loading skeleton improvements */
+.dark .loading-skeleton {
+  background: linear-gradient(90deg, rgb(var(--bg-tertiary)) 25%, rgb(var(--border-primary)) 50%, rgb(var(--bg-tertiary)) 75%);
 }

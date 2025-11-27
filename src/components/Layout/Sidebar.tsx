@@ -32,13 +32,8 @@ export function Sidebar() {
           .eq("is_active", true)
           .maybeSingle();
 
-        console.log('Fetching permissions for role:', userRole);
-        console.log('Role data:', data);
-        console.log('Role error:', error);
-
         if (!error && data) {
           setRolePermissions(data.permissions || []);
-          console.log('Loaded permissions:', data.permissions);
         } else {
           console.error('Failed to load role permissions:', error);
           setRolePermissions([]);
@@ -63,14 +58,21 @@ export function Sidebar() {
       
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('plan_type, role')
+        .select('role')
         .eq('id', userId)
         .single();
 
       console.log('Profile data:', profile, 'Error:', profileError);
 
-      setUserPlan(profile?.plan_type || 'free');
-      const userRoleFromProfile = profile?.role || userRole;
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        // Default values if profile fetch fails
+        setUserPlan('free');
+        const userRoleFromProfile = userRole; // Fall back to auth context role
+      } else {
+        setUserPlan('free'); // Default to free plan since plan_type column doesn't exist
+        var userRoleFromProfile = profile?.role || userRole;
+      }
 
       console.log('User role:', userRoleFromProfile);
 
@@ -78,24 +80,37 @@ export function Sidebar() {
       let assignedProjectId = null;
       if (userRoleFromProfile !== "Admin") {
         // Get user's assigned project from users table
-        const { data: userProfile } = await supabase
-          .from('users')
-          .select('project_id')
-          .eq('email', user?.email)
-          .single();
-        
-        if (userProfile?.project_id) {
-          assignedProjectId = userProfile.project_id;
-        } else {
-          // If user not found in users table, check if they have a project_id in profiles table
-          const { data: profileData } = await supabase
-            .from('profiles')
+        try {
+          const { data: userProfile, error: userError } = await supabase
+            .from('users')
             .select('project_id')
-            .eq('id', user?.id)
+            .eq('email', user?.email)
             .single();
+          
+          if (userError) {
+            console.log('Users table query failed, trying profiles table:', userError);
+            // If users table doesn't exist or query fails, skip to profiles table
+          } else if (userProfile?.project_id) {
+            assignedProjectId = userProfile.project_id;
+          }
+        } catch (error) {
+          console.log('Error querying users table:', error);
+        }
+        
+        if (!assignedProjectId) {
+          // If user not found in users table, check if they have a project_id in profiles table
+          try {
+            const { data: profileData, error: profileIdError } = await supabase
+              .from('profiles')
+              .select('project_id')
+              .eq('id', user?.id)
+              .single();
 
-          if (profileData?.project_id) {
-            assignedProjectId = profileData.project_id;
+            if (!profileIdError && profileData?.project_id) {
+              assignedProjectId = profileData.project_id;
+            }
+          } catch (error) {
+            console.log('Error querying profiles for project_id:', error);
           }
         }
       }
@@ -403,7 +418,6 @@ export function Sidebar() {
   const hasPermission = (requiredPermission: string | string[]) => {
     // Admin always has access
     if (userRole === "Admin") {
-      console.log('Admin user - granting access to:', requiredPermission);
       return true;
     }
 
@@ -415,12 +429,10 @@ export function Sidebar() {
     // Check permissions
     if (Array.isArray(requiredPermission)) {
       const hasAccess = requiredPermission.some(perm => rolePermissions.includes(perm));
-      console.log('Checking array permissions:', requiredPermission, 'Has access:', hasAccess);
       return hasAccess;
     }
 
     const hasAccess = rolePermissions.includes(requiredPermission);
-    console.log('Checking permission:', requiredPermission, 'Has access:', hasAccess);
     return hasAccess;
   };
 

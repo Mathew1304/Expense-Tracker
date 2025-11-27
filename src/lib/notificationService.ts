@@ -85,43 +85,45 @@ export class NotificationService {
         .eq('auth_user_id', userId)
         .single();
 
-      if (error || !data) {
-        console.log('🔍 No user found by auth_user_id in users table, trying by id:', userId);
-        // Fallback: try by id in case the userId is actually the users table id
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('users')
-          .select('name')
-          .eq('id', userId)
-          .single();
+      if (!error && data) {
+        console.log('✅ Found user name in users table:', data.name);
+        return data.name;
+      }
 
-        if (fallbackError || !fallbackData) {
-          console.log('🔍 No user found in users table, trying profiles table:', userId);
-          // Final fallback: try profiles table (self-registered users)
-          const { data: profileData, error: profileError } = await supabase
-            .from('profiles')
-            .select('full_name')
-            .eq('id', userId)
-            .single();
+      console.log('🔍 No user found by auth_user_id in users table, trying by id:', userId);
+      // Fallback: try by id in case the userId is actually the users table id
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('users')
+        .select('name')
+        .eq('id', userId)
+        .single();
 
-          if (profileError || !profileData) {
-            console.error('❌ Error fetching user name from all sources:', error || fallbackError || profileError);
-            return 'Unknown User';
-          }
-
-          console.log('✅ Found user name in profiles table:', profileData.full_name);
-          return profileData.full_name;
-        }
-
+      if (!fallbackError && fallbackData) {
         console.log('✅ Found user name by id in users table:', fallbackData.name);
         return fallbackData.name;
       }
-
-      console.log('✅ Found user name by auth_user_id in users table:', data.name);
-      return data.name;
     } catch (error) {
-      console.error('❌ Exception fetching user name:', error);
-      return 'Unknown User';
+      console.log('❌ Error querying users table:', error);
     }
+
+    // Final fallback: try profiles table
+    try {
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .single();
+
+      if (!profileError && profileData) {
+        console.log('✅ Found user name in profiles table:', profileData.full_name);
+        return profileData.full_name;
+      }
+    } catch (error) {
+      console.log('❌ Error querying profiles table:', error);
+    }
+
+    console.error('❌ Error fetching user name from all sources');
+    return 'Unknown User';
   }
 
   // Helper method to get admin ID from user's created_by field
@@ -136,30 +138,31 @@ export class NotificationService {
         .eq('auth_user_id', userId)
         .single();
 
-      if (error || !data) {
-        console.log('🔍 No user found by auth_user_id, trying by id:', userId);
-        // Fallback: try by id in case the userId is actually the users table id
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('users')
-          .select('created_by')
-          .eq('id', userId)
-          .single();
-
-        if (fallbackError || !fallbackData) {
-          console.error('❌ Error fetching user admin:', error || fallbackError);
-          return null;
-        }
-
-        console.log('✅ Found user admin by id:', fallbackData.created_by);
-        return fallbackData.created_by;
+      if (!error && data) {
+        console.log('✅ Found user admin by auth_user_id:', data.created_by);
+        return data.created_by;
       }
 
-      console.log('✅ Found user admin by auth_user_id:', data.created_by);
-      return data.created_by;
+      console.log('🔍 No user found by auth_user_id, trying by id:', userId);
+      // Fallback: try by id in case the userId is actually the users table id
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('users')
+        .select('created_by')
+        .eq('id', userId)
+        .single();
+
+      if (!fallbackError && fallbackData) {
+        console.log('✅ Found user admin by id:', fallbackData.created_by);
+        return fallbackData.created_by;
+      } else {
+        console.log('❌ Users table queries failed for getUserAdminId');
+      }
     } catch (error) {
-      console.error('❌ Exception fetching user admin:', error);
-      return null;
+      console.log('❌ Error querying users table for getUserAdminId:', error);
     }
+
+    console.error('❌ Could not find user admin from any source');
+    return null;
   }
 
   // Helper method to get project name

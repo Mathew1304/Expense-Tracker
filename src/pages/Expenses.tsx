@@ -132,6 +132,7 @@ export function Expenses() {
   const [formType, setFormType] = useState<'expense' | 'income'>('expense');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
+  const [isViewModeChanging, setIsViewModeChanging] = useState(false);
   const [showGstModal, setShowGstModal] = useState(false);
   const [gstAmount, setGstAmount] = useState("");
   const [gstinInput, setGstinInput] = useState("");
@@ -1377,6 +1378,16 @@ export function Expenses() {
     setShowForm(true);
   };
 
+  const handleViewModeChange = (mode: 'table' | 'cards') => {
+    if (mode === viewMode) return;
+    
+    setIsViewModeChanging(true);
+    setTimeout(() => {
+      setViewMode(mode);
+      setIsViewModeChanging(false);
+    }, 150);
+  };
+
   // Clear date filters
   const formatDateForInput = (date: Date): string => {
     const year = date.getFullYear();
@@ -1673,21 +1684,21 @@ export function Expenses() {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => setViewMode('cards')}
-                className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
+                onClick={() => handleViewModeChange('cards')}
+                className={`flex items-center px-3 py-2 rounded-lg transition-all duration-200 transform ${
                   viewMode === 'cards' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-secondary text-secondary hover:bg-tertiary'
+                    ? 'bg-blue-600 text-white scale-105' 
+                    : 'bg-secondary text-secondary hover:bg-tertiary hover:scale-105'
                 }`}
               >
                 <FileText className="mr-2" size={16} /> Cards
               </button>
               <button
-                onClick={() => setViewMode('table')}
-                className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
+                onClick={() => handleViewModeChange('table')}
+                className={`flex items-center px-3 py-2 rounded-lg transition-all duration-200 transform ${
                   viewMode === 'table' 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-secondary text-secondary hover:bg-tertiary'
+                    ? 'bg-blue-600 text-white scale-105' 
+                    : 'bg-secondary text-secondary hover:bg-tertiary hover:scale-105'
                 }`}
               >
                 <FileText className="mr-2" size={16} /> Table
@@ -1829,12 +1840,20 @@ export function Expenses() {
           </div>
 
           {/* Transactions Container */}
-          <div className="flex-1 overflow-auto bg-card rounded-lg shadow border border-secondary mb-4">
-            {loading ? (
+          <div className={`flex-1 overflow-auto bg-card rounded-lg shadow border border-secondary mb-4 transition-opacity duration-300 ${
+            isViewModeChanging ? 'opacity-50' : 'opacity-100'
+          }`}>
+            {loading || isViewModeChanging ? (
               <div className="flex justify-center items-center h-64">
-                <p className="text-xl text-secondary">Loading...</p>
+                <div className="animate-pulse-slow">
+                  <p className="text-xl text-secondary">Loading...</p>
+                </div>
               </div>
-            ) : viewMode === 'table' ? (
+            ) : (
+              <div className={`transition-all duration-300 ${
+                isViewModeChanging ? 'opacity-0 transform scale-95' : 'opacity-100 transform scale-100'
+              }`}>
+                {viewMode === 'table' ? (
               <table className="w-full">
                 <thead className="bg-secondary sticky top-0">
                   <tr>
@@ -1956,7 +1975,7 @@ export function Expenses() {
                 </tbody>
               </table>
             ) : (
-              <div className="p-6">
+              <div className="p-6 animate-fadeIn">
                 <div className="space-y-4">
                   {currentTransactions.map((t) => {
                     const totalAmount = t.amount + (t.gst_amount || 0);
@@ -2108,6 +2127,8 @@ export function Expenses() {
                     </div>
                   )}
                 </div>
+                </div>
+                )}
               </div>
             )}
           </div>

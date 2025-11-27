@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { Package, Plus, Search, Filter, CreditCard as Edit, Trash2, Eye, Building, Tag, DollarSign, Hash, X, AlertTriangle, CheckCircle, FileText } from "lucide-react";
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
@@ -167,56 +167,58 @@ export function Materials() {
     }
   };
 
+  // Optimized fetchUserData with error handling
   useEffect(() => {
     const fetchUserData = async () => {
       if (!user?.id) return;
 
-      // First try to get user from users table by email or auth_user_id
-      let userRecord = null;
-      
-      // Try by email first
-      const { data: userByEmail } = await supabase
-        .from('users')
-        .select('id, project_id')
-        .eq('email', user.email)
-        .single();
-      
-      if (userByEmail) {
-        userRecord = userByEmail;
-      } else {
-        // Try by auth_user_id as fallback
-        const { data: userByAuthId } = await supabase
+      try {
+        // First try to get user from users table by email or auth_user_id
+        let userRecord = null;
+        
+        // Try by email first
+        const { data: userByEmail, error: emailError } = await supabase
           .from('users')
           .select('id, project_id')
-          .eq('auth_user_id', user?.id)
+          .eq('email', user.email)
           .single();
         
-        if (userByAuthId) {
-          userRecord = userByAuthId;
-        }
-      }
-
-      if (userRecord?.id) {
-        // Fetch multiple projects from user_projects table
-        const { data: userProjects, error: userProjectsError } = await supabase
-          .from('user_projects')
-          .select('project_id')
-          .eq('user_id', userRecord.id);
-
-        if (!userProjectsError && userProjects && userProjects.length > 0) {
-          const projectIds = userProjects.map(up => up.project_id);
-          console.log('Materials - Found assigned projects:', projectIds);
-          setAssignedProjectIds(projectIds);
-        } else if (userRecord.project_id) {
-          // Fallback to single project_id for backward compatibility
-          console.log('Materials - Using single project_id (backward compatibility):', userRecord.project_id);
-          setAssignedProjectIds([userRecord.project_id]);
+        if (!emailError && userByEmail) {
+          userRecord = userByEmail;
         } else {
-          console.log('Materials - No projects assigned to user');
+          // Try by auth_user_id as fallback
+          const { data: userByAuthId, error: authError } = await supabase
+            .from('users')
+            .select('id, project_id')
+            .eq('auth_user_id', user?.id)
+            .single();
+          
+          if (!authError && userByAuthId) {
+            userRecord = userByAuthId;
+          }
+        }
+
+        if (userRecord?.id) {
+          // Fetch multiple projects from user_projects table
+          const { data: userProjects, error: userProjectsError } = await supabase
+            .from('user_projects')
+            .select('project_id')
+            .eq('user_id', userRecord.id);
+
+          if (!userProjectsError && userProjects && userProjects.length > 0) {
+            const projectIds = userProjects.map(up => up.project_id);
+            setAssignedProjectIds(projectIds);
+          } else if (userRecord.project_id) {
+            // Fallback to single project_id for backward compatibility
+            setAssignedProjectIds([userRecord.project_id]);
+          } else {
+            setAssignedProjectIds([]);
+          }
+        } else {
           setAssignedProjectIds([]);
         }
-      } else {
-        console.log('Materials - User not found in users table');
+      } catch (error) {
+        console.error('Error fetching user data:', error);
         setAssignedProjectIds([]);
       }
     };
@@ -240,13 +242,12 @@ export function Materials() {
     }
   }, [showSuccessMessage]);
 
-  const fetchMaterials = async () => {
+  // Optimized fetchMaterials with reduced logging and better error handling
+  const fetchMaterials = useCallback(async () => {
     if (!user?.id) return;
 
     setLoading(true);
     setError(null);
-
-    console.log('Materials - fetchMaterials called with:', { userRole, assignedProjectIds, userId: user?.id });
 
     let query = supabase
       .from("materials")
@@ -268,10 +269,8 @@ export function Materials() {
       `);
 
     if (userRole === 'Admin') {
-      console.log('Materials - Admin user, filtering by created_by:', user.id);
       query = query.eq("created_by", user.id);
     } else if (assignedProjectIds.length > 0) {
-      console.log('Materials - Non-admin user, filtering by assigned projects:', assignedProjectIds);
       query = query.in("project_id", assignedProjectIds);
     } else {
       setMaterials([]);
@@ -279,111 +278,97 @@ export function Materials() {
       return;
     }
 
-    console.log('Materials - About to execute query...');
-    const { data, error } = await query.order("updated_at", { ascending: false });
+    try {
+      const { data, error } = await query.order("updated_at", { ascending: false });
 
-    console.log('Materials - Query result:', { data, error, dataLength: data?.length });
-
-    if (error) {
-      console.error("Materials - Fetch error:", error);
-      console.error("Materials - Error details:", {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code
-      });
-      
-      // Check if it's a permissions issue
-      if (error.message.includes('permission') || error.message.includes('policy')) {
-        console.log('Materials - This appears to be a Row Level Security (RLS) permissions issue');
-        console.log('Materials - The user may not have permission to access materials for this project');
+      if (error) {
+        console.error("Materials - Fetch error:", error);
         
-        // For non-admin users, try to fetch materials directly without the join
-        if (assignedProjectIds.length > 0 && userRole !== 'Admin') {
-          console.log('Materials - Trying direct fetch without projects join...');
-          const { data: directData, error: directError } = await supabase
-            .from("materials")
-            .select('id, name, description, category, unit, qty_required, unit_cost, project_id, supplier, hsn, specifications, status, updated_at, created_by')
-            .in("project_id", assignedProjectIds)
-            .order("updated_at", { ascending: false });
-          
-          console.log('Materials - Direct fetch result:', { directData, directError });
-          
-          if (!directError && directData) {
-            // Get project names for fallback data
-            const { data: projectData } = await supabase
-              .from("projects")
-              .select("id, name")
-              .in("id", assignedProjectIds);
-            const projectNameMap = new Map((projectData || []).map((p: any) => [p.id, p.name]));
+        // Check if it's a permissions issue
+        if (error.message.includes('permission') || error.message.includes('policy')) {
+          // For non-admin users, try to fetch materials directly without the join
+          if (assignedProjectIds.length > 0 && userRole !== 'Admin') {
+            const { data: directData, error: directError } = await supabase
+              .from("materials")
+              .select('id, name, description, category, unit, qty_required, unit_cost, project_id, supplier, hsn, specifications, status, updated_at, created_by')
+              .in("project_id", assignedProjectIds)
+              .order("updated_at", { ascending: false });
+            
+            if (!directError && directData) {
+              // Get project names for fallback data
+              const { data: projectData } = await supabase
+                .from("projects")
+                .select("id, name")
+                .in("id", assignedProjectIds);
+              const projectNameMap = new Map((projectData || []).map((p: any) => [p.id, p.name]));
 
-            const mapped = directData.map((m: any) => ({
-              id: m.id,
-              name: m.name,
-              description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Assigned Project'}`,
-              category: m.category || 'Cement & Concrete',
-              unit: m.unit || 'Kg',
-              qty_required: m.qty_required || 0,
-              unit_cost: m.unit_cost || 0,
-              project_id: m.project_id,
-              project_name: projectNameMap.get(m.project_id) || "Assigned Project",
-              supplier: m.supplier || 'Not Specified',
-              hsn: m.hsn || '',
-              specifications: m.specifications || 'Standard construction grade material',
-              status: m.status || "In Stock",
-              updated_at: m.updated_at,
-              created_by: m.created_by,
-            }));
-            console.log('Materials - Setting materials data from direct fetch:', mapped);
-            setMaterials(mapped);
-            setLoading(false);
-            return;
+              const mapped = directData.map((m: any) => ({
+                id: m.id,
+                name: m.name,
+                description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Assigned Project'}`,
+                category: m.category || 'Cement & Concrete',
+                unit: m.unit || 'Kg',
+                qty_required: m.qty_required || 0,
+                unit_cost: m.unit_cost || 0,
+                project_id: m.project_id,
+                project_name: projectNameMap.get(m.project_id) || "Assigned Project",
+                supplier: m.supplier || 'Not Specified',
+                hsn: m.hsn || '',
+                specifications: m.specifications || 'Standard construction grade material',
+                status: m.status || "In Stock",
+                updated_at: m.updated_at,
+                created_by: m.created_by,
+              }));
+              setMaterials(mapped);
+              setLoading(false);
+              return;
+            }
           }
         }
-      }
-      
-      setError(error.message);
-    } else {
-      console.log('Materials - Processing materials data...');
-      
-      // Get project names separately for better reliability
-      const projectNameMap = new Map<string, string>();
-      if (assignedProjectIds.length > 0) {
-        const { data: projectData } = await supabase
-          .from("projects")
-          .select("id, name")
-          .in("id", assignedProjectIds);
-        if (projectData) {
-          projectData.forEach((p: any) => projectNameMap.set(p.id, p.name));
+        
+        setError(error.message);
+      } else {
+        // Get project names separately for better reliability
+        const projectNameMap = new Map<string, string>();
+        if (assignedProjectIds.length > 0) {
+          const { data: projectData } = await supabase
+            .from("projects")
+            .select("id, name")
+            .in("id", assignedProjectIds);
+          if (projectData) {
+            projectData.forEach((p: any) => projectNameMap.set(p.id, p.name));
+          }
         }
+        
+        const mapped = (data || []).map((m: any) => ({
+          id: m.id,
+          name: m.name,
+          description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Unknown'}`,
+          category: m.category || 'Cement & Concrete',
+          unit: m.unit || 'Kg',
+          qty_required: m.qty_required || 0,
+          unit_cost: m.unit_cost || 0,
+          project_id: m.project_id,
+          project_name: m.projects?.name || projectNameMap.get(m.project_id) || "Unknown",
+          supplier: m.supplier || 'Not Specified',
+          hsn: m.hsn || '',
+          specifications: m.specifications || 'Standard construction grade material',
+          status: m.status || "In Stock",
+          updated_at: m.updated_at,
+          created_by: m.created_by,
+        }));
+        setMaterials(mapped);
       }
-
-      console.log('Materials - Project names for materials:', projectNameMap);
-      
-      const mapped = (data || []).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        description: m.description || `Construction material for ${projectNameMap.get(m.project_id) || 'Unknown'}`,
-        category: m.category || 'Cement & Concrete',
-        unit: m.unit || 'Kg',
-        qty_required: m.qty_required || 0,
-        unit_cost: m.unit_cost || 0,
-        project_id: m.project_id,
-        project_name: m.projects?.name || projectNameMap.get(m.project_id) || "Unknown",
-        supplier: m.supplier || 'Not Specified',
-        hsn: m.hsn || '',
-        specifications: m.specifications || 'Standard construction grade material',
-        status: m.status || "In Stock",
-        updated_at: m.updated_at,
-        created_by: m.created_by,
-      }));
-      console.log('Materials - Setting materials data:', mapped);
-      setMaterials(mapped);
+    } catch (error) {
+      console.error('Unexpected error in fetchMaterials:', error);
+      setError('An unexpected error occurred while fetching materials');
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
-  };
+  }, [user?.id, userRole, assignedProjectIds]);
 
-  const fetchProjects = async () => {
+  // Optimized fetchProjects
+  const fetchProjects = useCallback(async () => {
     if (!user?.id) return;
 
     let query = supabase
@@ -399,14 +384,18 @@ export function Materials() {
       return;
     }
 
-    const { data, error } = await query.order("created_at", { ascending: false });
+    try {
+      const { data, error } = await query.order("created_at", { ascending: false });
 
-    if (error) {
-      console.error("Fetch projects error:", error);
-    } else if (data) {
-      setProjects(data);
+      if (error) {
+        console.error("Fetch projects error:", error);
+      } else if (data) {
+        setProjects(data);
+      }
+    } catch (error) {
+      console.error('Unexpected error in fetchProjects:', error);
     }
-  };
+  }, [user?.id, userRole, assignedProjectIds]);
 
   const handleAddMaterial = async () => {
     if (
@@ -594,18 +583,31 @@ export function Materials() {
     }
   };
 
-  const filteredMaterials = materials.filter(material => {
-    const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         material.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         material.supplier?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         material.category?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'all' || material.category === categoryFilter;
-    const matchesSupplier = supplierFilter === 'all' || material.supplier === supplierFilter;
-    const matchesProject = !selectedProject || material.project_id === selectedProject;
-    return matchesSearch && matchesCategory && matchesSupplier && matchesProject;
-  });
+  // Memoized filtered materials for performance
+  const filteredMaterials = useMemo(() => {
+    return materials.filter(material => {
+      const matchesSearch = material.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           material.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           material.supplier?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                           material.category?.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesCategory = categoryFilter === 'all' || material.category === categoryFilter;
+      const matchesSupplier = supplierFilter === 'all' || material.supplier === supplierFilter;
+      const matchesProject = !selectedProject || material.project_id === selectedProject;
+      return matchesSearch && matchesCategory && matchesSupplier && matchesProject;
+    });
+  }, [materials, searchTerm, categoryFilter, supplierFilter, selectedProject]);
 
-  const suppliers = [...new Set(materials.map(m => m.supplier).filter(Boolean))];
+  // Memoized suppliers list
+  const suppliers = useMemo(() => [...new Set(materials.map(m => m.supplier).filter(Boolean))], [materials]);
+
+  // Memoized statistics
+  const statistics = useMemo(() => {
+    const totalMaterials = materials.length;
+    const avgRate = totalMaterials > 0 ? materials.reduce((sum, m) => sum + m.unit_cost, 0) / totalMaterials : 0;
+    const categoriesCount = [...new Set(materials.map(m => m.category))].length;
+    const suppliersCount = suppliers.length;
+    return { totalMaterials, avgRate, categoriesCount, suppliersCount };
+  }, [materials, suppliers]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-IN', {
@@ -630,10 +632,7 @@ export function Materials() {
     return colors[category] || 'bg-slate-100 text-slate-800';
   };
 
-  const totalMaterials = materials.length;
-  const avgRate = materials.length > 0 ? materials.reduce((sum, m) => sum + m.unit_cost, 0) / materials.length : 0;
-  const categoriesCount = [...new Set(materials.map(m => m.category))].length;
-  const suppliersCount = suppliers.length;
+  const { totalMaterials, avgRate, categoriesCount, suppliersCount } = statistics;
 
   const getHeaderSubtitle = () => {
     if (selectedMaterial) {
@@ -646,7 +645,10 @@ export function Materials() {
     return (
       <Layout title="Material Catalog" subtitle={getHeaderSubtitle()}>
         <div className="flex justify-center items-center h-64">
-          <p className="text-xl text-gray-600">Loading materials...</p>
+          <div className="animate-pulse-slow">
+            <Package className="w-8 h-8 text-blue-500 mb-4 mx-auto" />
+            <p className="text-xl text-gray-600">Loading materials...</p>
+          </div>
         </div>
       </Layout>
     );
@@ -657,7 +659,7 @@ export function Materials() {
       <Layout title="Material Catalog" subtitle={getHeaderSubtitle()}>
         <div className="flex-1 flex flex-col overflow-hidden">
           {showSuccessMessage && (
-            <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2">
+            <div className="fixed top-4 right-4 z-50 bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-lg shadow-lg flex items-center space-x-2 animate-slideIn">
               <CheckCircle className="h-5 w-5" />
               <span>{successMessage}</span>
               <button
@@ -669,7 +671,7 @@ export function Materials() {
             </div>
           )}
 
-          <div className="p-6 space-y-6 flex-1 flex flex-col overflow-hidden">
+          <div className="p-6 space-y-6 flex-1 flex flex-col overflow-hidden animate-fadeIn">
             <div className="flex items-center justify-between">
               <div>
                 <h1 className="text-3xl font-bold text-slate-900">Material Catalog</h1>
@@ -830,7 +832,7 @@ export function Materials() {
                   {filteredMaterials.map((material) => (
                     <div
                       key={material.id}
-                      className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-shadow cursor-pointer ${
+                      className={`bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md transition-all duration-200 cursor-pointer transform hover:scale-[1.02] ${
                         selectedMaterial?.id === material.id ? 'ring-2 ring-blue-500 bg-blue-50' : ''
                       }`}
                       onClick={() => setSelectedMaterial(material)}
@@ -916,7 +918,7 @@ export function Materials() {
                               e.stopPropagation();
                               handleViewMaterial(material);
                             }}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all duration-200"
                             title="View Details"
                           >
                             <Eye className="w-4 h-4" />
@@ -927,7 +929,7 @@ export function Materials() {
                                 e.stopPropagation();
                                 handleEditClick(material);
                               }}
-                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-all duration-200"
                               title="Edit"
                             >
                               <Edit className="w-4 h-4" />
@@ -939,7 +941,7 @@ export function Materials() {
                                 e.stopPropagation();
                                 handleDeleteMaterial(material.id);
                               }}
-                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all duration-200"
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />
