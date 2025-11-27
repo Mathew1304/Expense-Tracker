@@ -12,6 +12,7 @@ interface LayoutProps {
 export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   // Check if mobile screen
   useEffect(() => {
@@ -25,6 +26,7 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
     };
 
     checkScreenSize();
+    setIsInitialized(true); // Mark as initialized after first check
     window.addEventListener("resize", checkScreenSize);
     return () => window.removeEventListener("resize", checkScreenSize);
   }, []);
@@ -39,8 +41,17 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
     return () => window.removeEventListener("sidebarToggle", handleSidebarToggle as EventListener);
   }, []);
 
+  // Prevent layout shift during initialization
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-primary flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-primary flex flex-col">
       <Sidebar />
       <Header
         title={title}
@@ -49,22 +60,24 @@ export function Layout({ children, title = "Dashboard", subtitle }: LayoutProps)
         isMobile={isMobile}
       />
 
-      {/* Main content without transitions */}
+      {/* Main content with smooth transitions */}
       <main
-        className={`pt-4 p-6 flex-1 ${
+        className={`pt-4 p-6 flex-1 transition-all duration-300 ease-in-out ${
           !isMobile && isSidebarOpen ? "ml-64" : "ml-0"
         }`}
       >
-        {children}
+        <div className="animate-fadeIn">
+          {children}
+        </div>
       </main>
 
-      {/* Footer without transitions */}
+      {/* Footer with smooth transitions */}
       <footer
-        className={`bg-white border-t border-gray-200 py-4 ${
+        className={`bg-card border-t border-primary py-4 transition-all duration-300 ease-in-out ${
           !isMobile && isSidebarOpen ? "ml-64" : "ml-0"
         }`}
       >
-        <div className="text-center text-gray-500 text-sm">
+        <div className="text-center text-tertiary text-sm">
           © 2025 BuildMyHomes.in — All Rights Reserved
         </div>
       </footer>

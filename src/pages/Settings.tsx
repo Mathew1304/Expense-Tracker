@@ -28,6 +28,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { format } from 'date-fns';
 import { testSMSService } from '../lib/smsService';
+import { sendEmailChangeNotification } from '../lib/emailService';
 
 interface Profile {
   id: string;
@@ -87,6 +88,11 @@ export function Settings() {
     currentPassword: '',
     newPassword: '',
     confirmPassword: ''
+  });
+  const [emailData, setEmailData] = useState({
+    newEmail: '',
+    confirmEmail: '',
+    currentPassword: ''
   });
   const [notificationSettings, setNotificationSettings] = useState({
     emailNotifications: true,
@@ -197,6 +203,104 @@ export function Settings() {
     } catch (error) {
       console.error('Error updating profile:', error);
       setSuccessMessage('Failed to update profile. Please try again.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleEmailChange = async () => {
+    if (!emailData.newEmail.trim()) {
+      setSuccessMessage('Please enter a new email address.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (!emailData.confirmEmail.trim()) {
+      setSuccessMessage('Please confirm your new email address.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (!emailData.currentPassword.trim()) {
+      setSuccessMessage('Please enter your current password to verify your identity.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (emailData.newEmail !== emailData.confirmEmail) {
+      setSuccessMessage('Email addresses do not match.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(emailData.newEmail)) {
+      setSuccessMessage('Please enter a valid email address.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    if (emailData.newEmail === user?.email) {
+      setSuccessMessage('New email must be different from current email.');
+      setTimeout(() => setSuccessMessage(null), 3000);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      if (!user?.email) {
+        throw new Error('User email not found');
+      }
+
+      // Verify current password
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: emailData.currentPassword
+      });
+
+      if (signInError) {
+        throw new Error('Current password is incorrect.');
+      }
+
+      // Update email in Supabase Auth
+      const { error: updateError } = await supabase.auth.updateUser({
+        email: emailData.newEmail
+      });
+
+      if (updateError) throw updateError;
+
+      // Update email in profiles table
+      const { error: profileUpdateError } = await supabase
+        .from('profiles')
+        .update({ email: emailData.newEmail })
+        .eq('id', user?.id);
+
+      if (profileUpdateError) throw profileUpdateError;
+
+      // Send email change notification via Resend
+      const userName = profile?.full_name || user.email?.split('@')[0] || 'User';
+      console.log('📧 Sending email change notification via Resend...');
+      await sendEmailChangeNotification(
+        user.id,
+        user.email,
+        emailData.newEmail,
+        userName
+      );
+
+      // Reset form
+      setEmailData({
+        newEmail: '',
+        confirmEmail: '',
+        currentPassword: ''
+      });
+
+      setSuccessMessage('Email update initiated! Notifications sent to both email addresses.');
+      setTimeout(() => setSuccessMessage(null), 5000);
+    } catch (error: any) {
+      console.error('Error updating email:', error);
+      setSuccessMessage(error.message || 'Failed to update email. Please try again.');
       setTimeout(() => setSuccessMessage(null), 3000);
     } finally {
       setSaving(false);
@@ -742,6 +846,89 @@ export function Settings() {
                       <div>
                         <h3 className="font-semibold text-blue-900">Account Security</h3>
                         <p className="text-sm text-blue-800 mt-1">Keep your account secure by regularly updating your password and managing access permissions.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-6 border border-gray-200 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Change Email Address</h3>
+                    <p className="text-sm text-gray-600 mb-4">Update your email address. You'll need to verify your new email address.</p>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Current Email
+                        </label>
+                        <input
+                          type="email"
+                          value={user?.email || ''}
+                          disabled
+                          className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-600"
+                          placeholder="Current email address"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          New Email Address
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                          <input
+                            type="email"
+                            value={emailData.newEmail}
+                            onChange={(e) => setEmailData(prev => ({ ...prev, newEmail: e.target.value }))}
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Enter new email address"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Confirm New Email
+                        </label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
+                          <input
+                            type="email"
+                            value={emailData.confirmEmail}
+                            onChange={(e) => setEmailData(prev => ({ ...prev, confirmEmail: e.target.value }))}
+                            className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                            placeholder="Confirm new email address"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Current Password (for verification)
+                        </label>
+                        <div className="relative">
+                          <input
+                            type={showPassword ? 'text' : 'password'}
+                            value={emailData.currentPassword}
+                            onChange={(e) => setEmailData(prev => ({ ...prev, currentPassword: e.target.value }))}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent pr-10"
+                            placeholder="Enter your current password"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-3 text-gray-400 hover:text-gray-600 transition-colors"
+                          >
+                            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <button
+                          onClick={handleEmailChange}
+                          disabled={saving || !emailData.newEmail || !emailData.confirmEmail || !emailData.currentPassword}
+                          className="bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
+                        >
+                          {saving ? 'Updating Email...' : 'Update Email Address'}
+                        </button>
                       </div>
                     </div>
                   </div>

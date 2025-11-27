@@ -1526,14 +1526,14 @@ export function Expenses() {
           </div>
         )}
 
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex flex-col">
 
           {/* Financial Summary & Tracking Module */}
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Total Income */}
             <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg shadow p-6 border-l-4 border-green-600">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Total Income</span>
+                <span className="text-sm font-medium text-secondary">Total Income</span>
                 <TrendingUp className="w-5 h-5 text-green-600" />
               </div>
               <p className="text-3xl font-bold text-green-700">₹{totalIncome.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
@@ -1543,7 +1543,7 @@ export function Expenses() {
             {/* Total Expenses */}
             <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg shadow p-6 border-l-4 border-red-600">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Total Expenses</span>
+                <span className="text-sm font-medium text-secondary">Total Expenses</span>
                 <TrendingDown className="w-5 h-5 text-red-600" />
               </div>
               <p className="text-3xl font-bold text-red-700">₹{totalExpenses.toLocaleString('en-IN', { maximumFractionDigits: 2 })}</p>
@@ -1557,7 +1557,7 @@ export function Expenses() {
                 : 'from-orange-50 to-orange-100 border-orange-600'
             }`}>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Net Balance</span>
+                <span className="text-sm font-medium text-secondary">Net Balance</span>
                 <Calculator className="w-5 h-5" style={{ color: (totalIncome - totalExpenses) >= 0 ? '#2563eb' : '#ea580c' }} />
               </div>
               <p className={`text-3xl font-bold ${(totalIncome - totalExpenses) >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
@@ -1571,7 +1571,7 @@ export function Expenses() {
             {/* Budget Utilization */}
             <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg shadow p-6 border-l-4 border-purple-600">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-medium text-gray-700">Utilization</span>
+                <span className="text-sm font-medium text-secondary">Utilization</span>
                 <AlertCircle className="w-5 h-5 text-purple-600" />
               </div>
               <p className="text-3xl font-bold text-purple-700">
@@ -1582,12 +1582,12 @@ export function Expenses() {
           </div>
 
           {/* Transaction Summary by Category */}
-          <div className="mb-6 bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Transaction Overview</h3>
+          <div className="mb-6 bg-card rounded-lg shadow p-6 border border-secondary">
+            <h3 className="text-lg font-semibold text-primary mb-4">Transaction Overview</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Expenses by Category */}
               <div>
-                <h4 className="font-medium text-gray-800 mb-3 text-sm">Top Expense Categories</h4>
+                <h4 className="font-medium text-primary mb-3 text-sm">Top Expense Categories</h4>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {Object.entries(
                     transactions
@@ -1602,7 +1602,7 @@ export function Expenses() {
                     .slice(0, 10)
                     .map(([category, amount]) => (
                       <div key={category} className="flex items-center justify-between p-2 bg-red-50 rounded">
-                        <span className="text-sm text-gray-700">{category}</span>
+                        <span className="text-sm text-primary">{category}</span>
                         <span className="font-medium text-red-600">₹{(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                       </div>
                     ))}
@@ -1611,7 +1611,7 @@ export function Expenses() {
 
               {/* Income by Category */}
               <div>
-                <h4 className="font-medium text-gray-800 mb-3 text-sm">Top Income Categories</h4>
+                <h4 className="font-medium text-primary mb-3 text-sm">Top Income Categories</h4>
                 <div className="space-y-2 max-h-64 overflow-y-auto">
                   {Object.entries(
                     transactions
@@ -1626,7 +1626,7 @@ export function Expenses() {
                     .slice(0, 10)
                     .map(([category, amount]) => (
                       <div key={category} className="flex items-center justify-between p-2 bg-green-50 rounded">
-                        <span className="text-sm text-gray-700">{category}</span>
+                        <span className="text-sm text-primary">{category}</span>
                         <span className="font-medium text-green-600">₹{(amount).toLocaleString('en-IN', { maximumFractionDigits: 2 })}</span>
                       </div>
                     ))}
@@ -1677,7 +1677,7 @@ export function Expenses() {
                 className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
                   viewMode === 'cards' 
                     ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-secondary text-secondary hover:bg-tertiary'
                 }`}
               >
                 <FileText className="mr-2" size={16} /> Cards
@@ -1687,7 +1687,7 @@ export function Expenses() {
                 className={`flex items-center px-3 py-2 rounded-lg transition-colors ${
                   viewMode === 'table' 
                     ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                    : 'bg-secondary text-secondary hover:bg-tertiary'
                 }`}
               >
                 <FileText className="mr-2" size={16} /> Table
@@ -1716,17 +1716,17 @@ export function Expenses() {
           {/* Search + Filter */}
           <div className="flex items-center mb-4 gap-4 flex-wrap">
             <div className="flex-1 flex items-center gap-2 min-w-64">
-              <Search size={18} className="text-gray-400" />
+              <Search size={18} className="text-tertiary" />
               <input
                 type="text"
                 placeholder="Search transactions..."
-                className="border border-gray-300 p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="border border-secondary p-2 rounded-lg w-full focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-card text-primary"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
             <select
-              className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="border border-secondary p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-card text-primary"
               value={selectedProject}
               onChange={(e) => {
                 setSelectedProject(e.target.value);
@@ -1745,13 +1745,13 @@ export function Expenses() {
             <div className="space-y-3">
               {/* Preset Buttons */}
               <div className="flex items-center gap-2 flex-wrap">
-                <Calendar size={18} className="text-gray-400" />
+                <Calendar size={18} className="text-tertiary" />
                 <button
                   onClick={() => applyDateFilterPreset('lastDay')}
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
                     dateFilterPreset === 'lastDay'
                       ? 'bg-blue-600 text-white'
-                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                      : 'border border-secondary text-secondary hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20'
                   }`}
                 >
                   Last Day
@@ -1761,7 +1761,7 @@ export function Expenses() {
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
                     dateFilterPreset === 'last7Days'
                       ? 'bg-blue-600 text-white'
-                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                      : 'border border-secondary text-secondary hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20'
                   }`}
                 >
                   Last 7 Days
@@ -1771,7 +1771,7 @@ export function Expenses() {
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
                     dateFilterPreset === 'lastMonth'
                       ? 'bg-blue-600 text-white'
-                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                      : 'border border-secondary text-secondary hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20'
                   }`}
                 >
                   Last Month
@@ -1784,7 +1784,7 @@ export function Expenses() {
                   className={`px-3 py-1 rounded-lg text-sm font-medium transition-all ${
                     dateFilterPreset === 'custom'
                       ? 'bg-blue-600 text-white'
-                      : 'border border-gray-300 text-gray-700 hover:border-blue-500 hover:bg-blue-50'
+                      : 'border border-secondary text-secondary hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20'
                   }`}
                 >
                   Custom Range
@@ -1803,20 +1803,20 @@ export function Expenses() {
               {/* Custom Date Range Input */}
               {showCustomDatePicker && dateFilterPreset === 'custom' && (
                 <div className="flex items-center gap-2 bg-blue-50 p-3 rounded-lg">
-                  <span className="text-sm text-gray-600">From:</span>
+                  <span className="text-sm text-secondary">From:</span>
                   <input
                     type="date"
-                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="border border-secondary p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-card text-primary"
                     value={fromDate}
                     onChange={(e) => {
                       setFromDate(e.target.value);
                       setCurrentPage(1);
                     }}
                   />
-                  <span className="text-sm text-gray-600">To:</span>
+                  <span className="text-sm text-secondary">To:</span>
                   <input
                     type="date"
-                    className="border border-gray-300 p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="border border-secondary p-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-card text-primary"
                     value={toDate}
                     onChange={(e) => {
                       setToDate(e.target.value);
@@ -1829,26 +1829,26 @@ export function Expenses() {
           </div>
 
           {/* Transactions Container */}
-          <div className="flex-1 overflow-auto bg-white rounded-lg shadow">
+          <div className="flex-1 overflow-auto bg-card rounded-lg shadow border border-secondary mb-4">
             {loading ? (
               <div className="flex justify-center items-center h-64">
-                <p className="text-xl text-gray-600">Loading...</p>
+                <p className="text-xl text-secondary">Loading...</p>
               </div>
             ) : viewMode === 'table' ? (
               <table className="w-full">
-                <thead className="bg-gray-50 sticky top-0">
+                <thead className="bg-secondary sticky top-0">
                   <tr>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Type</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Project</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Phase</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Category</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Vendor</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Amount</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">GST</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Total</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Payment Method</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Date</th>
-                    <th className="p-3 text-left font-medium text-gray-700 border-b">Actions</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Type</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Project</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Phase</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Category</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Vendor</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Amount</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">GST</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Total</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Payment Method</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Date</th>
+                    <th className="p-3 text-left font-medium text-primary border-b border-secondary">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1858,34 +1858,34 @@ export function Expenses() {
                     return (
                       <tr
                         key={t.id}
-                        className={`cursor-pointer transition-all border-b hover:bg-gray-50 ${
+                        className={`cursor-pointer transition-all border-b hover:bg-tertiary ${
                           selectedTransaction?.id === t.id
-                            ? "bg-blue-50 border-l-4 border-l-blue-500"
+                            ? "bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500"
                             : ""
-                        } ${t.type === 'expense' ? 'bg-red-50' : 'bg-green-50'}`}
+                        } ${t.type === 'expense' ? 'bg-red-50 dark:bg-red-900/20' : 'bg-green-50 dark:bg-green-900/20'}`}
                         onClick={() => setSelectedTransaction(t)}
                       >
                         <td className="p-3">
                           <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                             t.type === 'income'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                              : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                           }`}>
                             {t.type === 'income' ? 'Income' : 'Expense'}
                           </span>
                         </td>
-                        <td className="p-3 text-gray-900">{t.project_name}</td>
-                        <td className="p-3 text-gray-900">{t.phase_name}</td>
-                        <td className="p-3 text-gray-900">{t.category}</td>
-                        <td className="p-3 text-gray-900">{t.vendor_name || '-'}</td>
+                        <td className="p-3 text-primary">{t.project_name}</td>
+                        <td className="p-3 text-primary">{t.phase_name}</td>
+                        <td className="p-3 text-primary">{t.category}</td>
+                        <td className="p-3 text-primary">{t.vendor_name || '-'}</td>
                         <td className={`p-3 font-medium ${
                           t.type === 'income' ? 'text-green-600' : 'text-red-600'
                         }`}>
                           {t.type === 'income' ? '' : ''}₹{t.amount.toFixed(2)}
                         </td>
-                        <td className={`p-3 ${hasGst ? 'text-blue-600' : 'text-gray-500'}`}>
+                        <td className={`p-3 ${hasGst ? 'text-blue-600' : 'text-tertiary'}`}>
                           {hasGst ? (
-                            <span className="bg-blue-50 px-2 py-1 rounded text-sm font-medium">
+                            <span className="bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded text-sm font-medium text-blue-700 dark:text-blue-400">
                               ₹{(t.gst_amount || 0).toFixed(2)}
                             </span>
                           ) : (
@@ -1897,8 +1897,8 @@ export function Expenses() {
                         }`}>
                           {t.type === 'income' ? '' : ''}₹{totalAmount.toFixed(2)}
                         </td>
-                        <td className="p-3 text-gray-900">{t.payment_method}</td>
-                        <td className="p-3 text-gray-900">
+                        <td className="p-3 text-primary">{t.payment_method}</td>
+                        <td className="p-3 text-primary">
                           {format(new Date(t.date), "dd/MM/yyyy")}
                         </td>
                         <td className="p-3">
@@ -1948,7 +1948,7 @@ export function Expenses() {
                   })}
                   {currentTransactions.length === 0 && (
                     <tr>
-                      <td colSpan={11} className="p-8 text-center text-gray-500">
+                      <td colSpan={11} className="p-8 text-center text-tertiary">
                         No transactions found
                       </td>
                     </tr>
@@ -1967,7 +1967,7 @@ export function Expenses() {
                         className={`border rounded-lg p-4 cursor-pointer transition-all hover:shadow-md ${
                           selectedTransaction?.id === t.id
                             ? "border-blue-500 bg-blue-50"
-                            : "border-gray-200 bg-white"
+                            : "border-secondary bg-card"
                         }`}
                         onClick={() => setSelectedTransaction(t)}
                       >
@@ -1978,7 +1978,7 @@ export function Expenses() {
                               <div className={`w-3 h-3 rounded-sm ${
                                 t.type === 'expense' ? 'bg-red-500' : 'bg-green-500'
                               }`}></div>
-                              <h3 className="font-semibold text-gray-900 text-lg">
+                              <h3 className="font-semibold text-primary text-lg">
                                 {t.category} - {t.vendor_name || 'No Vendor'}
                               </h3>
                             </div>
@@ -1986,25 +1986,25 @@ export function Expenses() {
                             {/* Tags */}
                             <div className="flex flex-wrap gap-2 mb-3">
                               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                t.type === 'expense' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+                                t.type === 'expense' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' : 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
                               }`}>
                                 {t.type === 'expense' ? 'Expense' : 'Income'}
                               </span>
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400">
                                 {t.category}
                               </span>
-                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                              <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400">
                                 {t.payment_method}
                               </span>
                               {hasGst && (
-                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                                <span className="px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
                                   GST: ₹{(t.gst_amount || 0).toFixed(2)}
                                 </span>
                               )}
                             </div>
 
                             {/* Details */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-600">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-secondary">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">Project:</span>
                                 <span>{t.project_name}</span>
@@ -2047,18 +2047,18 @@ export function Expenses() {
                               {t.type === 'income' ? '+' : '-'}₹{totalAmount.toFixed(2)}
                             </div>
                             {hasGst && (
-                              <div className="text-sm text-gray-500 mt-1">
+                              <div className="text-sm text-tertiary mt-1">
                                 Base: ₹{t.amount.toFixed(2)}
                               </div>
                             )}
-                            <div className="text-sm text-gray-500 mt-2">
+                            <div className="text-sm text-tertiary mt-2">
                               {t.payment_method}
                             </div>
                           </div>
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-gray-100">
+                        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-secondary">
                           <button
                             onClick={(event) => {
                               event.stopPropagation();
@@ -2103,7 +2103,7 @@ export function Expenses() {
                   })}
                   
                   {currentTransactions.length === 0 && (
-                    <div className="text-center py-12 text-gray-500">
+                    <div className="text-center py-12 text-tertiary">
                       <p className="text-xl">No transactions found</p>
                     </div>
                   )}
@@ -2113,21 +2113,21 @@ export function Expenses() {
           </div>
 
           {/* Pagination */}
-          <div className="mt-4 flex justify-center items-center gap-4 py-4">
+          <div className="flex justify-center items-center gap-4 py-2">
             <button
               onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
               disabled={currentPage === 1}
-              className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 border border-secondary rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tertiary transition-colors"
             >
               Previous
             </button>
-            <span className="px-4 py-2 text-gray-700">
+            <span className="px-4 py-2 text-secondary">
               Page {currentPage} of {totalPages}
             </span>
             <button
               onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
               disabled={currentPage === totalPages}
-              className="px-4 py-2 border border-gray-300 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
+              className="px-4 py-2 border border-secondary rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-tertiary transition-colors"
             >
               Next
             </button>
@@ -2138,13 +2138,13 @@ export function Expenses() {
       {/* Transaction Details Modal */}
       {showDetailsModal && detailsTransaction && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-secondary">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-3">
                 <div className={`p-3 rounded-lg ${
                   detailsTransaction.type === 'income'
-                    ? 'bg-green-100 text-green-600'
-                    : 'bg-red-100 text-red-600'
+                    ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
                 }`}>
                   {detailsTransaction.type === 'income' ? <TrendingUp size={24} /> : <TrendingDown size={24} />}
                 </div>
@@ -2161,7 +2161,7 @@ export function Expenses() {
                   setDetailsTransaction(null);
                   setCreatorInfo(null);
                 }}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={24} />
               </button>
@@ -2176,8 +2176,8 @@ export function Expenses() {
                 </div>
                 <div className={`px-4 py-2 rounded-full text-sm font-medium ${
                   detailsTransaction.type === 'income'
-                    ? 'bg-green-100 text-green-800'
-                    : 'bg-red-100 text-red-800'
+                    ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400'
+                    : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400'
                 }`}>
                   {detailsTransaction.type === 'income' ? 'Income' : 'Expense'}
                 </div>
@@ -2348,9 +2348,9 @@ export function Expenses() {
       {/* Add/Edit Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-secondary">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-bold text-gray-900">
+              <h2 className="text-xl font-bold text-primary">
                 {editingId
                   ? `Edit ${formType === 'income' ? 'Income' : 'Expense'}`
                   : `Add ${formType === 'income' ? 'Income' : 'Expense'}`
@@ -2358,7 +2358,7 @@ export function Expenses() {
               </h2>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={20} />
               </button>
@@ -2591,15 +2591,15 @@ export function Expenses() {
             setShowExportModal(false);
           }
         }}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-md border border-secondary">
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center gap-2">
                 <Download className="w-5 h-5 text-green-600" />
-                <h3 className="text-xl font-bold text-gray-900">Select Export Format</h3>
+                <h3 className="text-xl font-bold text-primary">Select Export Format</h3>
               </div>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={20} />
               </button>
@@ -2642,15 +2642,15 @@ export function Expenses() {
       {/* GST Modal */}
       {showGstModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-[1000]" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-sm">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-sm border border-secondary">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <Calculator className="w-5 h-5 text-blue-600" />
-                <h3 className="text-lg font-bold text-gray-900">Enter GST Amount</h3>
+                <h3 className="text-lg font-bold text-primary">Enter GST Amount</h3>
               </div>
               <button
                 onClick={() => setShowGstModal(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={20} />
               </button>
@@ -2715,15 +2715,15 @@ export function Expenses() {
       {/* Payment Link Creation Modal */}
       {showPaymentLinkForm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto border border-secondary">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-purple-600" />
-                <h2 className="text-xl font-bold text-gray-900">Create Payment Link</h2>
+                <h2 className="text-xl font-bold text-primary">Create Payment Link</h2>
               </div>
               <button
                 onClick={() => setShowPaymentLinkForm(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={20} />
               </button>
@@ -2928,15 +2928,15 @@ export function Expenses() {
       {/* Payment Links Table Modal */}
       {showPaymentLinksTable && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={handleClickOutside}>
-          <div className="bg-white p-6 rounded-lg shadow-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+          <div className="bg-card p-6 rounded-lg shadow-lg w-full max-w-6xl max-h-[90vh] overflow-y-auto border border-secondary">
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-purple-600" />
-                <h2 className="text-xl font-bold text-gray-900">Payment Links ({paymentLinks.length})</h2>
+                <h2 className="text-xl font-bold text-primary">Payment Links ({paymentLinks.length})</h2>
               </div>
               <button
                 onClick={() => setShowPaymentLinksTable(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-tertiary hover:text-primary"
               >
                 <X size={20} />
               </button>

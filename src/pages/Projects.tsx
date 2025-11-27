@@ -3,6 +3,7 @@ import { Plus, Search, CreditCard as Edit, X, Eye, File, User, Share2, Copy, Loc
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { sendProjectNotificationEmail } from "../lib/emailService";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
@@ -494,11 +495,28 @@ export function Projects() {
         if (error) throw error;
       } else {
         // Create new project
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("projects")
-          .insert([{ ...newProject, created_by: profileId }]);
+          .insert([{ ...newProject, created_by: profileId }])
+          .select()
+          .single();
 
         if (error) throw error;
+
+        // Send email notification for new project
+        if (data && user) {
+          console.log('📧 Sending project notification email...');
+          await sendProjectNotificationEmail(
+            data.id,
+            data.name,
+            data.description,
+            data.location,
+            user.id,
+            user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
+            user.email || '',
+            data.status
+          );
+        }
       }
 
       setIsModalOpen(false);
@@ -1600,7 +1618,7 @@ export function Projects() {
   if (userRole !== 'Admin' && assignedProjectIds.length === 0 && !loading) {
     return (
       <Layout title="Projects">
-        <div className="p-6">
+        <div className="p-6 animate-fadeIn">
           <div className="text-center py-12">
             <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 max-w-md mx-auto">
               <div className="text-yellow-600 mb-4">
@@ -1622,11 +1640,33 @@ export function Projects() {
     );
   }
 
+  // Loading state
+  if (loading) {
+    return (
+      <Layout title="Projects">
+        <div className="p-6">
+          <div className="animate-pulse-slow space-y-4">
+            <div className="h-8 bg-gray-200 rounded w-1/4"></div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {[1, 2, 3, 4, 5, 6].map((i) => (
+                <div key={i} className="bg-white rounded-lg shadow-sm p-6">
+                  <div className="h-6 bg-gray-200 rounded mb-4"></div>
+                  <div className="h-4 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   const totalStorage = Object.values(projectStats).reduce((sum, stat) => sum + (stat?.storageMB || 0), 0);
 
   return (
     <Layout title="Projects">
-      <div className="space-y-6">
+      <div className="space-y-6 animate-fadeIn">
         {/* Header with storage info */}
         <div className="flex items-center justify-between">
           <div>

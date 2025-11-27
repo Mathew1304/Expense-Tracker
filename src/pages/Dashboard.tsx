@@ -1185,59 +1185,77 @@ export function Dashboard() {
 
   return (
     <Layout title="Dashboard">
-      <div className="p-6 bg-gray-50 min-h-screen">
-        <div className="mb-8">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex space-x-8">
-              <button 
-                onClick={() => setActiveTab('overview')}
-                className={`font-medium border-b-2 pb-2 transition-colors ${
-                  activeTab === 'overview' 
-                    ? 'text-blue-600 border-blue-600' 
-                    : 'text-gray-500 border-transparent hover:text-gray-700'
-                }`}
-              >
-                Overview
-              </button>
-              <button 
-                onClick={() => setActiveTab('analytics')}
-                className={`font-medium border-b-2 pb-2 transition-colors ${
-                  activeTab === 'analytics' 
-                    ? 'text-blue-600 border-blue-600' 
-                    : 'text-gray-500 border-transparent hover:text-gray-700'
-                }`}
-              >
-                Project Analytics
-              </button>
-              <button 
-                onClick={() => setActiveTab('financial')}
-                className={`font-medium border-b-2 pb-2 transition-colors ${
-                  activeTab === 'financial' 
-                    ? 'text-blue-600 border-blue-600' 
-                    : 'text-gray-500 border-transparent hover:text-gray-700'
-                }`}
-              >
-                Financial Reports
-              </button>
-              <button 
-                onClick={() => setActiveTab('materials')}
-                className={`font-medium border-b-2 pb-2 transition-colors ${
-                  activeTab === 'materials' 
-                    ? 'text-blue-600 border-blue-600' 
-                    : 'text-gray-500 border-transparent hover:text-gray-700'
-                }`}
-              >
-                Material Tracking
-              </button>
+      <div className="animate-fadeIn">
+        <div className="p-6 bg-gray-50 min-h-screen">
+          <div className="mb-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex space-x-8">
+                <button 
+                  onClick={() => setActiveTab('overview')}
+                  className={`font-medium border-b-2 pb-2 transition-colors ${
+                    activeTab === 'overview' 
+                      ? 'text-blue-600 border-blue-600' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  Overview
+                </button>
+                <button 
+                  onClick={() => setActiveTab('analytics')}
+                  className={`font-medium border-b-2 pb-2 transition-colors ${
+                    activeTab === 'analytics' 
+                      ? 'text-blue-600 border-blue-600' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  Project Analytics
+                </button>
+                <button 
+                  onClick={() => setActiveTab('financial')}
+                  className={`font-medium border-b-2 pb-2 transition-colors ${
+                    activeTab === 'financial' 
+                      ? 'text-blue-600 border-blue-600' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  Financial Reports
+                </button>
+                <button 
+                  onClick={() => setActiveTab('materials')}
+                  className={`font-medium border-b-2 pb-2 transition-colors ${
+                    activeTab === 'materials' 
+                      ? 'text-blue-600 border-blue-600' 
+                      : 'text-gray-500 border-transparent hover:text-gray-700'
+                  }`}
+                >
+                  Material Tracking
+                </button>
+              </div>
+
+              {/* Time Period Selector */}
+              <div className="flex items-center gap-4">
+                <label className="text-sm font-medium text-gray-700">Time Period:</label>
+                <select
+                  value={timePeriod}
+                  onChange={(e) => setTimePeriod(e.target.value)}
+                  className="px-3 py-1 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="365">Last year</option>
+                </select>
+              </div>
             </div>
 
           </div>
-        </div>
 
-        {activeTab === 'overview' && renderOverview()}
-        {activeTab === 'analytics' && renderProjectAnalytics()}
-        {activeTab === 'financial' && renderFinancialReports()}
-        {activeTab === 'materials' && renderMaterialTracking()}
+          {/* Tab Content */}
+          {activeTab === 'overview' && renderOverview()}
+          {activeTab === 'analytics' && renderProjectAnalytics()}
+          {activeTab === 'financial' && renderFinancialReports()}
+          {activeTab === 'materials' && renderMaterialTracking()}
+        </div>
       </div>
     </Layout>
   );

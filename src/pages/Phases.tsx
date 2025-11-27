@@ -3,6 +3,7 @@ import { Plus, CreditCard as Edit2, Trash2, X, AlertTriangle, Calendar, MapPin, 
 import { Layout } from "../components/Layout/Layout";
 import { supabase } from "../lib/supabase";
 import { useAuth } from "../contexts/AuthContext";
+import { sendPhaseNotificationEmail } from "../lib/emailService";
 import imageCompression from "browser-image-compression";
 import { NotificationService } from "../lib/notificationService";
 
@@ -398,7 +399,9 @@ export function Phases() {
         );
       }
     } else {
-      await supabase.from("phases").insert([phaseData]);
+      const { data, error } = await supabase.from("phases").insert([phaseData]).select().single();
+      
+      if (error) throw error;
       
       // Create notification for admin
       if (user?.id && form.project_id) {
@@ -412,6 +415,29 @@ export function Phases() {
             estimated_cost: form.estimated_cost ? parseFloat(form.estimated_cost) : undefined
           }
         );
+      }
+
+      // Send email notification for new phase
+      if (data && user) {
+        // Get project name for the email
+        const selectedProject = projects.find(p => p.id === form.project_id);
+        if (selectedProject) {
+          console.log('📧 Sending phase notification email...');
+          await sendPhaseNotificationEmail(
+            data.id,
+            data.name,
+            data.project_id,
+            selectedProject.name,
+            data.start_date,
+            data.end_date,
+            data.status,
+            data.estimated_cost,
+            data.contractor_name,
+            user.id,
+            user.user_metadata?.full_name || user.email?.split('@')[0] || 'Unknown',
+            user.email || ''
+          );
+        }
       }
     }
 
@@ -821,16 +847,17 @@ export function Phases() {
 
   return (
     <Layout title="Phases" subtitle={getHeaderSubtitle()}>
-      {/* Show helpful message when no project is assigned */}
-      {userRole !== 'Admin' && assignedProjectIds.length === 0 && (
-        <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center gap-3">
-            <AlertTriangle className="w-5 h-5 text-yellow-600" />
-            <div>
-              <h3 className="text-sm font-medium text-yellow-800">No Project Assigned</h3>
-              <p className="text-sm text-yellow-700 mt-1">
-                You don't have a project assigned. Please contact your administrator to assign you to a project.
-              </p>
+      <div className="animate-fadeIn">
+        {/* Show helpful message when no project is assigned */}
+        {userRole !== 'Admin' && assignedProjectIds.length === 0 && (
+          <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4 animate-slideIn">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 text-yellow-600" />
+              <div>
+                <h3 className="text-sm font-medium text-yellow-800">No Project Assigned</h3>
+                <p className="text-sm text-yellow-700 mt-1">
+                  You don't have a project assigned. Please contact your administrator to assign you to a project.
+                </p>
             </div>
           </div>
         </div>
@@ -1647,12 +1674,12 @@ export function Phases() {
             <img
               src={fullScreenImage}
               alt="fullscreen phase"
-              className="max-w-full max-h-full object-contain"
+              className="max-w-full max-h-screen object-contain"
             />
           </div>
         )}
       </div>
-
+    </div>
     </Layout>
   );
 }

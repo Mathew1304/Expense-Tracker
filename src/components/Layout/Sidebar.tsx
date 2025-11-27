@@ -196,7 +196,7 @@ export function Sidebar() {
       }
 
       // Check for phase_photos table to calculate photo storage
-      let photosQuery, photosData, photosError;
+      let photosData, photosError;
       
       if (userRoleFromProfile === "Admin") {
         // Get all photos from admin's projects
@@ -515,26 +515,26 @@ export function Sidebar() {
   // Show loading state
   if (isLoadingPermissions) {
     return (
-      <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30 flex flex-col">
+      <aside className="w-64 bg-sidebar shadow-lg border-r border-sidebar fixed left-0 top-0 h-full z-30 flex flex-col">
         <div className="p-6">
           <div className="flex items-center gap-3">
             <img src="/logo.png" alt="BuildMyHomes Logo" className="w-10 h-10 object-contain" />
-            <h2 className="text-xl font-bold text-gray-800">Buildmyhomes</h2>
+            <h2 className="text-xl font-bold text-primary">Buildmyhomes</h2>
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center">
-          <div className="text-gray-500">Loading...</div>
+          <div className="text-secondary">Loading...</div>
         </div>
       </aside>
     );
   }
 
   return (
-    <aside className="w-64 bg-white shadow-lg border-r border-gray-200 fixed left-0 top-0 h-full z-30 flex flex-col">
+    <aside className="w-64 bg-sidebar shadow-lg border-r border-sidebar fixed left-0 top-0 h-full z-30 flex flex-col">
       <div className="p-6">
         <div className="flex items-center gap-3">
           <img src="/logo.png" alt="BuildMyHomes Logo" className="w-10 h-10 object-contain" />
-          <h2 className="text-xl font-bold text-gray-800">Buildmyhomes</h2>
+          <h2 className="text-xl font-bold text-primary">Buildmyhomes</h2>
         </div>
       </div>
 
@@ -550,8 +550,8 @@ export function Sidebar() {
                   to={item.href}
                   className={`flex items-center px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                      ? "bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-r-2 border-blue-700 dark:border-blue-400"
+                      : "text-secondary hover:bg-tertiary hover:text-primary"
                   }`}
                 >
                   <Icon className="w-5 h-5 mr-3" />
@@ -564,18 +564,18 @@ export function Sidebar() {
       </nav>
 
       {/* Storage Indicator */}
-      <div className="p-4 border-t border-gray-200 bg-gray-50">
+      <div className="p-4 border-t border-sidebar bg-secondary">
         <div className="flex items-center gap-2 mb-2">
-          <HardDrive className="w-4 h-4 text-gray-600" />
-          <span className="text-xs font-medium text-gray-700">Storage</span>
+          <HardDrive className="w-4 h-4 text-secondary" />
+          <span className="text-xs font-medium text-primary">Storage</span>
         </div>
         <div className="space-y-1">
-          <div className="flex justify-between text-xs text-gray-600">
+          <div className="flex justify-between text-xs text-secondary">
             <span>{storageUsed.toFixed(2)}MB</span>
             <span>{getStorageLimit()}</span>
           </div>
           {userPlan !== 'pro' && (
-            <div className="w-full bg-gray-200 rounded-full h-1.5">
+            <div className="w-full bg-tertiary rounded-full h-1.5">
               <div
                 className={`h-1.5 rounded-full transition-all ${
                   getStoragePercentage() > 80 ? 'bg-red-500' : 'bg-blue-500'
@@ -584,7 +584,7 @@ export function Sidebar() {
               />
             </div>
           )}
-          <p className="text-xs text-gray-500 capitalize">{userPlan} Plan</p>
+          <p className="text-xs text-tertiary capitalize">{userPlan} Plan</p>
         </div>
       </div>
     </aside>

@@ -324,3 +324,161 @@ export const createUserWithoutEmailConfirmation = async (
     };
   }
 };
+
+// Send project notification email
+export const sendProjectNotificationEmail = async (
+  projectId: string,
+  projectName: string,
+  projectDescription?: string,
+  projectLocation?: string,
+  createdBy: string,
+  creatorName: string,
+  creatorEmail: string,
+  status: string = 'pending'
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-project-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        project_id: projectId,
+        project_name: projectName,
+        project_description: projectDescription,
+        project_location: projectLocation,
+        created_by: createdBy,
+        creator_name: creatorName,
+        creator_email: creatorEmail,
+        status,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Project notification API error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📬 Project notification response:', result);
+    
+    return { 
+      success: result.success,
+      error: result.success ? undefined : result.error 
+    };
+  } catch (error) {
+    console.error('Project notification service error:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    };
+  }
+};
+
+// Send phase notification email
+export const sendPhaseNotificationEmail = async (
+  phaseId: string,
+  phaseName: string,
+  projectId: string,
+  projectName: string,
+  startDate?: string,
+  endDate?: string,
+  status: string = 'Not Started',
+  estimatedCost?: number,
+  contractorName?: string,
+  createdBy: string,
+  creatorName: string,
+  creatorEmail: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-phase-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        phase_id: phaseId,
+        phase_name: phaseName,
+        project_id: projectId,
+        project_name: projectName,
+        start_date: startDate,
+        end_date: endDate,
+        status,
+        estimated_cost: estimatedCost,
+        contractor_name: contractorName,
+        created_by: createdBy,
+        creator_name: creatorName,
+        creator_email: creatorEmail,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Phase notification API error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📬 Phase notification response:', result);
+    
+    return { 
+      success: result.success,
+      error: result.success ? undefined : result.error 
+    };
+  } catch (error) {
+    console.error('Phase notification service error:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    };
+  }
+};
+
+// Send email change notification
+export const sendEmailChangeNotification = async (
+  userId: string,
+  oldEmail: string,
+  newEmail: string,
+  userName: string,
+  confirmLink?: string
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-email-change-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        old_email: oldEmail,
+        new_email: newEmail,
+        user_name: userName,
+        confirm_link: confirmLink,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Email change notification API error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📬 Email change notification response:', result);
+    
+    return { 
+      success: result.success,
+      error: result.success ? undefined : result.error 
+    };
+  } catch (error) {
+    console.error('Email change notification service error:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    };
+  }
+};

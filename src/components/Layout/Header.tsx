@@ -1,6 +1,7 @@
 import React, { useState } from "react";
-import { LogOut, Check, X, Calendar, Clock, Menu, User } from "lucide-react";
+import { LogOut, Check, X, Calendar, Clock, Menu, User, Sun, Moon } from "lucide-react";
 import { useAuth } from "../../contexts/AuthContext";
+import { useTheme } from "../../contexts/ThemeContext";
 import { useNavigate, Link } from "react-router-dom";
 import { NotificationIcon } from "../Notifications/NotificationIcon";
 
@@ -13,6 +14,7 @@ interface HeaderProps {
 
 export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false }: HeaderProps) {
   const { user, signOut, userRole } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [showUpgrade, setShowUpgrade] = useState(false);
   const [showCalendar, setShowCalendar] = useState(false);
@@ -105,7 +107,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
 
   return (
     <>
-      <div className={`bg-white shadow-sm border-b border-gray-200 px-6 py-4 transition-all duration-200 ${
+      <div className={`bg-header shadow-sm border-b border-header px-6 py-4 transition-all duration-200 ${
         !isMobile && isSidebarOpen 
           ? 'ml-64' 
           : isMobile || !isSidebarOpen
@@ -115,9 +117,9 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
       >
         <div className="flex items-center justify-between">
           <div className="flex-1 min-w-0">
-            <h1 className="text-2xl font-semibold text-gray-800 truncate">{title}</h1>
+            <h1 className="text-2xl font-semibold text-primary truncate">{title}</h1>
             {subtitle && (
-              <p className="text-sm text-gray-600 mt-1 truncate">{subtitle}</p>
+              <p className="text-sm text-secondary mt-1 truncate">{subtitle}</p>
             )}
           </div>
 
@@ -125,7 +127,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
             {/* Time and Calendar */}
             <div className="hidden sm:flex items-center space-x-3"> {/* Hide on very small screens */}
               {/* Time Display */}
-              <div className="flex items-center space-x-2 text-gray-600">
+              <div className="flex items-center space-x-2 text-secondary">
                 <Clock className="w-4 h-4" />
                 <span className="text-sm font-medium">{formatTime(currentTime)}</span>
               </div>
@@ -133,13 +135,29 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
               {/* Calendar Button */}
               <button
                 onClick={() => setShowCalendar(true)}
-                className="flex items-center space-x-2 px-3 py-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors duration-150"
+                className="flex items-center space-x-2 px-3 py-2 text-secondary hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-150"
                 title="View Calendar"
               >
                 <Calendar className="w-4 h-4" />
                 <span className="text-sm font-medium hidden md:inline">Calendar</span>
               </button>
             </div>
+
+            {/* Theme Toggle */}
+            <button
+              onClick={toggleTheme}
+              className="flex items-center space-x-2 p-3 text-secondary hover:text-primary hover:bg-tertiary rounded-lg transition-colors duration-150 border border-secondary"
+              title="Toggle theme"
+            >
+              {theme === 'light' ? (
+                <Moon className="w-5 h-5" />
+              ) : (
+                <Sun className="w-5 h-5" />
+              )}
+              <span className="text-sm font-medium hidden sm:inline">
+                {theme === 'light' ? 'Dark' : 'Light'}
+              </span>
+            </button>
 
             {/* Notifications - Only show for Admin users */}
             {userRole === 'Admin' && (
@@ -158,7 +176,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
             <div className="relative">
               <button
                 onClick={() => setShowProfileMenu(!showProfileMenu)}
-                className="flex items-center space-x-2 p-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors duration-150 border border-gray-200"
+                className="flex items-center space-x-2 p-3 text-secondary hover:text-primary hover:bg-tertiary rounded-lg transition-colors duration-150 border border-secondary"
                 title="Profile Menu"
               >
                 <Menu className="w-5 h-5" />
@@ -167,18 +185,18 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
 
               {/* Profile Dropdown Menu */}
               {showProfileMenu && (
-                <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-200 py-2 z-50">
-                  <div className="px-4 py-2 border-b border-gray-100">
-                    <p className="text-sm font-medium text-gray-900">
+                <div className="absolute right-0 top-full mt-2 w-56 bg-modal rounded-lg shadow-xl border border-secondary py-2 z-50">
+                  <div className="px-4 py-2 border-b border-secondary">
+                    <p className="text-sm font-medium text-primary">
                       {user?.email || 'User'}
                     </p>
-                    <p className="text-xs text-gray-500">Manage your account</p>
+                    <p className="text-xs text-tertiary">Manage your account</p>
                   </div>
                   
                   <Link
                     to="/profile"
                     onClick={() => setShowProfileMenu(false)}
-                    className="flex items-center space-x-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors duration-150"
+                    className="flex items-center space-x-3 px-4 py-2 text-sm text-secondary hover:bg-tertiary transition-colors duration-150"
                   >
                     <User className="w-4 h-4" />
                     <span>Profile</span>
@@ -189,7 +207,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                       setShowProfileMenu(false);
                       handleSignOut();
                     }}
-                    className="flex items-center space-x-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors duration-150"
+                    className="flex items-center space-x-3 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150"
                   >
                     <LogOut className="w-4 h-4" />
                     <span>Logout</span>
@@ -204,26 +222,26 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
       {/* Upgrade Plan Modal */}
       {showUpgrade && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="rounded-lg shadow-lg w-full max-w-4xl p-6 relative bg-white text-black max-h-[90vh] overflow-y-auto">
+          <div className="rounded-lg shadow-lg w-full max-w-4xl p-6 relative bg-modal text-black max-h-[90vh] overflow-y-auto">
             {/* Close */}
             <button
               onClick={() => setShowUpgrade(false)}
-              className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors duration-150"
+              className="absolute top-4 right-4 text-tertiary hover:text-primary transition-colors duration-150"
             >
               <X className="h-6 w-6" />
             </button>
 
-            <h2 className="text-2xl font-semibold mb-6 text-center text-gray-800">
+            <h2 className="text-2xl font-semibold mb-6 text-center text-primary">
               Choose Your Plan
             </h2>
 
             {/* Plans */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Basic */}
-              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-white border-gray-200">
+              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-card border-secondary">
                 <h3 className="text-lg font-semibold mb-2">Basic</h3>
-                <p className="text-gray-600 mb-4">₹1,499 / month</p>
-                <ul className="space-y-2 mb-6 text-sm text-gray-700">
+                <p className="text-secondary mb-4">₹1,499 / month</p>
+                <ul className="space-y-2 mb-6 text-sm text-secondary">
                   {[
                     "5 Projects",
                     "Full expense tracking",
@@ -247,13 +265,13 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
               </div>
 
               {/* Pro */}
-              <div className="border-2 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 relative bg-white border-purple-600">
+              <div className="border-2 rounded-lg p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 relative bg-card border-purple-600">
                 <span className="absolute top-2 right-2 text-xs bg-purple-600 text-white px-2 py-1 rounded">
                   Most Popular
                 </span>
                 <h3 className="text-lg font-semibold mb-2">Pro</h3>
-                <p className="text-gray-600 mb-4">₹3,499 / month</p>
-                <ul className="space-y-2 mb-6 text-sm text-gray-700">
+                <p className="text-secondary mb-4">₹3,499 / month</p>
+                <ul className="space-y-2 mb-6 text-sm text-secondary">
                   {[
                     "Unlimited Projects",
                     "Multi-phase tracking",
@@ -278,10 +296,10 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
               </div>
 
               {/* Enterprise */}
-              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-white border-gray-200">
+              <div className="border rounded-lg p-6 shadow hover:shadow-lg transition-shadow duration-200 bg-card border-secondary">
                 <h3 className="text-lg font-semibold mb-2">Enterprise</h3>
-                <p className="text-gray-600 mb-4">Custom Pricing</p>
-                <ul className="space-y-2 mb-6 text-sm text-gray-700">
+                <p className="text-secondary mb-4">Custom Pricing</p>
+                <ul className="space-y-2 mb-6 text-sm text-secondary">
                   {[
                     "Everything in Pro",
                     "Custom integrations",
@@ -311,16 +329,16 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
       {/* Calendar Modal */}
       {showCalendar && (
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6">
+          <div className="bg-modal rounded-lg shadow-xl w-full max-w-md p-6">
             {/* Header */}
             <div className="flex justify-between items-center mb-6">
               <div className="flex items-center space-x-2">
                 <Calendar className="w-5 h-5 text-blue-600" />
-                <h2 className="text-lg font-semibold text-gray-900">Calendar</h2>
+                <h2 className="text-lg font-semibold text-primary">Calendar</h2>
               </div>
               <button
                 onClick={() => setShowCalendar(false)}
-                className="text-gray-500 hover:text-gray-700 transition-colors duration-150"
+                className="text-tertiary hover:text-secondary transition-colors duration-150"
               >
                 <X className="h-5 w-5" />
               </button>
@@ -334,16 +352,16 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                   newDate.setMonth(newDate.getMonth() - 1);
                   setCalendarDate(newDate);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors duration-150"
+                className="p-2 hover:bg-tertiary rounded-lg transition-colors duration-150"
               >
-                <span className="text-lg font-bold text-gray-600">‹</span>
+                <span className="text-lg font-bold text-secondary">‹</span>
               </button>
               
               <div className="text-center">
-                <div className="text-xl font-bold text-gray-900">
+                <div className="text-xl font-bold text-primary">
                   {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                 </div>
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-secondary">
                   {formatDate(new Date())}
                 </div>
               </div>
@@ -354,15 +372,15 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                   newDate.setMonth(newDate.getMonth() + 1);
                   setCalendarDate(newDate);
                 }}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors duration-150"
+                className="p-2 hover:bg-tertiary rounded-lg transition-colors duration-150"
               >
-                <span className="text-lg font-bold text-gray-600">›</span>
+                <span className="text-lg font-bold text-secondary">›</span>
               </button>
             </div>
 
             {/* Mini Calendar */}
             <div className="mb-6">
-              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-gray-500 mb-2">
+              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-tertiary mb-2">
                 <div>Sun</div>
                 <div>Mon</div>
                 <div>Tue</div>
@@ -398,9 +416,9 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
                           ? isToday
                             ? 'bg-blue-600 text-white font-bold'
                             : isRedDate
-                            ? 'text-red-600 font-semibold hover:bg-red-50'
-                            : 'text-gray-900 hover:bg-gray-100'
-                          : 'text-gray-300'
+                            ? 'text-red-600 font-semibold hover:bg-red-50 dark:hover:bg-red-900/20'
+                            : 'text-primary hover:bg-tertiary'
+                          : 'text-tertiary'
                       }`}
                       title={isHoliday ? isIndianHoliday(cellDate) : isSundayDate ? 'Sunday' : ''}
                       onClick={() => {
@@ -421,11 +439,11 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
             <div className="flex justify-center items-center space-x-4 mb-4 text-xs">
               <div className="flex items-center space-x-1">
                 <div className="w-3 h-3 bg-blue-600 rounded"></div>
-                <span className="text-gray-600">Today</span>
+                <span className="text-secondary">Today</span>
               </div>
               <div className="flex items-center space-x-1">
                 <div className="w-3 h-3 bg-red-600 rounded"></div>
-                <span className="text-gray-600">Holidays & Sundays</span>
+                <span className="text-secondary">Holidays & Sundays</span>
               </div>
             </div>
 
@@ -433,7 +451,7 @@ export function Header({ title, subtitle, isSidebarOpen = true, isMobile = false
             <div className="text-center">
               <button
                 onClick={() => setShowCalendar(false)}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors duration-150"
+                className="px-4 py-2 bg-tertiary text-secondary rounded-lg hover:bg-secondary hover:text-primary transition-colors duration-150"
               >
                 Close
               </button>

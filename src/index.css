@@ -1,3 +1,192 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* CSS Custom Properties for theme variables */
+:root {
+  --bg-primary: 255, 255, 255;
+  --bg-secondary: 249, 250, 251;
+  --bg-tertiary: 243, 244, 246;
+  --text-primary: 17, 24, 39;
+  --text-secondary: 75, 85, 99;
+  --text-tertiary: 107, 114, 128;
+  --border-primary: 229, 231, 235;
+  --border-secondary: 209, 213, 219;
+  --accent: 59, 130, 246;
+  --accent-hover: 37, 99, 235;
+  --sidebar-bg: 255, 255, 255;
+  --sidebar-border: 229, 231, 235;
+  --header-bg: 255, 255, 255;
+  --header-border: 229, 231, 235;
+  --card-bg: 255, 255, 255;
+  --card-border: 229, 231, 235;
+  --input-bg: 255, 255, 255;
+  --input-border: 209, 213, 219;
+  --modal-bg: 255, 255, 255;
+  --shadow: 0, 0, 0;
+}
+
+.dark {
+  --bg-primary: 17, 24, 39;
+  --bg-secondary: 31, 41, 55;
+  --bg-tertiary: 55, 65, 81;
+  --text-primary: 243, 244, 246;
+  --text-secondary: 156, 163, 175;
+  --text-tertiary: 107, 114, 128;
+  --border-primary: 55, 65, 81;
+  --border-secondary: 75, 85, 99;
+  --accent: 59, 130, 246;
+  --accent-hover: 96, 165, 250;
+  --sidebar-bg: 31, 41, 55;
+  --sidebar-border: 55, 65, 81;
+  --header-bg: 31, 41, 55;
+  --header-border: 55, 65, 81;
+  --card-bg: 31, 41, 55;
+  --card-border: 55, 65, 81;
+  --input-bg: 55, 65, 81;
+  --input-border: 75, 85, 99;
+  --modal-bg: 31, 41, 55;
+  --shadow: 0, 0, 0;
+}
+
+/* Theme-aware utility classes */
+.bg-primary { background-color: rgb(var(--bg-primary)); }
+.bg-secondary { background-color: rgb(var(--bg-secondary)); }
+.bg-tertiary { background-color: rgb(var(--bg-tertiary)); }
+.text-primary { color: rgb(var(--text-primary)); }
+.text-secondary { color: rgb(var(--text-secondary)); }
+.text-tertiary { color: rgb(var(--text-tertiary)); }
+.border-primary { border-color: rgb(var(--border-primary)); }
+.border-secondary { border-color: rgb(var(--border-secondary)); }
+.bg-sidebar { background-color: rgb(var(--sidebar-bg)); }
+.border-sidebar { border-color: rgb(var(--sidebar-border)); }
+.bg-header { background-color: rgb(var(--header-bg)); }
+.border-header { border-color: rgb(var(--header-border)); }
+.bg-card { background-color: rgb(var(--card-bg)); }
+.border-card { border-color: rgb(var(--card-border)); }
+.bg-input { background-color: rgb(var(--input-bg)); }
+.border-input { border-color: rgb(var(--input-border)); }
+.bg-modal { background-color: rgb(var(--modal-bg)); }
+
+/* Dark mode specific Tailwind overrides */
+.dark .bg-white { background-color: rgb(var(--bg-primary)); }
+.dark .bg-gray-50 { background-color: rgb(var(--bg-secondary)); }
+.dark .bg-gray-100 { background-color: rgb(var(--bg-tertiary)); }
+.dark .bg-gray-200 { background-color: rgb(var(--border-primary)); }
+.dark .text-gray-900 { color: rgb(var(--text-primary)); }
+.dark .text-gray-800 { color: rgb(var(--text-primary)); }
+.dark .text-gray-700 { color: rgb(var(--text-secondary)); }
+.dark .text-gray-600 { color: rgb(var(--text-secondary)); }
+.dark .text-gray-500 { color: rgb(var(--text-tertiary)); }
+.dark .border-gray-200 { border-color: rgb(var(--border-primary)); }
+.dark .border-gray-300 { border-color: rgb(var(--border-secondary)); }
+.dark .border-gray-100 { border-color: rgb(var(--border-secondary)); }
+.dark .hover\\:bg-gray-50:hover { background-color: rgb(var(--bg-tertiary)); }
+.dark .hover\\:bg-gray-100:hover { background-color: rgb(var(--border-primary)); }
+.dark .hover\\:text-gray-900:hover { color: rgb(var(--text-primary)); }
+.dark .hover\\:bg-blue-50:hover { background-color: rgba(59, 130, 246, 0.1); }
+.dark .hover\\:bg-red-50:hover { background-color: rgba(239, 68, 68, 0.1); }
+.dark .hover\\:bg-gray-800:hover { background-color: rgb(var(--bg-tertiary)); }
+
+/* Custom animations for smooth page transitions */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* Custom utility classes */
+.animate-fadeIn {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slideIn {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity, box-shadow, transform, filter, backdrop-filter;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Prevent layout shift for loading states */
+.loading-skeleton {
+  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background-size: 200% 100%;
+  animation: loading 1.5s infinite;
+}
+
+.dark .loading-skeleton {
+  background: linear-gradient(90deg, rgb(55, 65, 81) 25%, rgb(75, 85, 99) 50%, rgb(55, 65, 81) 75%);
+}
+
+@keyframes loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgb(31, 41, 55);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(75, 85, 99);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(107, 114, 128);
+}
