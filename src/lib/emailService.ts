@@ -329,12 +329,12 @@ export const createUserWithoutEmailConfirmation = async (
 export const sendProjectNotificationEmail = async (
   projectId: string,
   projectName: string,
-  projectDescription?: string,
-  projectLocation?: string,
   createdBy: string,
   creatorName: string,
   creatorEmail: string,
-  status: string = 'pending'
+  status: string = 'pending',
+  projectDescription?: string,
+  projectLocation?: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-project-notification`, {
@@ -383,14 +383,14 @@ export const sendPhaseNotificationEmail = async (
   phaseName: string,
   projectId: string,
   projectName: string,
-  startDate?: string,
-  endDate?: string,
-  status: string = 'Not Started',
-  estimatedCost?: number,
-  contractorName?: string,
   createdBy: string,
   creatorName: string,
-  creatorEmail: string
+  creatorEmail: string,
+  status: string = 'Not Started',
+  startDate?: string,
+  endDate?: string,
+  estimatedCost?: number,
+  contractorName?: string
 ): Promise<{ success: boolean; error?: string }> => {
   try {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-phase-notification`, {
@@ -430,6 +430,54 @@ export const sendPhaseNotificationEmail = async (
     };
   } catch (error) {
     console.error('Phase notification service error:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error occurred' 
+    };
+  }
+};
+
+// Send project assignment notification email
+export const sendProjectAssignmentEmail = async (
+  params: {
+    userId: string;
+    userEmail: string;
+    userName: string;
+    projectNames: string[];
+    assignedBy: string;
+  }
+): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-project-assignment-notification`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({
+        user_id: params.userId,
+        user_email: params.userEmail,
+        user_name: params.userName,
+        project_names: params.projectNames,
+        assigned_by: params.assignedBy,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Project assignment notification API error:', errorText);
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('📬 Project assignment notification response:', result);
+    
+    return { 
+      success: result.success,
+      error: result.success ? undefined : result.error 
+    };
+  } catch (error) {
+    console.error('Project assignment notification service error:', error);
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Unknown error occurred' 

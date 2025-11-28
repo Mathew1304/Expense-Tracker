@@ -71,7 +71,7 @@ export function Projects() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [expiryAmount, setExpiryAmount] = useState<string>('24');
   const [expiryUnit, setExpiryUnit] = useState<'minutes' | 'hours'>('hours');
-  
+
   // Share options state
   const [shareOptions, setShareOptions] = useState({
     expenseDetails: true,
@@ -87,7 +87,7 @@ export function Projects() {
   const [managingLinksProject, setManagingLinksProject] = useState<any | null>(null);
   const [projectLinks, setProjectLinks] = useState<any[]>([]);
   const [loadingLinks, setLoadingLinks] = useState(false);
-  
+
   // Comments modal states
   const [commentsModalOpen, setCommentsModalOpen] = useState(false);
   const [selectedLinkComments, setSelectedLinkComments] = useState<any | null>(null);
@@ -130,14 +130,14 @@ export function Projects() {
 
         // First try to get user from users table by email or auth_user_id
         let userRecord = null;
-        
+
         // Try by email first
         const { data: userByEmail } = await supabase
           .from('users')
           .select('id, project_id')
           .eq('email', user.email)
           .single();
-        
+
         if (userByEmail) {
           userRecord = userByEmail;
         } else {
@@ -147,7 +147,7 @@ export function Projects() {
             .select('id, project_id')
             .eq('auth_user_id', user?.id)
             .single();
-          
+
           if (userByAuthId) {
             userRecord = userByAuthId;
           }
@@ -211,48 +211,48 @@ export function Projects() {
     }
 
     console.log('Projects - About to execute query...');
-    
+
     // Check if the user exists in the users table with the correct email
     // and create a mock project if RLS is blocking access
     if (assignedProjectIds.length > 0 && userRole !== 'Admin') {
       console.log('Projects - User has assigned projects:', assignedProjectIds);
       console.log('Projects - Checking if user exists in users table for RLS policy...');
-      
+
       // Check if the user exists in the users table with the correct email
       const { data: userCheck, error: userCheckError } = await supabase
         .from('users')
         .select('id, email, project_id')
         .eq('email', user?.email)
         .single();
-      
+
       console.log('Projects - User check in users table:', { userCheck, userCheckError });
-      
+
       if (userCheckError || !userCheck) {
         console.log('Projects - User not found in users table or email mismatch');
         console.log('Projects - This is why RLS policies are blocking access');
         console.log('Projects - The user needs to be properly created in the Users table');
         console.log('Projects - Current user email:', user?.email);
         console.log('Projects - Current user ID:', user?.id);
-        
+
         // Let's also check what users exist in the table for debugging
         const { data: allUsers, error: allUsersError } = await supabase
           .from('users')
           .select('id, email, name, project_id')
           .limit(5);
-        
+
         console.log('Projects - All users in database:', { allUsers, allUsersError });
-        
+
         setProjects([]);
         setLoading(false);
         return;
       } else {
         console.log('Projects - User found in users table, RLS should work');
         console.log('Projects - User details:', userCheck);
-        
+
         // Since RLS is blocking access, let's create a mock project object
         // using the information we already have from the users table
         console.log('Projects - RLS is blocking access, creating project from user data...');
-        
+
         // We know the project IDs from the users table, so let's create basic project objects
         // This bypasses the RLS issue by not querying the projects table directly
         const mockProjects = assignedProjectIds.map(projectId => ({
@@ -267,9 +267,9 @@ export function Projects() {
           end_date: null,
           location: null
         }));
-        
+
         console.log('Projects - Created mock projects:', mockProjects);
-        
+
         // Try to get the full project data through different approaches
         // First, try phases table
         const { data: phasesData, error: phasesError } = await supabase
@@ -277,21 +277,28 @@ export function Projects() {
           .select('project_id, projects(*)')
           .in('project_id', assignedProjectIds)
           .limit(assignedProjectIds.length);
-        
+
         console.log('Projects - Phases query result:', { phasesData, phasesError });
-        
+
         if (!phasesError && phasesData && phasesData.length > 0) {
-          const phaseInfo = phasesData[0] as any;
-          const projectInfo = Array.isArray(phaseInfo.projects) ? phaseInfo.projects[0] : phaseInfo.projects;
-          
-          if (projectInfo) {
-            console.log('Projects - Found project data through phases:', projectInfo);
-            setProjects([projectInfo]);
+          // Extract unique projects from phases data
+          const projectsMap = new Map();
+          phasesData.forEach((phaseInfo: any) => {
+            const projectInfo = Array.isArray(phaseInfo.projects) ? phaseInfo.projects[0] : phaseInfo.projects;
+            if (projectInfo && !projectsMap.has(projectInfo.id)) {
+              projectsMap.set(projectInfo.id, projectInfo);
+            }
+          });
+
+          if (projectsMap.size > 0) {
+            const projectsArray = Array.from(projectsMap.values());
+            console.log('Projects - Found project data through phases:', projectsArray);
+            setProjects(projectsArray);
             setLoading(false);
             return;
           }
         }
-        
+
         // If phases approach didn't work, try expenses table
         console.log('Projects - Trying to get project data in: expenses...');
         const { data: expensesData, error: expensesError } = await supabase
@@ -299,9 +306,9 @@ export function Projects() {
           .select('project_id, projects(*)')
           .in('project_id', assignedProjectIds)
           .limit(assignedProjectIds.length);
-        
+
         console.log('Projects - Expenses query result:', { expensesData, expensesError });
-        
+
         if (!expensesError && expensesData && expensesData.length > 0) {
           // Extract unique projects from expenses data
           const projectsMap = new Map();
@@ -311,7 +318,7 @@ export function Projects() {
               projectsMap.set(projectInfo.id, projectInfo);
             }
           });
-          
+
           if (projectsMap.size > 0) {
             const projectsArray = Array.from(projectsMap.values());
             console.log('Projects - Found project data through expenses:', projectsArray);
@@ -320,7 +327,7 @@ export function Projects() {
             return;
           }
         }
-        
+
         // If both approaches failed, try to fetch project names directly
         console.log('Projects - Trying to fetch project names directly...');
         try {
@@ -328,7 +335,7 @@ export function Projects() {
             .from('projects')
             .select('id, name, description, status, start_date, end_date, location')
             .in('id', assignedProjectIds);
-          
+
           if (!projectNameError && projectNameData && projectNameData.length > 0) {
             console.log('Projects - Found project names directly:', projectNameData);
             const fullProjects = assignedProjectIds.map(projectId => {
@@ -353,7 +360,7 @@ export function Projects() {
         } catch (error) {
           console.log('Projects - Could not fetch project names directly:', error);
         }
-        
+
         // If all approaches failed, use the basic mock projects
         console.log('Projects - Using mock projects to bypass RLS:', mockProjects);
         setProjects(mockProjects);
@@ -374,7 +381,7 @@ export function Projects() {
         hint: error.hint,
         code: error.code
       });
-      
+
       // Check if it's a permissions issue
       if (error.message.includes('permission') || error.message.includes('policy')) {
         console.log('Projects - This appears to be a Row Level Security (RLS) permissions issue');
@@ -695,10 +702,10 @@ export function Projects() {
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const handleDownloadReport = async (project: any) => {
     console.log("Starting PDF generation for project:", project.name);
-    
+
     // Fetch fresh data for PDF generation
     const projectData = await fetchProjectDetails(project.id);
-    
+
     // Wait a moment for state to update
     await new Promise(resolve => setTimeout(resolve, 500));
 
@@ -719,13 +726,13 @@ export function Projects() {
       doc.setFontSize(12);
       doc.setFont('helvetica', 'normal');
       doc.text(`Generated on: ${new Date().toLocaleDateString()}`, pageWidth - margin - 60, 20);
-      
+
       // Section title
       doc.setTextColor(41, 128, 185);
       doc.setFontSize(16);
       doc.setFont('helvetica', 'bold');
       doc.text(title, margin, 45);
-      
+
       // Reset text color
       doc.setTextColor(0, 0, 0);
     };
@@ -742,9 +749,9 @@ export function Projects() {
 
     // --- PAGE 1: PROJECT OVERVIEW ---
     addHeader('PROJECT OVERVIEW');
-    
+
     let yPos = 80;
-    
+
     // Project name centered
     doc.setFontSize(22);
     doc.setFont('helvetica', 'bold');
@@ -752,7 +759,7 @@ export function Projects() {
     const projectNameWidth = doc.getTextWidth(project.name);
     doc.text(project.name, (pageWidth - projectNameWidth) / 2, yPos);
     yPos += 25;
-    
+
     // Create centered info boxes
     const infoBoxes = [
       { label: 'Status', value: project.status, color: project.status === 'completed' ? [46, 204, 113] : project.status === 'active' ? [241, 196, 15] : [231, 76, 60] },
@@ -760,16 +767,16 @@ export function Projects() {
       { label: 'Start Date', value: project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not set' },
       { label: 'End Date', value: project.end_date ? new Date(project.end_date).toLocaleDateString() : 'Not set' },
     ];
-    
+
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
-    
+
     const boxWidth = contentWidth * 0.8;
     const boxStartX = (pageWidth - boxWidth) / 2;
-    
+
     infoBoxes.forEach((box, index) => {
       const boxY = yPos + (index * 25);
-      
+
       // Box background
       if (box.color) {
         doc.setFillColor(box.color[0], box.color[1], box.color[2]);
@@ -780,39 +787,39 @@ export function Projects() {
         doc.rect(boxStartX, boxY - 5, boxWidth, 20, 'F');
         doc.setTextColor(52, 73, 94);
       }
-      
+
       doc.setFont('helvetica', 'bold');
       doc.text(`${box.label}:`, boxStartX + 10, boxY + 5);
       doc.setFont('helvetica', 'normal');
       doc.text(box.value, boxStartX + 60, boxY + 5);
     });
-    
+
     yPos += 120;
-    
+
     // Description section centered
     doc.setTextColor(52, 73, 94);
     doc.setFont('helvetica', 'bold');
     const descLabelWidth = doc.getTextWidth('DESCRIPTION:');
     doc.text('DESCRIPTION:', (pageWidth - descLabelWidth) / 2, yPos);
     yPos += 15;
-    
+
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(0, 0, 0);
     const description = project.description || 'No description provided';
     const splitDescription = doc.splitTextToSize(description, boxWidth);
-    
+
     // Center each line of description
     splitDescription.forEach((line: string, index: number) => {
       const lineWidth = doc.getTextWidth(line);
       doc.text(line, (pageWidth - lineWidth) / 2, yPos + (index * 6));
     });
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 2: PHASES ---
     doc.addPage();
     addHeader('PROJECT PHASES');
-    
+
     if (projectData.phases.length > 0) {
       const phaseRows = projectData.phases.map((p) => {
         const estimatedCost = Number(p.estimated_cost || 0);
@@ -825,7 +832,7 @@ export function Projects() {
           p.contractor_name || 'Not Assigned'
         ];
       });
-      
+
       (doc as any).autoTable({
         head: [['Phase Name', 'Status', 'Start Date', 'End Date', 'Estimated Cost', 'Contractor']],
         body: phaseRows,
@@ -859,21 +866,21 @@ export function Projects() {
       doc.setTextColor(128, 128, 128);
       doc.text('No phases found for this project.', margin, 70);
     }
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 3: PHASE PHOTOS ---
     if (projectData.phasePhotos.length > 0) {
       doc.addPage();
       addHeader('PHASE PHOTOS');
-      
+
       let currentY = 60;
       let photosPerPage = 0;
       const maxPhotosPerPage = 4;
       const photoWidth = 70;
       const photoHeight = 50;
       const photoSpacing = 10;
-      
+
       // Group photos by phase
       const photosByPhase = projectData.phasePhotos.reduce((acc, photo) => {
         const phaseName = photo.phases?.name || 'Unknown Phase';
@@ -902,14 +909,14 @@ export function Projects() {
         // Display photos in a grid
         for (let i = 0; i < photosArray.length; i++) {
           const photo = photosArray[i];
-          
+
           // Check if we need a new page
           if (photosPerPage >= maxPhotosPerPage) {
             doc.addPage();
             addHeader('PHASE PHOTOS (CONTINUED)');
             currentY = 60;
             photosPerPage = 0;
-            
+
             // Repeat phase name on new page
             doc.setFontSize(14);
             doc.setFont('helvetica', 'bold');
@@ -920,7 +927,7 @@ export function Projects() {
 
           const col = photosPerPage % 2;
           const row = Math.floor(photosPerPage / 2);
-          
+
           const x = margin + col * (photoWidth + photoSpacing);
           const y = currentY + row * (photoHeight + photoSpacing + 15);
 
@@ -929,7 +936,7 @@ export function Projects() {
             const base64Image = await getImageAsBase64(photo.photo_url);
             if (base64Image) {
               doc.addImage(base64Image, 'JPEG', x, y, photoWidth, photoHeight);
-              
+
               // Add photo caption
               doc.setFontSize(8);
               doc.setFont('helvetica', 'normal');
@@ -942,7 +949,7 @@ export function Projects() {
               doc.rect(x, y, photoWidth, photoHeight, 'F');
               doc.setTextColor(128, 128, 128);
               doc.setFontSize(10);
-              doc.text('Image not available', x + 10, y + photoHeight/2);
+              doc.text('Image not available', x + 10, y + photoHeight / 2);
             }
           } catch (error) {
             console.error('Error adding image to PDF:', error);
@@ -951,7 +958,7 @@ export function Projects() {
             doc.rect(x, y, photoWidth, photoHeight, 'F');
             doc.setTextColor(128, 128, 128);
             doc.setFontSize(10);
-            doc.text('Image not available', x + 10, y + photoHeight/2);
+            doc.text('Image not available', x + 10, y + photoHeight / 2);
           }
 
           photosPerPage++;
@@ -961,20 +968,20 @@ export function Projects() {
         const rows = Math.ceil(photosArray.length / 2);
         currentY += rows * (photoHeight + photoSpacing + 15) + 20;
       }
-      
+
       addFooter(currentPageNum++);
     }
 
     // --- PAGE 4: EXPENSES ---
     doc.addPage();
     addHeader('PROJECT EXPENSES');
-    
+
     if (projectData.expenses.length > 0) {
       const expenseRows = projectData.expenses.map((e) => {
         const amount = Number(e.amount || 0);
         const gstAmount = Number(e.gst_amount || 0);
         const totalAmount = amount + gstAmount;
-        
+
         return [
           e.phases?.name || 'No Phase',
           e.category || 'Uncategorized',
@@ -985,13 +992,13 @@ export function Projects() {
           e.payment_method || 'Not Specified'
         ];
       });
-      
+
       const totalExpenses = projectData.expenses.reduce((sum, e) => {
         const amount = Number(e.amount || 0);
         const gstAmount = Number(e.gst_amount || 0);
         return sum + amount + gstAmount;
       }, 0);
-      
+
       (doc as any).autoTable({
         head: [['Phase', 'Category', 'Amount', 'GST', 'Total', 'Date', 'Payment Method']],
         body: expenseRows,
@@ -1021,7 +1028,7 @@ export function Projects() {
           6: { cellWidth: 25, halign: 'center' }
         }
       });
-      
+
       // Add total expenses box
       const finalY = (doc as any).lastAutoTable.finalY + 10;
       doc.setFillColor(231, 76, 60);
@@ -1035,19 +1042,19 @@ export function Projects() {
       doc.setTextColor(128, 128, 128);
       doc.text('No expenses recorded for this project.', margin, 70);
     }
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 5: INCOME ---
     doc.addPage();
     addHeader('PROJECT INCOME');
-    
+
     if (projectData.income.length > 0) {
       const incomeRows = projectData.income.map((i) => {
         const amount = Number(i.amount || 0);
         const gstAmount = Number(i.gst_amount || 0);
         const totalAmount = amount + gstAmount;
-        
+
         return [
           i.phases?.name || 'No Phase',
           i.category || 'Uncategorized',
@@ -1058,13 +1065,13 @@ export function Projects() {
           i.payment_method || 'Not Specified'
         ];
       });
-      
+
       const totalIncome = projectData.income.reduce((sum, i) => {
         const amount = Number(i.amount || 0);
         const gstAmount = Number(i.gst_amount || 0);
         return sum + amount + gstAmount;
       }, 0);
-      
+
       (doc as any).autoTable({
         head: [['Phase', 'Category', 'Amount', 'GST', 'Total', 'Date', 'Payment Method']],
         body: incomeRows,
@@ -1094,7 +1101,7 @@ export function Projects() {
           6: { cellWidth: 25, halign: 'center' }
         }
       });
-      
+
       // Add total income box
       const finalY = (doc as any).lastAutoTable.finalY + 10;
       doc.setFillColor(46, 204, 113);
@@ -1108,13 +1115,13 @@ export function Projects() {
       doc.setTextColor(128, 128, 128);
       doc.text('No income recorded for this project.', margin, 70);
     }
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 6: MATERIALS ---
     doc.addPage();
     addHeader('MATERIALS INVENTORY');
-    
+
     if (projectData.materials.length > 0) {
       const materialRows = projectData.materials.map((m) => {
         const unitCost = Number(m.unit_cost || 0);
@@ -1127,13 +1134,13 @@ export function Projects() {
           m.updated_at ? new Date(m.updated_at).toLocaleDateString() : 'No Date'
         ];
       });
-      
+
       const totalMaterialCost = projectData.materials.reduce((sum, m) => {
         const cost = Number(m.unit_cost || 0);
         const qty = Number(m.qty_required || 0);
         return sum + (cost * qty);
       }, 0);
-      
+
       (doc as any).autoTable({
         head: [['Material Name', 'Unit Cost', 'Quantity', 'Status', 'Last Updated']],
         body: materialRows,
@@ -1161,7 +1168,7 @@ export function Projects() {
           4: { cellWidth: 30, halign: 'center' }
         }
       });
-      
+
       // Add total material cost
       if (totalMaterialCost > 0) {
         const finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -1177,13 +1184,13 @@ export function Projects() {
       doc.setTextColor(128, 128, 128);
       doc.text('No materials recorded for this project.', margin, 70);
     }
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 7: TEAM MEMBERS ---
     doc.addPage();
     addHeader('TEAM MEMBERS');
-    
+
     if (projectData.teamMembers.length > 0) {
       const teamRows = projectData.teamMembers.map((t) => [
         t.name || 'Unknown Member',
@@ -1191,7 +1198,7 @@ export function Projects() {
         t.status || 'pending',
         t.active ? 'Active' : 'Inactive'
       ]);
-      
+
       (doc as any).autoTable({
         head: [['Name', 'Email', 'Status', 'Active']],
         body: teamRows,
@@ -1223,28 +1230,28 @@ export function Projects() {
       doc.setTextColor(128, 128, 128);
       doc.text('No team members assigned to this project.', margin, 70);
     }
-    
+
     addFooter(currentPageNum++);
 
     // --- PAGE 8: SUMMARY ---
     doc.addPage();
     addHeader('PROJECT SUMMARY');
-    
+
     let summaryYPos = 60;
-    
+
     // Calculate totals
     const totalExpenseAmount = projectData.expenses.reduce((sum, e) => {
       const amount = Number(e.amount || 0);
       const gstAmount = Number(e.gst_amount || 0);
       return sum + amount + gstAmount;
     }, 0);
-    
+
     const totalIncomeAmount = projectData.income.reduce((sum, i) => {
       const amount = Number(i.amount || 0);
       const gstAmount = Number(i.gst_amount || 0);
       return sum + amount + gstAmount;
     }, 0);
-    
+
     // Summary statistics
     const summaryData = [
       { label: 'Total Phases', value: projectData.phases.length.toString() },
@@ -1255,40 +1262,40 @@ export function Projects() {
       { label: 'Team Size', value: projectData.teamMembers.length.toString() },
       { label: 'Phase Photos', value: projectData.phasePhotos.length.toString() },
     ];
-    
+
     summaryData.forEach((item, index) => {
       const boxX = margin + (index % 2) * (contentWidth / 2);
       const boxY = summaryYPos + Math.floor(index / 2) * 40;
-      
+
       // Summary box
       const isProfit = item.label === 'Net Profit/Loss' && (totalIncomeAmount - totalExpenseAmount) >= 0;
-      const boxColor = item.label === 'Net Profit/Loss' 
+      const boxColor = item.label === 'Net Profit/Loss'
         ? (isProfit ? [46, 204, 113] : [231, 76, 60])
         : [52, 152, 219];
-      
+
       doc.setFillColor(boxColor[0], boxColor[1], boxColor[2]);
       doc.rect(boxX, boxY, contentWidth / 2 - 10, 30, 'F');
-      
+
       doc.setTextColor(255, 255, 255);
       doc.setFontSize(14);
       doc.setFont('helvetica', 'bold');
       doc.text(item.label, boxX + 10, boxY + 12);
-      
+
       doc.setFontSize(18);
       doc.text(item.value, boxX + 10, boxY + 25);
     });
-    
+
     // Project status summary
     summaryYPos += 160;
     doc.setTextColor(52, 73, 94);
     doc.setFontSize(14);
     doc.setFont('helvetica', 'bold');
     doc.text('PROJECT STATUS OVERVIEW:', margin, summaryYPos);
-    
+
     summaryYPos += 15;
     doc.setFontSize(11);
     doc.setFont('helvetica', 'normal');
-    
+
     const statusText = [
       `• Project "${project.name}" is currently ${project.status.toUpperCase()}`,
       `• Started: ${project.start_date ? new Date(project.start_date).toLocaleDateString() : 'Not specified'}`,
@@ -1300,11 +1307,11 @@ export function Projects() {
       `• Phases in progress: ${projectData.phases.filter(p => p.status === 'In Progress').length}`,
       `• Total phase photos: ${projectData.phasePhotos.length}`,
     ];
-    
+
     statusText.forEach((text, index) => {
       doc.text(text, margin, summaryYPos + (index * 8));
     });
-    
+
     addFooter(currentPageNum);
 
     // Save with formatted filename
@@ -1397,7 +1404,7 @@ export function Projects() {
   // Handle share type selection
   const handleShareTypeSelect = async (type: 'public' | 'private') => {
     setShareType(type);
-    
+
     if (type === 'public') {
       const link = await generateShareLink(sharingProject, 'public');
       if (link) {
@@ -1413,11 +1420,11 @@ export function Projects() {
       alert('Please enter a password');
       return;
     }
-    
+
     console.log('🔍 Generating private share link...');
     console.log('🔍 Project:', sharingProject?.name);
     console.log('🔍 Password:', sharePassword);
-    
+
     const link = await generateShareLink(sharingProject, 'private', sharePassword);
     if (link) {
       console.log('✅ Private link generated:', link);
@@ -1564,7 +1571,7 @@ export function Projects() {
 
       // Parse the JSONB comments array and sort by created_at descending
       const commentsArray = data?.comments || [];
-      const sortedComments = commentsArray.sort((a: any, b: any) => 
+      const sortedComments = commentsArray.sort((a: any, b: any) =>
         new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
       setLinkComments(sortedComments);
@@ -1737,171 +1744,171 @@ export function Projects() {
 
         {!loading && filteredProjects.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {filteredProjects.map((project) => {
-                const stats = projectStats[project.id] || { budgetUsed: 0, phasesCount: 0, teamCount: 0, storageMB: 0 };
-                const budget = Number(project.budget) || 0;
-                const budgetPercentage = budget > 0 ? Math.min((stats.budgetUsed / budget) * 100, 100) : 0;
+            {filteredProjects.map((project) => {
+              const stats = projectStats[project.id] || { budgetUsed: 0, phasesCount: 0, teamCount: 0, storageMB: 0 };
+              const budget = Number(project.budget) || 0;
+              const budgetPercentage = budget > 0 ? Math.min((stats.budgetUsed / budget) * 100, 100) : 0;
 
-                const getStatusColor = (status: string) => {
-                  switch (status.toLowerCase()) {
-                    case 'active': return 'bg-green-100 text-green-700';
-                    case 'planning': return 'bg-blue-100 text-blue-700';
-                    case 'completed': return 'bg-gray-100 text-gray-700';
-                    default: return 'bg-yellow-100 text-yellow-700';
-                  }
-                };
+              const getStatusColor = (status: string) => {
+                switch (status.toLowerCase()) {
+                  case 'active': return 'bg-green-100 text-green-700';
+                  case 'planning': return 'bg-blue-100 text-blue-700';
+                  case 'completed': return 'bg-gray-100 text-gray-700';
+                  default: return 'bg-yellow-100 text-yellow-700';
+                }
+              };
 
-                const getTypeColor = (type: string) => {
-                  switch (type) {
-                    case 'Commercial': return 'bg-blue-100 text-blue-700';
-                    case 'Residential': return 'bg-green-100 text-green-700';
-                    case 'Renovation': return 'bg-orange-100 text-orange-700';
-                    default: return 'bg-gray-100 text-gray-700';
-                  }
-                };
+              const getTypeColor = (type: string) => {
+                switch (type) {
+                  case 'Commercial': return 'bg-blue-100 text-blue-700';
+                  case 'Residential': return 'bg-green-100 text-green-700';
+                  case 'Renovation': return 'bg-orange-100 text-orange-700';
+                  default: return 'bg-gray-100 text-gray-700';
+                }
+              };
 
-                return (
-                  <div
-                    key={project.id}
-                    className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="flex items-start gap-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
-                          <Building2 className="w-6 h-6 text-white" />
-                        </div>
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{project.name}</h3>
-                          <p className="text-sm text-gray-600">{project.description || 'No description'}</p>
-                          <span className={`inline-block px-2 py-1 rounded text-xs font-medium mt-2 ${getTypeColor(project.project_type || 'Commercial')}`}>
-                            {project.project_type || 'Commercial'}
-                          </span>
-                        </div>
+              return (
+                <div
+                  key={project.id}
+                  className="bg-white rounded-xl border border-gray-200 p-6 hover:shadow-lg transition-shadow"
+                >
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg flex items-center justify-center">
+                        <Building2 className="w-6 h-6 text-white" />
                       </div>
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
-                        {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4 mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Calendar className="w-4 h-4" />
-                        <div>
-                          <div className="text-xs text-gray-500">Duration</div>
-                          <div className="font-medium">
-                            {project.start_date && project.end_date
-                              ? `${new Date(project.start_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })} - ${new Date(project.end_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}`
-                              : 'Not set'}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <Users className="w-4 h-4" />
-                        <div>
-                          <div className="text-xs text-gray-500">Team Members</div>
-                          <div className="font-medium">{stats.teamCount}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <LayoutGrid className="w-4 h-4" />
-                        <div>
-                          <div className="text-xs text-gray-500">Phases</div>
-                          <div className="font-medium">{stats.phasesCount}</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-gray-600">
-                        <IndianRupeeIcon className="w-4 h-4" />
-                        <div>
-                          <div className="text-xs text-gray-500">Budget</div>
-                          <div className="font-medium">
-                            {budget > 0 ? `₹${budget.toLocaleString()}` : 'No budget set'}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
-                        <HardDrive className="w-4 h-4" />
-                        <div>
-                          <span className="text-xs text-gray-500">Storage</span>
-                          <span className="font-medium ml-2">{stats.storageMB} MB</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="mb-4">
-                      <div className="flex justify-between text-sm mb-2">
-                        <span className="text-gray-600">Budget Used</span>
-                        <span className="font-medium">
-                          ₹{stats.budgetUsed.toLocaleString()} 
-                          {budget > 0 ? ` / ₹${budget.toLocaleString()} (${budgetPercentage.toFixed(0)}%)` : ' (No budget set)'}
+                      <div>
+                        <h3 className="text-lg font-semibold text-gray-900">{project.name}</h3>
+                        <p className="text-sm text-gray-600">{project.description || 'No description'}</p>
+                        <span className={`inline-block px-2 py-1 rounded text-xs font-medium mt-2 ${getTypeColor(project.project_type || 'Commercial')}`}>
+                          {project.project_type || 'Commercial'}
                         </span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"
-                          style={{ width: `${budget > 0 ? budgetPercentage : 0}%` }}
-                        />
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(project.status)}`}>
+                      {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Calendar className="w-4 h-4" />
+                      <div>
+                        <div className="text-xs text-gray-500">Duration</div>
+                        <div className="font-medium">
+                          {project.start_date && project.end_date
+                            ? `${new Date(project.start_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })} - ${new Date(project.end_date).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric', year: 'numeric' })}`
+                            : 'Not set'}
+                        </div>
                       </div>
                     </div>
-
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        onClick={() => handleViewProject(project)}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-600 hover:text-green-700 transition-colors"
-                      >
-                        <Eye className="w-4 h-4" />
-                        View Details
-                      </button>
-                      <button
-                        onClick={() => handleShare(project)}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-purple-600 hover:text-purple-700 transition-colors"
-                      >
-                        <Share2 className="w-4 h-4" />
-                        Share
-                      </button>
-                      {hasPermission('edit_project') && (
-                        <button
-                          onClick={() => {
-                            setEditingProject(project);
-                            setNewProject({
-                              name: project.name,
-                              description: project.description,
-                              status: project.status,
-                              location: project.location,
-                              start_date: project.start_date,
-                              end_date: project.end_date,
-                              project_type: project.project_type || 'Commercial',
-                              budget: project.budget || ''
-                            });
-                            setIsModalOpen(true);
-                          }}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
-                        >
-                          <Edit className="w-4 h-4" />
-                          Edit
-                        </button>
-                      )}
-                      {hasPermission('delete_project') && (
-                        <button
-                          onClick={() => handleDeleteProject(project.id)}
-                          className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:text-red-700 transition-colors"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                          Delete
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleManageLinks(project)}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors ml-auto"
-                      >
-                        Manage
-                      </button>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <Users className="w-4 h-4" />
+                      <div>
+                        <div className="text-xs text-gray-500">Team Members</div>
+                        <div className="font-medium">{stats.teamCount}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <LayoutGrid className="w-4 h-4" />
+                      <div>
+                        <div className="text-xs text-gray-500">Phases</div>
+                        <div className="font-medium">{stats.phasesCount}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <IndianRupeeIcon className="w-4 h-4" />
+                      <div>
+                        <div className="text-xs text-gray-500">Budget</div>
+                        <div className="font-medium">
+                          {budget > 0 ? `₹${budget.toLocaleString()}` : 'No budget set'}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="mb-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                      <HardDrive className="w-4 h-4" />
+                      <div>
+                        <span className="text-xs text-gray-500">Storage</span>
+                        <span className="font-medium ml-2">{stats.storageMB} MB</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex justify-between text-sm mb-2">
+                      <span className="text-gray-600">Budget Used</span>
+                      <span className="font-medium">
+                        ₹{stats.budgetUsed.toLocaleString()}
+                        {budget > 0 ? ` / ₹${budget.toLocaleString()} (${budgetPercentage.toFixed(0)}%)` : ' (No budget set)'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-500"
+                        style={{ width: `${budget > 0 ? budgetPercentage : 0}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => handleViewProject(project)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-green-600 hover:text-green-700 transition-colors"
+                    >
+                      <Eye className="w-4 h-4" />
+                      View Details
+                    </button>
+                    <button
+                      onClick={() => handleShare(project)}
+                      className="flex items-center gap-1 px-3 py-1.5 text-sm text-purple-600 hover:text-purple-700 transition-colors"
+                    >
+                      <Share2 className="w-4 h-4" />
+                      Share
+                    </button>
+                    {hasPermission('edit_project') && (
+                      <button
+                        onClick={() => {
+                          setEditingProject(project);
+                          setNewProject({
+                            name: project.name,
+                            description: project.description,
+                            status: project.status,
+                            location: project.location,
+                            start_date: project.start_date,
+                            end_date: project.end_date,
+                            project_type: project.project_type || 'Commercial',
+                            budget: project.budget || ''
+                          });
+                          setIsModalOpen(true);
+                        }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 transition-colors"
+                      >
+                        <Edit className="w-4 h-4" />
+                        Edit
+                      </button>
+                    )}
+                    {hasPermission('delete_project') && (
+                      <button
+                        onClick={() => handleDeleteProject(project.id)}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm text-red-600 hover:text-red-700 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleManageLinks(project)}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors ml-auto"
+                    >
+                      Manage
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -1912,7 +1919,7 @@ export function Projects() {
 
       {/* ✅ Modal for Add/Edit */}
       {isModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
           onClick={(e) => handleModalClick(e, () => setIsModalOpen(false))}
         >
@@ -2046,7 +2053,7 @@ export function Projects() {
 
       {/* ✅ Modern Project Details Modal */}
       {viewingProject && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50 p-4"
           onClick={(e) => handleModalClick(e, () => setViewingProject(null))}
         >
@@ -2057,13 +2064,12 @@ export function Projects() {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h1 className="text-3xl font-bold text-gray-900">{viewingProject.name}</h1>
-                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                      viewingProject.status === 'active' 
-                        ? 'bg-green-100 text-green-800' 
-                        : viewingProject.status === 'completed'
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${viewingProject.status === 'active'
+                      ? 'bg-green-100 text-green-800'
+                      : viewingProject.status === 'completed'
                         ? 'bg-blue-100 text-blue-800'
                         : 'bg-yellow-100 text-yellow-800'
-                    }`}>
+                      }`}>
                       {viewingProject.status?.charAt(0).toUpperCase() + viewingProject.status?.slice(1)}
                     </span>
                   </div>
@@ -2074,13 +2080,13 @@ export function Projects() {
                     </span>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={() => setViewingProject(null)}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
                   <X className="h-6 w-6 text-gray-500" />
-              </button>
-            </div>
+                </button>
+              </div>
             </div>
 
             <div className="p-8 space-y-8">
@@ -2094,16 +2100,16 @@ export function Projects() {
                     <div>
                       <h3 className="text-sm font-medium text-gray-600">Duration</h3>
                       <p className="text-2xl font-bold text-gray-900">
-                        {viewingProject.start_date && viewingProject.end_date 
+                        {viewingProject.start_date && viewingProject.end_date
                           ? Math.ceil((new Date(viewingProject.end_date).getTime() - new Date(viewingProject.start_date).getTime()) / (1000 * 60 * 60 * 24))
                           : 0} days
                       </p>
                       <p className="text-sm text-gray-500">
-                        {viewingProject.start_date && viewingProject.end_date 
+                        {viewingProject.start_date && viewingProject.end_date
                           ? Math.round(((new Date().getTime() - new Date(viewingProject.start_date).getTime()) / (new Date(viewingProject.end_date).getTime() - new Date(viewingProject.start_date).getTime())) * 100)
                           : 0}% elapsed
-                    </p>
-                  </div>
+                      </p>
+                    </div>
                   </div>
                 </div>
 
@@ -2156,13 +2162,13 @@ export function Projects() {
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Start Date</p>
                     <p className="text-lg font-semibold text-gray-900">
-                      {viewingProject.start_date 
-                        ? new Date(viewingProject.start_date).toLocaleDateString('en-US', { 
-                            weekday: 'long', 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
-                          })
+                      {viewingProject.start_date
+                        ? new Date(viewingProject.start_date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
                         : 'Not set'
                       }
                     </p>
@@ -2170,34 +2176,34 @@ export function Projects() {
                   <div>
                     <p className="text-sm text-gray-600 mb-1">End Date</p>
                     <p className="text-lg font-semibold text-gray-900">
-                      {viewingProject.end_date 
-                        ? new Date(viewingProject.end_date).toLocaleDateString('en-US', { 
-                            weekday: 'long', 
-                            year: 'numeric', 
-                            month: 'long', 
-                            day: 'numeric' 
-                          })
+                      {viewingProject.end_date
+                        ? new Date(viewingProject.end_date).toLocaleDateString('en-US', {
+                          weekday: 'long',
+                          year: 'numeric',
+                          month: 'long',
+                          day: 'numeric'
+                        })
                         : 'Not set'
                       }
-                      </p>
-                    </div>
+                    </p>
+                  </div>
                 </div>
                 <div className="mt-4">
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm text-gray-600">Timeline Progress</span>
                     <span className="text-sm font-medium text-blue-600">
-                      {viewingProject.start_date && viewingProject.end_date 
+                      {viewingProject.start_date && viewingProject.end_date
                         ? Math.round(((new Date().getTime() - new Date(viewingProject.start_date).getTime()) / (new Date(viewingProject.end_date).getTime() - new Date(viewingProject.start_date).getTime())) * 100)
                         : 0}%
                     </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
+                    <div
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ 
-                        width: `${viewingProject.start_date && viewingProject.end_date 
+                      style={{
+                        width: `${viewingProject.start_date && viewingProject.end_date
                           ? Math.min(Math.max(((new Date().getTime() - new Date(viewingProject.start_date).getTime()) / (new Date(viewingProject.end_date).getTime() - new Date(viewingProject.start_date).getTime())) * 100, 0), 100)
-                          : 0}%` 
+                          : 0}%`
                       }}
                     ></div>
                   </div>
@@ -2212,7 +2218,7 @@ export function Projects() {
                   </div>
                   <h2 className="text-xl font-bold text-gray-900">Financial Overview</h2>
                 </div>
-                
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   <div className="bg-white rounded-lg p-4">
                     <p className="text-sm text-gray-600 mb-1">Total Income</p>
@@ -2225,7 +2231,7 @@ export function Projects() {
                     </p>
                     <p className="text-xs text-gray-500">{income.length} transactions</p>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg p-4">
                     <p className="text-sm text-gray-600 mb-1">Total Expenses</p>
                     <p className="text-xl font-bold text-red-600">
@@ -2237,20 +2243,19 @@ export function Projects() {
                     </p>
                     <p className="text-xs text-gray-500">{expenses.length} transactions</p>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg p-4">
                     <p className="text-sm text-gray-600 mb-1">Net Amount</p>
-                    <p className={`text-xl font-bold ${
-                      (income.reduce((sum, i) => {
-                        const amount = Number(i.amount || 0);
-                        const gstAmount = Number(i.gst_amount || 0);
-                        return sum + amount + gstAmount;
-                      }, 0) - expenses.reduce((sum, e) => {
-                        const amount = Number(e.amount || 0);
-                        const gstAmount = Number(e.gst_amount || 0);
-                        return sum + amount + gstAmount;
-                      }, 0)) >= 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
+                    <p className={`text-xl font-bold ${(income.reduce((sum, i) => {
+                      const amount = Number(i.amount || 0);
+                      const gstAmount = Number(i.gst_amount || 0);
+                      return sum + amount + gstAmount;
+                    }, 0) - expenses.reduce((sum, e) => {
+                      const amount = Number(e.amount || 0);
+                      const gstAmount = Number(e.gst_amount || 0);
+                      return sum + amount + gstAmount;
+                    }, 0)) >= 0 ? 'text-green-600' : 'text-red-600'
+                      }`}>
                       ₹{(income.reduce((sum, i) => {
                         const amount = Number(i.amount || 0);
                         const gstAmount = Number(i.gst_amount || 0);
@@ -2273,7 +2278,7 @@ export function Projects() {
                       }, 0)) >= 0 ? 'Profit' : 'Loss'}
                     </p>
                   </div>
-                  
+
                   <div className="bg-white rounded-lg p-4">
                     <p className="text-sm text-gray-600 mb-1">GST Paid</p>
                     <p className="text-xl font-bold text-green-600">
@@ -2292,17 +2297,17 @@ export function Projects() {
                         const gstAmount = Number(e.gst_amount || 0);
                         return sum + amount + gstAmount;
                       }, 0) / Number(viewingProject.budget || 1)) * 100)}%
-                      </span>
+                    </span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-2">
-                    <div 
+                    <div
                       className="bg-green-600 h-2 rounded-full transition-all duration-300"
-                      style={{ 
+                      style={{
                         width: `${Math.min((expenses.reduce((sum, e) => {
                           const amount = Number(e.amount || 0);
                           const gstAmount = Number(e.gst_amount || 0);
                           return sum + amount + gstAmount;
-                        }, 0) / Number(viewingProject.budget || 1)) * 100, 100)}%` 
+                        }, 0) / Number(viewingProject.budget || 1)) * 100, 100)}%`
                       }}
                     ></div>
                   </div>
@@ -2331,7 +2336,7 @@ export function Projects() {
                   </div>
                   <span className="text-purple-600 font-medium">{phases.length} phases</span>
                 </div>
-                
+
                 {phases.length > 0 ? (
                   <div className="space-y-4">
                     {phases.map((phase) => {
@@ -2342,13 +2347,12 @@ export function Projects() {
                         <div key={phase.id} className="bg-white rounded-lg p-5">
                           <div className="flex justify-between items-start">
                             <h3 className="font-semibold text-gray-900 text-base">{phase.name}</h3>
-                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                              phase.status === 'In Progress' 
-                                ? 'bg-blue-100 text-blue-800' 
-                                : phase.status === 'Completed'
+                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${phase.status === 'In Progress'
+                              ? 'bg-blue-100 text-blue-800'
+                              : phase.status === 'Completed'
                                 ? 'bg-green-100 text-green-800'
                                 : 'bg-yellow-100 text-yellow-800'
-                            }`}>
+                              }`}>
                               {phase.status || 'Not Started'}
                             </span>
                           </div>
@@ -2367,7 +2371,7 @@ export function Projects() {
                               <p className="text-sm text-gray-600 mb-1">Progress</p>
                               <div className="flex items-center gap-3">
                                 <div className="flex-1 bg-gray-200 rounded-full h-2">
-                                  <div 
+                                  <div
                                     className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                                     style={{ width: `${percent}%` }}
                                   ></div>
@@ -2396,14 +2400,14 @@ export function Projects() {
                   </div>
                   <span className="text-orange-600 font-medium">{expenses.length + income.length} recent</span>
                 </div>
-                
+
                 <div className="space-y-4">
                   {sortedTransactions.slice(0, 5).map((transaction, index) => {
                     const amount = Number(transaction.amount || 0);
                     const gstAmount = Number(transaction.gst_amount || 0);
                     const total = amount + gstAmount;
                     const isExpense = transaction.type === 'expense';
-                    
+
                     return (
                       <div key={transaction.id || index} className="bg-white rounded-lg p-4">
                         <div className="flex justify-between items-start">
@@ -2440,7 +2444,7 @@ export function Projects() {
                       </div>
                     );
                   })}
-                  
+
                   {expenses.length === 0 && income.length === 0 && (
                     <p className="text-gray-500 text-center py-8">No transactions yet</p>
                   )}
@@ -2453,7 +2457,7 @@ export function Projects() {
 
       {/* ✅ FIXED: Share Modal */}
       {shareModalOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
           onClick={(e) => handleModalClick(e, () => setShareModalOpen(false))}
         >
@@ -2471,7 +2475,7 @@ export function Projects() {
                 <h3 className="text-md font-semibold text-gray-800">
                   Select details to include in shared link:
                 </h3>
-                
+
                 {/* Share Options Checkboxes */}
                 <div className="space-y-3 bg-gray-50 p-4 rounded-lg">
                   <div className="flex justify-between items-center mb-3">
@@ -2491,7 +2495,7 @@ export function Projects() {
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 gap-2">
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
@@ -2502,7 +2506,7 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Phase Details</span>
                     </label>
-                    
+
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
                         type="checkbox"
@@ -2512,7 +2516,7 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Expense Details</span>
                     </label>
-                    
+
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
                         type="checkbox"
@@ -2522,7 +2526,7 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Income Details</span>
                     </label>
-                    
+
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
                         type="checkbox"
@@ -2532,7 +2536,7 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Materials Details</span>
                     </label>
-                    
+
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
                         type="checkbox"
@@ -2542,7 +2546,7 @@ export function Projects() {
                       />
                       <span className="text-sm text-gray-700">Phase Photos</span>
                     </label>
-                    
+
                     <label className="flex items-center space-x-3 cursor-pointer hover:bg-white p-2 rounded transition-colors">
                       <input
                         type="checkbox"
@@ -2596,32 +2600,27 @@ export function Projects() {
                 <h3 className="text-md font-semibold text-gray-800 mt-6">
                   How would you like to share "{sharingProject?.name}"?
                 </h3>
-                
+
                 <div className="space-y-3">
                   <button
                     onClick={() => handleShareTypeSelect('public')}
                     disabled={!hasSelectedOptions}
-                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${
-                      hasSelectedOptions 
-                        ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50' 
-                        : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
-                    }`}
+                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${hasSelectedOptions
+                      ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                      : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
+                      }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className={`p-2 rounded-lg ${
-                        hasSelectedOptions ? 'bg-green-100' : 'bg-gray-100'
-                      }`}>
-                        <Globe className={`h-6 w-6 ${
-                          hasSelectedOptions ? 'text-green-600' : 'text-gray-400'
-                        }`} />
+                      <div className={`p-2 rounded-lg ${hasSelectedOptions ? 'bg-green-100' : 'bg-gray-100'
+                        }`}>
+                        <Globe className={`h-6 w-6 ${hasSelectedOptions ? 'text-green-600' : 'text-gray-400'
+                          }`} />
                       </div>
                       <div>
-                        <h4 className={`font-semibold ${
-                          hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
-                        }`}>Public Link</h4>
-                        <p className={`text-sm ${
-                          hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
-                        }`}>Anyone with the link can view</p>
+                        <h4 className={`font-semibold ${hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
+                          }`}>Public Link</h4>
+                        <p className={`text-sm ${hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
+                          }`}>Anyone with the link can view</p>
                       </div>
                     </div>
                   </button>
@@ -2629,27 +2628,22 @@ export function Projects() {
                   <button
                     onClick={() => handleShareTypeSelect('private')}
                     disabled={!hasSelectedOptions}
-                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${
-                      hasSelectedOptions 
-                        ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50' 
-                        : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
-                    }`}
+                    className={`w-full p-4 border-2 rounded-lg transition-all duration-200 text-left ${hasSelectedOptions
+                      ? 'border-gray-200 hover:border-blue-300 hover:bg-blue-50'
+                      : 'border-gray-100 bg-gray-50 cursor-not-allowed opacity-50'
+                      }`}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className={`p-2 rounded-lg ${
-                        hasSelectedOptions ? 'bg-orange-100' : 'bg-gray-100'
-                      }`}>
-                        <Lock className={`h-6 w-6 ${
-                          hasSelectedOptions ? 'text-orange-600' : 'text-gray-400'
-                        }`} />
+                      <div className={`p-2 rounded-lg ${hasSelectedOptions ? 'bg-orange-100' : 'bg-gray-100'
+                        }`}>
+                        <Lock className={`h-6 w-6 ${hasSelectedOptions ? 'text-orange-600' : 'text-gray-400'
+                          }`} />
                       </div>
                       <div>
-                        <h4 className={`font-semibold ${
-                          hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
-                        }`}>Private Link</h4>
-                        <p className={`text-sm ${
-                          hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
-                        }`}>Password protected</p>
+                        <h4 className={`font-semibold ${hasSelectedOptions ? 'text-gray-800' : 'text-gray-400'
+                          }`}>Private Link</h4>
+                        <p className={`text-sm ${hasSelectedOptions ? 'text-gray-600' : 'text-gray-400'
+                          }`}>Password protected</p>
                       </div>
                     </div>
                   </button>
@@ -2689,7 +2683,7 @@ export function Projects() {
                 <h3 className="text-md font-semibold text-gray-800">
                   {shareType === 'public' ? 'Public' : 'Private'} Link Generated
                 </h3>
-                
+
                 {/* Show selected options */}
                 <div className="bg-blue-50 rounded-lg p-3">
                   <p className="text-sm text-blue-800 font-medium mb-2">Included Details:</p>
@@ -2714,7 +2708,7 @@ export function Projects() {
                     )}
                   </div>
                 </div>
-                
+
                 <div className="bg-gray-50 rounded-lg p-3">
                   <p className="text-sm text-gray-600 break-all">{generatedLink}</p>
                 </div>
@@ -2741,7 +2735,7 @@ export function Projects() {
                     <Copy className="h-4 w-4 mr-2" />
                     {linkCopied ? 'Copied!' : 'Copy Link'}
                   </button>
-                  
+
                   <button
                     onClick={() => window.open(generatedLink, '_blank')}
                     className="flex-1 flex items-center justify-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -2823,20 +2817,18 @@ export function Projects() {
                     return (
                       <div
                         key={link.id}
-                        className={`border rounded-lg p-4 ${
-                          expired
-                            ? 'bg-red-50 border-red-200'
-                            : 'bg-white border-slate-200 hover:border-cyan-300 hover:shadow-md'
-                        } transition-all`}
+                        className={`border rounded-lg p-4 ${expired
+                          ? 'bg-red-50 border-red-200'
+                          : 'bg-white border-slate-200 hover:border-cyan-300 hover:shadow-md'
+                          } transition-all`}
                       >
                         <div className="flex items-start justify-between mb-3">
                           <div className="flex items-center space-x-3 flex-1">
-                            <div className={`p-2 rounded-lg ${
-                                expired
-                                  ? 'bg-red-100'
-                                  : link.share_type === 'public'
-                                  ? 'bg-green-100'
-                                  : 'bg-orange-100'
+                            <div className={`p-2 rounded-lg ${expired
+                              ? 'bg-red-100'
+                              : link.share_type === 'public'
+                                ? 'bg-green-100'
+                                : 'bg-orange-100'
                               }`}>
                               {link.share_type === 'public' ? (
                                 <Globe className={`w-5 h-5 ${expired ? 'text-red-600' : 'text-green-600'}`} />
@@ -2931,11 +2923,10 @@ export function Projects() {
                           <button
                             onClick={() => copyLinkToClipboard(link.id)}
                             disabled={expired}
-                            className={`p-2 rounded-lg transition-colors ${
-                              expired
-                                ? 'text-slate-400 cursor-not-allowed'
-                                : 'text-cyan-600 hover:bg-cyan-50'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${expired
+                              ? 'text-slate-400 cursor-not-allowed'
+                              : 'text-cyan-600 hover:bg-cyan-50'
+                              }`}
                             title="Copy Link"
                           >
                             <Copy className="w-4 h-4" />
@@ -2943,11 +2934,10 @@ export function Projects() {
                           <button
                             onClick={() => window.open(shareUrl, '_blank')}
                             disabled={expired}
-                            className={`p-2 rounded-lg transition-colors ${
-                              expired
-                                ? 'text-slate-400 cursor-not-allowed'
-                                : 'text-cyan-600 hover:bg-cyan-50'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${expired
+                              ? 'text-slate-400 cursor-not-allowed'
+                              : 'text-cyan-600 hover:bg-cyan-50'
+                              }`}
                             title="Open Link"
                           >
                             <ExternalLink className="w-4 h-4" />
@@ -2955,11 +2945,10 @@ export function Projects() {
                           <button
                             onClick={() => handleViewComments(link)}
                             disabled={expired}
-                            className={`p-2 rounded-lg transition-colors ${
-                              expired
-                                ? 'text-slate-400 cursor-not-allowed'
-                                : 'text-blue-600 hover:bg-blue-50'
-                            }`}
+                            className={`p-2 rounded-lg transition-colors ${expired
+                              ? 'text-slate-400 cursor-not-allowed'
+                              : 'text-blue-600 hover:bg-blue-50'
+                              }`}
                             title="View Comments"
                           >
                             <MessageCircle className="w-4 h-4" />

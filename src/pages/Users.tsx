@@ -152,14 +152,14 @@ export function Users() {
       // Fetch user_projects for all users separately to ensure we get all projects
       const userIds = usersData.map(u => u.id);
       let userProjectsMap = new Map<string, Array<{ project_id: string; projects: { name: string } }>>();
-      
+
       if (userIds.length > 0) {
         try {
           const { data: userProjectsData, error: userProjectsError } = await supabase
             .from("user_projects")
             .select("user_id, project_id, projects(name)")
             .in("user_id", userIds);
-          
+
           if (!userProjectsError && userProjectsData) {
             // Group user_projects by user_id
             userProjectsData.forEach((up: any) => {
@@ -176,7 +176,7 @@ export function Users() {
           console.warn("Could not fetch user_projects (table may not exist):", err);
         }
       }
-      
+
       // Transform data to match UI expectations
       const transformedUsers = usersData.map(u => ({
         ...u,
@@ -220,8 +220,8 @@ export function Users() {
   // Filter users
   const filteredUsers = users.filter(user => {
     const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
+      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (user.department && user.department.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesRole = roleFilter === 'all' || user.roles?.role_name === roleFilter;
     const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
     return matchesSearch && matchesRole && matchesStatus;
@@ -281,7 +281,7 @@ export function Users() {
       // 2. Insert user into database with auth_user_id
       // Use first project_id for backward compatibility, or null if no projects selected
       const firstProjectId = formData.project_ids.length > 0 ? formData.project_ids[0] : null;
-      
+
       const { data: newUser, error: insertError } = await supabase
         .from("users")
         .insert([
@@ -332,7 +332,7 @@ export function Users() {
         .map(id => projects.find(p => p.id === id)?.name)
         .filter(Boolean)
         .join(", ");
-      
+
       const emailParams = {
         to_email: formData.email,
         to_name: formData.name,
@@ -361,12 +361,12 @@ export function Users() {
       };
 
       setUsers((prev) => [transformedUser, ...prev]);
-      
+
       // Reset form
       setShowConfirmModal(false);
       setFormData({ name: "", email: "", phone: "", role_id: "", project_ids: [], department: "", status: "Active" });
       setGeneratedPassword("");
-      
+
       // Refresh user list to show updated projects
       fetchData();
 
@@ -399,7 +399,7 @@ export function Users() {
       setUserToDelete(null);
       return;
     }
-    
+
     setUsers(users.filter((u) => u.id !== userToDelete.id));
     if (selectedUser?.id === userToDelete.id) {
       setSelectedUser(null);
@@ -418,23 +418,23 @@ export function Users() {
   // Start editing
   async function startEdit(user: User) {
     setEditingUser(user);
-    
+
     // Fetch user's assigned projects from user_projects table
     let assignedProjectIds: string[] = [];
-    
+
     // Try to fetch from user_projects table first
     const { data: userProjectsData, error: userProjectsError } = await supabase
       .from("user_projects")
       .select("project_id")
       .eq("user_id", user.id);
-    
+
     if (!userProjectsError && userProjectsData) {
       assignedProjectIds = userProjectsData.map(up => up.project_id);
     } else if (user?.project_id) {
       // Fallback to single project_id if user_projects table doesn't exist or has no data
       assignedProjectIds = [user.project_id];
     }
-    
+
     setEditForm({
       name: user.name,
       email: user.email,
@@ -529,7 +529,7 @@ export function Users() {
     setUsers(users.map((u) => (u.id === editingUser.id ? transformedUser : u)));
     showNotification('success', 'User updated successfully!');
     cancelEdit();
-    
+
     // Refresh user list to show updated projects
     fetchData();
   }
@@ -606,11 +606,10 @@ export function Users() {
         {notifications.map(notification => (
           <div
             key={notification.id}
-            className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 ${
-              notification.type === 'success'
+            className={`px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-in slide-in-from-top duration-300 ${notification.type === 'success'
                 ? 'bg-green-500 text-white'
                 : 'bg-red-500 text-white'
-            }`}
+              }`}
           >
             {notification.type === 'success' ? (
               <CheckCircle className="w-5 h-5" />
@@ -632,21 +631,19 @@ export function Users() {
                 <div className="flex items-center space-x-2 bg-white border border-slate-200 rounded-lg p-1">
                   <button
                     onClick={() => setViewType('grid')}
-                    className={`p-2 rounded-md transition-colors ${
-                      viewType === 'grid'
+                    className={`p-2 rounded-md transition-colors ${viewType === 'grid'
                         ? 'bg-blue-500 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <Grid className="w-4 h-4" />
                   </button>
                   <button
                     onClick={() => setViewType('list')}
-                    className={`p-2 rounded-md transition-colors ${
-                      viewType === 'list'
+                    className={`p-2 rounded-md transition-colors ${viewType === 'list'
                         ? 'bg-blue-500 text-white'
                         : 'text-slate-600 hover:bg-slate-100'
-                    }`}
+                      }`}
                   >
                     <List className="w-4 h-4" />
                   </button>
@@ -844,11 +841,10 @@ export function Users() {
                       {filteredUsers.map((user) => (
                         <tr
                           key={user.id}
-                          className={`cursor-pointer transition-all hover:bg-slate-50 ${
-                            selectedUser?.id === user.id
+                          className={`cursor-pointer transition-all hover:bg-slate-50 ${selectedUser?.id === user.id
                               ? "bg-blue-50 border-l-4 border-l-blue-500"
                               : ""
-                          }`}
+                            }`}
                           onClick={() => setSelectedUser(user)}
                         >
                           <td className="px-6 py-4 whitespace-nowrap">
@@ -1099,7 +1095,7 @@ export function Users() {
                 <p><strong>Phone:</strong> {formData.phone || 'Not provided'}</p>
                 <p><strong>Role:</strong> {roles.find(r => r.id === formData.role_id)?.role_name}</p>
                 <p><strong>Projects:</strong> {
-                  formData.project_ids.length > 0 
+                  formData.project_ids.length > 0
                     ? formData.project_ids.map(id => projects.find(p => p.id === id)?.name).filter(Boolean).join(", ")
                     : "No projects assigned"
                 }</p>
@@ -1416,10 +1412,10 @@ export function Users() {
 
             <div className="mb-6">
               <p className="text-gray-700 mb-4">
-                Are you sure you want to delete <span className="font-semibold text-gray-900">{userToDelete.name}</span>? 
+                Are you sure you want to delete <span className="font-semibold text-gray-900">{userToDelete.name}</span>?
                 This will permanently remove the user and all associated data.
               </p>
-              
+
               <div className="bg-gray-50 p-4 rounded-lg">
                 <h4 className="font-medium text-gray-900 mb-2">User Details:</h4>
                 <div className="space-y-1 text-sm text-gray-600">
